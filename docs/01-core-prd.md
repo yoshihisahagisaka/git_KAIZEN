@@ -14,6 +14,34 @@ Build a shared atLIB Service Operating Platform that can operate multiple servic
 - Standardize operations while preserving recipient-specific context.
 - Produce continuous KAIZEN from operational evidence.
 
+## Core Principle #0 — Fact First
+
+The platform is Fact-first.
+
+> Factを仕事につなぎ、仕事から新しいFactを生み出す。Factが増えるほど、次の仕事は速く、正確になる。
+
+### Required behavior
+
+- The same real-world fact must not be independently maintained in multiple service-specific tables, screens, spreadsheets or workflows.
+- Authoritative operational information should be stored once in an appropriate domain object or relation and reused through multiple views.
+- Critical Facts must be traceable to provenance such as source, Evidence, effective period, verification time and reliability where applicable.
+- Fact, Observation, Hypothesis, Decision, Rule and Unknown must remain semantically distinct.
+- Unknown must remain explicit when the platform does not know a value; the system must not normalize uncertainty into guessed values.
+- Closing Work alone must never mutate authoritative Registry state.
+- Reality-changing work must flow through Action → Change → Verify → Commit before authoritative state is changed.
+- Knowledge State Change must record that the platform's understanding changed without pretending that underlying reality changed at the same time.
+- AI may suggest interpretations, questions, decisions, rule candidates and potential Facts, but it must not silently create authoritative Facts.
+
+### Architecture guardrail
+
+Fact First is a domain and architecture principle, not a universal `facts` table or generic EAV model.
+
+Person remains Person. Device remains Device. Work remains Work. Relation remains Relation. Decision remains Decision. Rule remains Rule.
+
+The principle governs how truth, provenance, validity, reliability and reuse are handled across those domain objects.
+
+> One Fact, Multiple Views.
+
 ## Core domain candidates
 
 - Organization
@@ -47,9 +75,15 @@ Build a shared atLIB Service Operating Platform that can operate multiple servic
 
 Event → Requirement Evaluation → Decision/Rule → Work or No Work → Action → Change → Registry/Knowledge → Review/Authority → KAIZEN → Impact
 
+A Fact-first interpretation of the operational loop is:
+
+Fact / Unknown → Context → Requirement / Decision → Work → Action → Change → Verification → Updated Fact → Learning → KAIZEN
+
 ## Learning loop
 
 WORK → REVIEW → LEARN → DELEGATE → STANDARDIZE → AUTOMATE → KAIZEN
+
+Learning is downstream of trusted operational evidence. The platform should not claim learning where the underlying information is unverified, ambiguous or contradictory.
 
 ## Onboarding model
 
@@ -104,6 +138,16 @@ Candidate reliability states:
 
 Do not invent facts to fill Unknowns.
 
+For critical operational information, the platform should preserve or resolve:
+- source / provenance
+- Evidence
+- effective_from / effective_to where temporal
+- verified_at
+- reliability
+- source Work / Change where applicable
+
+Updated At is not equivalent to Trusted At.
+
 ## Operational Context
 
 Operational Context is the information required to correctly understand, decide and execute Work.
@@ -122,6 +166,8 @@ It can include:
 - Contract/service context
 
 Operational Context maturity is a proxy for operational standardization: the goal is not more documents, but repeatable decisions and execution independent of a specific individual.
+
+Operational Context must preserve semantic distinctions instead of flattening all context into one narrative or note field.
 
 ## Recipient Observation
 
@@ -147,6 +193,8 @@ Examples:
 
 Both can produce downstream impact.
 
+Authoritative Registry information must not be mutated merely because a Work changed status. Reality-changing actions must remain traceable through Change and verification before commit.
+
 ## Continuous Operational KAIZEN
 
 Daily work can itself improve the operating model:
@@ -159,9 +207,15 @@ Daily work can itself improve the operating model:
 
 This is distinct from deliberate KAIZEN initiatives that change process, rules, architecture, automation or service design based on accumulated evidence.
 
+The causal direction is:
+
+Fact / Unknown → Work → Evidence / Change → Verified Fact → Knowledge / Rule Candidate → Capability improvement → KAIZEN
+
 ## External integration principles
 
 The platform is the System of Work for service operations. External systems remain Systems of Record or specialized execution systems where appropriate. Integrations must be implemented through adapters and must not leak vendor-specific semantics into Core.
+
+External data must not be treated as authoritative merely because it came from an integration. Provider source, synchronization status, verification state and effective ownership of truth must be explicit when relevant.
 
 ### Telephony / CTI
 
@@ -216,3 +270,4 @@ During initial operations, manual transfer to Zoho is explicitly acceptable. V1 
 - automatic authority grants
 - AI-generated authoritative rules without human approval
 - hidden normalization of Unknown into guessed values
+- introducing a universal Fact/EAV table that replaces explicit domain objects
