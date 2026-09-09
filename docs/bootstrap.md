@@ -1,4 +1,7 @@
-# FACTACT bootstrap — architecture review handoff
+# FACTACT bootstrap – architecture review handoff
+
+Historical bootstrap checkpoint. The subsequent implementation and current
+verification status are recorded in [JOIN checkpoint](join-checkpoint.md).
 
 Date: 2026-09-09. Canonical base: origin/main e816e11, updated by fast-forward before implementation. Document 16 is present and was read. Only git_KAIZEN was modified; sibling repositories were read-only references.
 

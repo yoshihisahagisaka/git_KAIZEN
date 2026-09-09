@@ -1,17 +1,9 @@
 import { Router, type CookieOptions } from 'express';
-import { timingSafeEqual } from 'node:crypto';
 import type { Config } from '../config.js';
 import type { IdentityStore } from '../../../../../packages/application/src/operator-session.js';
 import { authenticateSession, resolveActiveOperator } from '../../../../../packages/application/src/operator-session.js';
 import type { IdentityProvider } from './oidc.js';
 import { generateCodeVerifier, generateOpaqueValue, tokenHash } from './pkce.js';
-
-export function sameToken(actual: unknown, expected: string): boolean {
-  if (typeof actual !== 'string') return false;
-  const a = Buffer.from(actual);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 export function createAuthRouter(config: Config, store: IdentityStore, provider: IdentityProvider): Router {
   const router = Router();
@@ -60,13 +52,7 @@ export function createAuthRouter(config: Config, store: IdentityStore, provider:
     res.json({ ok: true, data: session, warnings: [], correlationId: req.id });
   });
   router.post('/auth/logout', async (req, res) => {
-    const token: unknown = req.cookies?.[sessionCookie];
-    const session = typeof token === 'string' ? await authenticateSession(store, tokenHash(token)) : null;
-    if (!session || typeof token !== 'string') { res.status(401).json({ ok: false, error: { code: 'UNAUTHENTICATED' }, correlationId: req.id }); return; }
-    if (req.get('origin') !== config.origin || !sameToken(req.get('x-csrf-token'), session.csrfToken)) {
-      res.status(403).json({ ok: false, error: { code: 'CSRF_REJECTED' }, correlationId: req.id }); return;
-    }
-    await store.revokeSession(tokenHash(token));
+    await store.revokeSession(res.locals.sessionTokenHash);
     res.clearCookie(sessionCookie, cookie);
     res.json({ ok: true, data: {}, warnings: [], correlationId: req.id });
   });

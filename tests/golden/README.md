@@ -1,12 +1,13 @@
 # JOIN Golden Test gate
 
 GT-01–GT-12 are specified in docs/15-first-vertical-slice-contract-v1.md.
-They are not implemented or claimed passing by the bootstrap.
+They are implemented in `join.test.ts` against real PostgreSQL with the restricted runtime role.
 
-After architecture review, implement them alongside commands, in document 15 order.
-Use deterministic repository-owned fixtures, database-backed command tests, and
-the browser acceptance flow. No conditional missing-fixture skips. The bootstrap's
-database isolation tests cover prerequisites only, not GT-11 across Work/Change/Relation.
+Run `npm run test:db` for bootstrap database tests plus GT-01–GT-12 and additional
+authority, concurrency, correction and HTTP security guards. Fixtures are deterministic
+and repository-owned, with no missing-fixture skips. Run `npm run test:browser` after
+`npx playwright install chromium` for the browser flow; its injected test IdP does
+not substitute for live Google OIDC deployment verification.
 
 Pattern sources: atlib-sales-tools/test/kaizenAssessment.golden.test.ts and
 test/fixtures/kaizenAssessmentGolden.json; atlib-cashflow/app/test/cashflowContract.test.ts.

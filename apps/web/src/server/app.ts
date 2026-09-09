@@ -9,11 +9,15 @@ import type { Config } from './config.js';
 import type { IdentityStore } from '../../../../packages/application/src/operator-session.js';
 import type { IdentityProvider } from './auth/oidc.js';
 import { createAuthRouter } from './auth/routes.js';
+import { commandBoundary } from './auth/command-boundary.js';
+import { joinRoutes, type JoinServices } from './join-routes.js';
+import { DomainError } from '../../../../packages/domain/src/join.js';
+import { ZodError } from 'zod';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices) {
   const app = express();
   app.disable('x-powered-by');
-  app.use(helmet());
+  app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
   // ADAPT: portal src/server.ts. Do not log callback query strings, cookies or token-bearing headers.
   app.use(pinoHttp({ logger, genReqId: () => randomUUID(), serializers: {
     req: req => ({ id: req.id, method: req.method, path: String(req.url).split('?')[0] }),
@@ -22,13 +26,17 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use((_req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); next(); });
   app.use(cookieParser());
   app.use(express.json({ limit: '16kb' }));
+  app.use(commandBoundary(config, store));
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.use(createAuthRouter(config, store, provider));
+  if (join) app.use('/api',joinRoutes(join));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
   app.get('/', (_req, res) => res.sendFile(resolve('dist/client/index.html')));
-  const errors: ErrorRequestHandler = (_error, req, res, _next) => {
+  const errors: ErrorRequestHandler = (error: unknown, req, res, _next) => {
+    if (error instanceof DomainError) { res.status(error.status).json({ok:false,error:{code:error.code,message:error.message},correlationId:req.id}); return; }
+    if (error instanceof ZodError || (error instanceof SyntaxError && 'body' in error)) { res.status(400).json({ok:false,error:{code:'INVALID_INPUT',message:'入力内容を確認してください。'},correlationId:req.id}); return; }
     // Avoid provider/DB error bodies that can contain SQL parameters or tokens.
     req.log.error({ correlationId: req.id }, 'Request failed');
     res.status(500).json({ ok: false, error: { code: 'INTERNAL_ERROR', message: '処理を完了できませんでした。' }, correlationId: req.id });

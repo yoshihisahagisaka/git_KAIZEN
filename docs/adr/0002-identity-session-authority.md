@@ -13,3 +13,10 @@ PostgreSQL stores login transactions/sessions across instances. Restricted SECUR
 ADMIN, OPERATOR and REVIEWER grants are explicit, tenant-scoped Operator data. The bootstrap does not grant operational permissions through authentication. Subsequent commands must also check Service/Contract Authority. An Operator may hold multiple roles; configured self-review may be allowed for the first device flow, but must be explicitly permitted by the Contract Profile. ADMIN does not override tenant isolation.
 
 Seed identity uses an untrusted .invalid issuer and cannot log in. A deliberate local admin command binds a verified Google subject to the seeded Operator. No real subject or credential is committed.
+
+JOIN checkpoint implementation, 2026-09-09: one commandBoundary middleware is
+mounted before every route, including logout. All methods other than GET, HEAD
+and OPTIONS require an active session, exact configured Origin and timing-safe
+session CSRF validation. Command handlers consume the resolved Operator and do
+not duplicate CSRF checks. Application commands refresh Operator grants inside
+their tenant transaction and enforce pinned Contract Authority, including self-review.

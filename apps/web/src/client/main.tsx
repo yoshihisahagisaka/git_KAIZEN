@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Operator } from '../../../../packages/domain/src/operator.js';
 import './style.css';
+import { JoinUI } from './join-ui.js';
 
 function App() {
   const [session, setSession] = useState<{ operator: Operator; csrfToken: string } | null>(null);
@@ -26,10 +27,9 @@ function App() {
   return <main>
     <header><strong>FACTACT</strong><span>From Fact to Action.</span></header>
     {loading ? <p role="status">確認しています…</p> : error ? <p role="alert">{error}</p> : session ? <>
-      <h1>{session.operator.displayName}さん</h1>
-      <p>{session.operator.tenantName}</p>
-      <p>現在、この環境で開始できる業務はありません。</p>
+      <p>{session.operator.displayName} / {session.operator.tenantName}</p>
       <button onClick={() => void logout()}>ログアウト</button>
+      <JoinUI csrf={session.csrfToken} operator={session.operator}/>
     </> : <><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href="/auth/login">Googleでログイン</a></>}
   </main>;
 }

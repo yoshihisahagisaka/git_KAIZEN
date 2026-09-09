@@ -11,3 +11,17 @@ Commit will lock the relevant Person and Change rows, check expected Relation st
 Effective time describes when reality changed; verification and commit timestamps are distinct. UNKNOWN before assignment must not be rewritten as a historically proven absence. History is ended, never overwritten/deleted. CompleteWork will require its claimed reality-changing outcome to have the required committed Change; it cannot mutate Registry state.
 
 Detailed command schema/guards and GT-05–GT-12 will be implemented after bootstrap review, before any adjacent feature expansion.
+
+JOIN checkpoint implementation, 2026-09-09: the lifecycle above is implemented
+and covered by GT-05–GT-12. StartAssignDeviceAction accepts a human attestation
+of completed assignment, execution evidence and actual effective time; it records
+the completed Action and proposed Change atomically, never a Relation. Verify
+and Commit remain separate commands. Locks serialize competing proposals for
+the same Person/device; unique active indexes cover both Person and device.
+Commit is idempotent and rolls back Relation, Change, Work progress and audit
+together on failure. An intended replacement requires the explicit previous
+Relation ID, and ends that Relation without deleting history. RejectChange is
+the bounded correction path for an invalid or stale proposal: preserve it and
+its evidence as REJECTED, then create and verify a fresh proposal. It introduces
+no generic workflow. CompleteWork changes only Work and audit after committed
+outcomes; JOIN readiness is derived from the verified Relation.

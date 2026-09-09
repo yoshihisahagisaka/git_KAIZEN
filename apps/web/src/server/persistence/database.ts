@@ -24,12 +24,12 @@ export async function assertRuntimeRole(pool: Pool): Promise<void> {
   if (rows[0]?.safe !== true) throw new Error('Database connection must use the restricted factact_runtime role');
 }
 
-export async function withTenant<T>(pool: Pool, tenantId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+export async function withTenant<T>(pool: Pool, tenantId: string, work: (client: PoolClient) => Promise<T>, readOnly = false): Promise<T> {
   z.uuid().parse(tenantId);
   const client = await pool.connect();
   let discard = false;
   try {
-    await client.query('BEGIN');
+    await client.query(readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     await client.query("select set_config('factact.tenant_id', $1, true)", [tenantId]);
     const result = await work(client);
     await client.query('COMMIT');

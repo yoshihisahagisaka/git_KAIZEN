@@ -4,6 +4,10 @@ import { createPool, assertRuntimeRole } from './persistence/database.js';
 import { PgIdentityStore } from './persistence/identity-store.js';
 import { createGoogleProvider } from './auth/oidc.js';
 import { createApp } from './app.js';
+import { PgJoinUnitOfWork } from './persistence/join-repository.js';
+import { JoinCommands } from '../../../../packages/application/src/join-commands.js';
+import { JoinQueries } from '../../../../packages/application/src/join-queries.js';
+import { randomUUID } from 'node:crypto';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -12,7 +16,8 @@ async function main() {
   try {
     await assertRuntimeRole(pool);
     const provider = await createGoogleProvider(config);
-    const app = createApp(config, new PgIdentityStore(pool), provider, logger);
+    const uow = new PgJoinUnitOfWork(pool);
+    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) });
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void pool.end(); });
