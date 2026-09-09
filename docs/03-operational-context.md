@@ -16,11 +16,17 @@ The platform must make visible:
 - what authority applies
 - what exceptions apply
 
+Operational Context is Fact-first: trusted Facts are reused as the basis for Work, while Observation, Hypothesis, Decision, Rule and Unknown remain explicitly distinguishable.
+
 ## Why it matters
 
 Operational Context maturity is the practical form of operational standardization.
 
 Standardization does not mean producing more manuals. It means enabling different operators to reach consistent, safe decisions using the same trusted context.
+
+The platform must avoid creating separate copies of the same real-world Fact merely because different operators, services, screens or reports need to see it.
+
+> One Fact, Multiple Views.
 
 ## Context composition
 
@@ -38,7 +44,25 @@ Operational Context may include:
 10. Current Unknowns / Information Gaps
 11. Contract / Service Context
 
-## Unknown as a valid starting fact
+Each critical item should retain enough semantic and trust metadata for an operator or AI to understand not only the value, but why it should or should not be trusted.
+
+## Fact-first context
+
+A Fact is not just a populated value. It is a semantic claim about reality that can be reused across Work and Views.
+
+For operationally important Facts, the platform should be able to expose or trace as applicable:
+- source / provenance
+- Evidence
+- effective period / validity
+- verified_at
+- reliability
+- source Work / Change
+
+`updated_at` alone is not sufficient evidence of trust.
+
+Fact First is not a requirement to flatten all information into a generic Fact object. Facts may be represented through explicit domain objects and Relations such as Person, Device, Organization or Person USES Device.
+
+## Unknown as a valid starting state
 
 Unknown is not a defect to hide. It can be the first correct statement about current knowledge.
 
@@ -48,6 +72,14 @@ Example:
 - network vendor = UNKNOWN
 
 The platform should avoid replacing these with assumptions.
+
+UNKNOWN is not semantically identical to a database NULL. The operating model may need to distinguish:
+- not yet investigated
+- investigated but unresolved
+- contradictory sources
+- intentionally not collected / not currently required
+
+These differences should be represented when they affect Work, risk, prioritization or future KAIZEN.
 
 ## Information maturity lens
 
@@ -77,16 +109,28 @@ Important distinction:
 
 Updated At is not Trusted At. Last Verified At matters.
 
+An external system or integration source does not automatically make a value authoritative. Operational Context should preserve source and verification state where relevant.
+
 ## Work-driven enrichment
 
 Real Work should progressively enrich context:
 
-Work → required context check → Known / Unknown → investigation/confirmation → Fact → Verification → Context update → next Work starts from a better baseline.
+Work → required context check → Known / Unknown → investigation/confirmation → Evidence → Fact → Verification → Context update → next Work starts from a better baseline.
+
+When Work changes the real environment, context should update through a traceable Change:
+
+Work → Action → Change → Verify → Commit → updated current Fact / Relation.
 
 This creates a service learning curve:
 
 first case: research-heavy
 later cases: context reuse and faster diagnosis
+
+The causal direction is important:
+
+Fact / Unknown → Work → Evidence / Change → Verified Fact → Learning → KAIZEN.
+
+Learning is downstream of trusted operational evidence; the platform should not claim certainty or learning where the underlying information remains ambiguous or unverified.
 
 ## Context gap prioritization
 
@@ -110,6 +154,8 @@ Daily work improves information state:
 
 These state improvements are continuous operational KAIZEN.
 
+Patterns accumulated from verified Facts, Decisions, Outcomes and Exceptions can later support Knowledge improvement, Rule Candidates, Authority review, standardization and automation. These are consequences of trusted operational evidence, not substitutes for it.
+
 ## AI use
 
 AI should not simply answer. It should identify the required context for the current Work, show what is trusted vs missing, and guide the operator toward the highest-value next question or verification step.
@@ -125,11 +171,16 @@ Example behavior:
 
 AI must never merge these categories into one undifferentiated narrative.
 
+AI may suggest a potential Fact based on evidence, but the suggestion is not authoritative until the required human/domain verification and commit path has completed.
+
+> AI Reasons from typed, trusted context. It does not silently create Facts.
+
 ## Operational Context output for UI
 
 A Work view should eventually be able to present:
 
 - What we know
+- Why we trust it / source where relevant
 - What we do not know
 - What is needed for this Work
 - What can safely be done now
@@ -137,3 +188,4 @@ A Work view should eventually be able to present:
 - What information should be obtained if useful
 - Which knowledge/rules/decisions were used
 - Reliability and source of each critical item
+- Whether a Fact is current, stale or only observational/hypothetical
