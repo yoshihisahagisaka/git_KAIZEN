@@ -30,6 +30,7 @@ The repository, not chat history, is the source of truth. When a material Produc
 7. `11-josys-kaizen-service-model-v1.md` — **ACTIVE DRAFT / CURRENT** — 情シスKAIZEN Service Model V1
 8. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
 9. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
+10. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — implementation-ready screens, commands, authority, AI boundaries and V1 Golden Flows
 
 ### Legacy implementation handoff documents
 
@@ -41,7 +42,7 @@ The following documents predate the final FACTACT naming and later Fact First / 
 
 Status: **LEGACY / REFERENCE — RECONCILIATION REQUIRED**
 
-They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–13`, or `99` where they conflict.
+They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–14`, or `99` where they conflict.
 
 `NEMESIA` in these filenames is an old/internal project code. New product-facing specifications should use **FACTACT**.
 
@@ -94,7 +95,8 @@ The structure is a direction, not permission to create abstractions before they 
 | Progressive onboarding | `04-progressive-onboarding.md` |
 | 情シスKAIZEN Service Model | `11-josys-kaizen-service-model-v1.md` |
 | JOIN UX Golden Flow | `12-factact-join-ux-golden-flow.md` |
-| Shared product UX | `13-factact-product-ux-architecture.md` |
+| Shared product UX architecture | `13-factact-product-ux-architecture.md` |
+| Implementation-ready UI behavior | `14-factact-ui-specification-v1.md` |
 | AI / developer handoff context | `99-ai-development-context.md` |
 | Architecture decisions | `docs/adr/` when introduced |
 | DB schema | migrations + schema/reference doc when implementation starts |
@@ -152,17 +154,23 @@ Use this instruction when starting a new AI coding session:
 
 > Read `docs/99-ai-development-context.md` first, then `docs/README.md` and the canonical documents relevant to the task. Treat this repository as the FACTACT Single Source of Truth. Before coding, summarize the Core invariants touched by the task and flag conflicts. Do not replace Fact First semantics with generic ticket/CRUD patterns. After an architecture-significant decision, update the relevant canonical document or ADR in the same change.
 
-## Immediate next documentation task
+For UI implementation, the minimum reading set is:
 
-Before broad implementation, produce **FACTACT UI Specification V1** from the approved UX direction. It should turn the conceptual screens into implementation-ready definitions for:
+1. `99-ai-development-context.md`
+2. `02-domain-model.md`
+3. `03-operational-context.md`
+4. `13-factact-product-ux-architecture.md`
+5. `14-factact-ui-specification-v1.md`
+6. the relevant Service Model / Golden Flow document
 
-- Home
-- Work List / Work Detail
-- Operational Context
-- JOIN
-- SUPPORT
-- resolution / learning
-- KAIZEN
-- KAIZEN detail
+## Immediate next implementation-design task
 
-It should define shared components, navigation, screen transitions, Domain Commands, authorization/visibility, Fact/Observation/Unknown presentation, AI boundaries, and the first vertical build acceptance criteria.
+The UI behavior is now specified enough to start preparing the first vertical slice.
+
+Before broad coding, define the minimum **V1 persistence + application/API contract** required for:
+
+> **Login → Home → JOIN Event → Requirement Evaluation → Work → Device Action → Change → Verify → Fact → Person View**
+
+The next design step should therefore reconcile the existing V1 data-model/integration draft work with current Fact First and UI specifications, then produce the minimum schema/command/read-model contract needed for this Golden Flow.
+
+Do not design the whole future platform before implementing this slice.
