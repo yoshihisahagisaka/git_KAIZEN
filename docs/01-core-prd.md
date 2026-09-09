@@ -159,16 +159,59 @@ Daily work can itself improve the operating model:
 
 This is distinct from deliberate KAIZEN initiatives that change process, rules, architecture, automation or service design based on accumulated evidence.
 
+## External integration principles
+
+The platform is the System of Work for service operations. External systems remain Systems of Record or specialized execution systems where appropriate. Integrations must be implemented through adapters and must not leak vendor-specific semantics into Core.
+
+### Telephony / CTI
+
+Telephony is an Event Source, not a Core telephony subsystem.
+
+Initial target adapter: MOT/TEL.
+
+Conceptual flow:
+
+MOT/TEL incoming call → Communication Event → Recipient Resolution → Effective Service Context → Guided Triage → Requirement Evaluation → Work
+
+V1 may use MOT/TEL external URL/phone-number linkage to open the appropriate incoming-call workspace. PBX, SIP, IVR, recording and softphone functionality remain outside Core. The adapter boundary must allow MOT/TEL to be replaced or supplemented by another telephony provider later.
+
+### CRM
+
+CRM and the Service Operating Platform have different responsibilities.
+
+For the Sonics Service Desk:
+- the new platform is the System of Work for inquiries, triage, Work, decisions, actions, changes, knowledge and service evidence;
+- Zoho remains the customer relationship / sales CRM;
+- service operations must not require duplicate manual entry into Zoho as the permanent target state;
+- information valuable to customer relationship management should be able to flow from the platform to Zoho through an integration adapter;
+- CRM-specific IDs and schemas must not become Core domain identifiers.
+
+Target integration direction:
+
+Work / Service Evidence → Integration Policy → Zoho Adapter → CRM activity / note / selected customer-facing service information
+
+The exact outbound dataset, trigger timing, conflict policy and field mapping are Service Model / Contract Profile concerns and will be defined after real operational learning.
+
+During initial operations, manual transfer to Zoho is explicitly acceptable. V1 must preserve enough structured data and stable external references so automation can be added later without redesigning Work, Recipient or Organization.
+
 ## V1 target service models
 
 1. Service Desk
 2. 情シスKAIZEN
 
+## V1 integration scope
+
+- MOT/TEL: design adapter boundary and support the minimum CTI flow needed for Service Desk operation; start with external URL / caller-number based context opening where practical.
+- Zoho CRM: architecture-ready but automation is optional for V1. Manual CRM update is an accepted launch procedure.
+- Integration actions should be observable/auditable and eventually idempotent when automated.
+
 ## Not V1
 
+- building our own CTI/PBX/SIP/IVR/recording platform
+- full bidirectional Zoho CRM synchronization
+- making Zoho the operational Work system
+- generic no-code integration platform
 - full timesheet/payroll/accounting
-- CTI/PBX/IVR
-- generic no-code platform
 - full MDM/monitoring replacement
 - automatic authority grants
 - AI-generated authoritative rules without human approval
