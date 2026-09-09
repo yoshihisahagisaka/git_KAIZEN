@@ -10,6 +10,23 @@ It must be read with `02-domain-model.md`, `03-operational-context.md`, `12-fact
 
 If implementation convenience conflicts with Core invariants, Core invariants win.
 
+## Product Owner clarification — 2026-09-09
+
+The department/employment-type rule illustrated in document 14 is a UX example,
+not a mandatory first-slice requirement. The first `COMPANY_PC = REQUIRED` may
+use a minimal explicit/human-confirmed requirement or a bounded Contract Profile
+rule. The bootstrap selects the bounded Contract Profile rule.
+
+Do not add department/employment-type fields as JOIN-only data or authoritative
+raw Event JSON. When introduced later, these must be reusable Operational Facts
+with provenance, reliability and verification semantics. Evaluation basis/snapshots
+serve reproducibility; they do not become the authoritative source of those Facts.
+
+The initial bootstrap stops for architecture review after the application structure,
+authentication/Operator mapping, migration/RLS baseline and deterministic prerequisite
+seed are established. The seven commands and full Golden/browser flow follow that
+review in section 15 order. Bootstrap checks do not establish GT-01–GT-12 completion.
+
 ---
 
 # 1. Goal

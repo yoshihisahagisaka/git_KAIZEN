@@ -1417,6 +1417,12 @@ Rule:
 
 - regular Sales employee requires standard company PC
 
+Product Owner clarification (2026-09-09): this is an illustrative UX rule, not a
+required schema or rule for the first vertical slice. The initial Golden Flow may
+use an explicit/human-confirmed COMPANY_PC requirement or a bounded Contract Profile
+rule. See document 15 and ADR 0004; do not introduce JOIN-only department/employment
+facts to satisfy this example.
+
 Expected flow:
 
 1. JOIN Event exists.

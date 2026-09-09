@@ -1,0 +1,1 @@
+{ "name": "@factact/domain", "private": true, "type": "module", "exports": "./src/operator.ts" }

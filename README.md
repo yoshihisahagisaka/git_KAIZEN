@@ -112,6 +112,10 @@ Existing atLIB systems may be selectively reused for proven platform patterns su
 
 ## Current phase
 
+The initial implementation bootstrap is available. See [bootstrap setup, reuse
+provenance and review boundary](docs/bootstrap.md). It provides the authentication
+shell and database baseline; the JOIN Golden Flow is not yet implemented.
+
 **Product/UX architecture → implementation-ready specification → first vertical Golden Flow.**
 
 Before coding a feature, read `docs/99-ai-development-context.md` and the canonical documents relevant to that feature.

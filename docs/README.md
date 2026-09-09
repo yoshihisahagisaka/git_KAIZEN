@@ -52,6 +52,13 @@ Do not mechanically rename these files yet. First extract still-valid implementa
 
 ## Repository role
 
+Bootstrap implementation and verification instructions: [`bootstrap.md`](bootstrap.md).
+Architecture decisions: [`adr/0001-application-boundary.md`](adr/0001-application-boundary.md),
+[`adr/0002-identity-session-authority.md`](adr/0002-identity-session-authority.md),
+[`adr/0003-rls-execution.md`](adr/0003-rls-execution.md),
+[`adr/0004-evaluation-reproducibility.md`](adr/0004-evaluation-reproducibility.md),
+[`adr/0005-change-lifecycle.md`](adr/0005-change-lifecycle.md).
+
 `yoshihisahagisaka/git_KAIZEN` is the FACTACT Single Source of Truth and implementation target.
 
 Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
