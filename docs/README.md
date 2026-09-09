@@ -25,13 +25,14 @@ The repository, not chat history, is the source of truth. When a material Produc
 5. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
 6. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
 
-### Service Model and UX
+### Service Model, UX and implementation handoff
 
 7. `11-josys-kaizen-service-model-v1.md` — **ACTIVE DRAFT / CURRENT** — 情シスKAIZEN Service Model V1
 8. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
 9. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
 10. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
 11. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
+12. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
 
 ### Legacy implementation handoff documents
 
@@ -43,20 +44,17 @@ The following documents predate the final FACTACT naming and later Fact First / 
 
 Status: **LEGACY / REFERENCE — RECONCILIATION REQUIRED**
 
-They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–15`, or `99` where they conflict.
+They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–16`, or `99` where they conflict.
 
 `NEMESIA` in these filenames is an old/internal project code. New product-facing specifications should use **FACTACT**.
 
-Do not mechanically rename these files yet. First extract still-valid implementation detail into current FACTACT specifications, then archive or supersede them explicitly. This avoids giving stale content a new authoritative-looking filename.
+Do not mechanically rename these files yet. First extract still-valid implementation detail into current FACTACT specifications, then archive or supersede them explicitly.
 
-## Current repository inventory
+## Repository role
 
-At the start of the implementation transition, the repository root contains only:
+`yoshihisahagisaka/git_KAIZEN` is the FACTACT Single Source of Truth and implementation target.
 
-- `README.md`
-- `docs/`
-
-There is no application source tree yet. This is intentional: create implementation directories when the first vertical slice is started rather than committing empty architecture scaffolding.
+Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
 
 ## Target structure
 
@@ -99,17 +97,16 @@ The structure is a direction, not permission to create abstractions before they 
 | Shared product UX | `13-factact-product-ux-architecture.md` |
 | Implementation-ready UI behavior | `14-factact-ui-specification-v1.md` |
 | First executable slice: persistence/commands/API/tests | `15-first-vertical-slice-contract-v1.md` |
+| Existing-code reuse decisions | `16-existing-resource-reuse-audit.md` |
 | AI / developer handoff context | `99-ai-development-context.md` |
 | Architecture decisions | `docs/adr/` when introduced |
 | DB schema | migrations + `15-first-vertical-slice-contract-v1.md` until a dedicated schema reference becomes necessary |
-| API contract | implementation + `15-first-vertical-slice-contract-v1.md` for the first slice; generated/static API reference when implementation expands |
+| API contract | implementation + `15-first-vertical-slice-contract-v1.md` for the first slice |
 | Golden Flow behavior | `tests/golden/` + relevant design doc |
 
 ## Decision precedence
 
 When documents disagree, do not silently choose whichever is easiest to implement.
-
-Use this precedence:
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
 2. `00-product-vision.md` / Core Fact First principles;
@@ -132,47 +129,26 @@ Use in new work:
 
 Do not introduce `NEMESIA` as a public product name.
 
-## What must be documented
-
-Create or update documentation when a change affects:
-
-- Core invariants;
-- meaning of a domain object/state;
-- authority/security/tenancy;
-- Requirement Evaluation behavior;
-- Action → Change → Verify → Commit semantics;
-- AI authority boundary;
-- cross-Service Model behavior;
-- persistent data ownership/source of truth;
-- integration responsibility;
-- a major UX mental model;
-- an intentionally accepted architectural trade-off.
-
-Small implementation details do not require Product docs. Architecturally consequential decisions should later receive an ADR.
-
 ## VS Code / AI handoff
 
-Use this instruction when starting a new AI coding session:
+For the first implementation session, use:
 
-> Read `docs/99-ai-development-context.md` first, then `docs/README.md` and the canonical documents relevant to the task. Treat this repository as the FACTACT Single Source of Truth. Before coding, summarize the Core invariants touched by the task and flag conflicts. Do not replace Fact First semantics with generic ticket/CRUD patterns. After an architecture-significant decision, update the relevant canonical document or ADR in the same change.
+> Read `docs/99-ai-development-context.md`, `docs/README.md`, `docs/15-first-vertical-slice-contract-v1.md`, and `docs/16-existing-resource-reuse-audit.md` first. Treat this repository as the FACTACT Single Source of Truth. Before coding, summarize the Core invariants touched by the first vertical slice and inspect the current split reference repositories according to `16`. Classify reusable candidates as REUSE, ADAPT, REFERENCE, or DO NOT REUSE. Do not replace Fact First semantics with generic ticket/CRUD patterns. Then propose the minimum implementation stack and bootstrap plan. Do not write application code until the invariants and reuse decisions are summarized.
 
-For the first implementation vertical slice, also read:
-
-> `docs/15-first-vertical-slice-contract-v1.md`
-
-and implement only enough architecture to pass its Golden Tests and browser acceptance flow before expanding into broader Service Desk, KAIZEN analytics, or AI automation.
+The longer copy/paste-ready prompt is maintained in section 12 of `16-existing-resource-reuse-audit.md`.
 
 ## Immediate next task
 
-The design-to-implementation handoff for the first JOIN vertical slice is now defined in `15-first-vertical-slice-contract-v1.md`.
+The design-to-implementation handoff is complete enough to begin the first executable JOIN vertical slice.
 
-The next step is **implementation bootstrap in VS Code**:
+Next in VS Code:
 
-1. clone/open this repository;
-2. read `99`, `README`, and `15`;
-3. choose the minimum Web/TypeScript/PostgreSQL implementation stack;
-4. record only consequential stack decisions as ADRs;
-5. bootstrap the application and database migration baseline;
-6. implement the Golden Flow in the order defined by `15`.
+1. clone/open `git_KAIZEN`;
+2. read `99`, this index, `15`, and `16`;
+3. inspect only the high-priority reusable platform code identified in `16`;
+4. choose the minimum Web/TypeScript/PostgreSQL stack;
+5. record consequential stack decisions as ADRs;
+6. bootstrap application + Supabase migration baseline;
+7. implement the Golden Flow in `15` before broader Service Desk, KAIZEN analytics, or AI automation.
 
 Do not continue producing broad speculative architecture documents instead of beginning the executable vertical slice.
