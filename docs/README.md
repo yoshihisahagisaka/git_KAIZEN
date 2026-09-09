@@ -30,7 +30,8 @@ The repository, not chat history, is the source of truth. When a material Produc
 7. `11-josys-kaizen-service-model-v1.md` — **ACTIVE DRAFT / CURRENT** — 情シスKAIZEN Service Model V1
 8. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
 9. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
-10. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — implementation-ready screens, commands, authority, AI boundaries and V1 Golden Flows
+10. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
+11. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
 
 ### Legacy implementation handoff documents
 
@@ -42,7 +43,7 @@ The following documents predate the final FACTACT naming and later Fact First / 
 
 Status: **LEGACY / REFERENCE — RECONCILIATION REQUIRED**
 
-They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–14`, or `99` where they conflict.
+They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–15`, or `99` where they conflict.
 
 `NEMESIA` in these filenames is an old/internal project code. New product-facing specifications should use **FACTACT**.
 
@@ -95,12 +96,13 @@ The structure is a direction, not permission to create abstractions before they 
 | Progressive onboarding | `04-progressive-onboarding.md` |
 | 情シスKAIZEN Service Model | `11-josys-kaizen-service-model-v1.md` |
 | JOIN UX Golden Flow | `12-factact-join-ux-golden-flow.md` |
-| Shared product UX architecture | `13-factact-product-ux-architecture.md` |
+| Shared product UX | `13-factact-product-ux-architecture.md` |
 | Implementation-ready UI behavior | `14-factact-ui-specification-v1.md` |
+| First executable slice: persistence/commands/API/tests | `15-first-vertical-slice-contract-v1.md` |
 | AI / developer handoff context | `99-ai-development-context.md` |
 | Architecture decisions | `docs/adr/` when introduced |
-| DB schema | migrations + schema/reference doc when implementation starts |
-| API contract | implementation + generated/static API reference when implementation starts |
+| DB schema | migrations + `15-first-vertical-slice-contract-v1.md` until a dedicated schema reference becomes necessary |
+| API contract | implementation + `15-first-vertical-slice-contract-v1.md` for the first slice; generated/static API reference when implementation expands |
 | Golden Flow behavior | `tests/golden/` + relevant design doc |
 
 ## Decision precedence
@@ -113,7 +115,7 @@ Use this precedence:
 2. `00-product-vision.md` / Core Fact First principles;
 3. Core PRD and Domain Model invariants;
 4. current UX / Service Model specifications;
-5. implementation detail documents;
+5. implementation contracts / implementation detail documents;
 6. legacy/reference documents.
 
 If a real conflict remains, stop and record/resolve the decision rather than hiding it in code.
@@ -154,23 +156,23 @@ Use this instruction when starting a new AI coding session:
 
 > Read `docs/99-ai-development-context.md` first, then `docs/README.md` and the canonical documents relevant to the task. Treat this repository as the FACTACT Single Source of Truth. Before coding, summarize the Core invariants touched by the task and flag conflicts. Do not replace Fact First semantics with generic ticket/CRUD patterns. After an architecture-significant decision, update the relevant canonical document or ADR in the same change.
 
-For UI implementation, the minimum reading set is:
+For the first implementation vertical slice, also read:
 
-1. `99-ai-development-context.md`
-2. `02-domain-model.md`
-3. `03-operational-context.md`
-4. `13-factact-product-ux-architecture.md`
-5. `14-factact-ui-specification-v1.md`
-6. the relevant Service Model / Golden Flow document
+> `docs/15-first-vertical-slice-contract-v1.md`
 
-## Immediate next implementation-design task
+and implement only enough architecture to pass its Golden Tests and browser acceptance flow before expanding into broader Service Desk, KAIZEN analytics, or AI automation.
 
-The UI behavior is now specified enough to start preparing the first vertical slice.
+## Immediate next task
 
-Before broad coding, define the minimum **V1 persistence + application/API contract** required for:
+The design-to-implementation handoff for the first JOIN vertical slice is now defined in `15-first-vertical-slice-contract-v1.md`.
 
-> **Login → Home → JOIN Event → Requirement Evaluation → Work → Device Action → Change → Verify → Fact → Person View**
+The next step is **implementation bootstrap in VS Code**:
 
-The next design step should therefore reconcile the existing V1 data-model/integration draft work with current Fact First and UI specifications, then produce the minimum schema/command/read-model contract needed for this Golden Flow.
+1. clone/open this repository;
+2. read `99`, `README`, and `15`;
+3. choose the minimum Web/TypeScript/PostgreSQL implementation stack;
+4. record only consequential stack decisions as ADRs;
+5. bootstrap the application and database migration baseline;
+6. implement the Golden Flow in the order defined by `15`.
 
-Do not design the whole future platform before implementing this slice.
+Do not continue producing broad speculative architecture documents instead of beginning the executable vertical slice.
