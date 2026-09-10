@@ -20,6 +20,8 @@
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:browser": "npm run build && playwright test",
     "db:start": "supabase start",
+    "db:configure-local": "tsx --env-file=.env scripts/local-database.ts",
+    "auth:verify-local": "tsx --env-file=.env scripts/verify-google-identity.ts",
     "db:migrate": "supabase migration up --local",
     "db:reset": "supabase db reset --local",
     "db:bind-operator": "tsx --env-file=.env scripts/bind-operator.ts"

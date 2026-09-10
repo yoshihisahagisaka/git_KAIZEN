@@ -1,5 +1,18 @@
 import { Pool } from 'pg';
 import { z } from 'zod';
+import { readFile } from 'node:fs/promises';
+
+// Explicit opt-in to the one-shot verifier's local output. This is an admin
+// input, never an authentication token accepted by the application.
+if (process.argv.includes('--verified-local')) {
+  try {
+    const proof = z.object({issuer:z.literal('https://accounts.google.com'),subject:z.string().min(1),verifiedAt:z.iso.datetime()}).parse(JSON.parse(await readFile('.env.google-identity.json','utf8')));
+    const age=Date.now()-Date.parse(proof.verifiedAt);
+    if (age<0 || age>30*60*1000) throw new Error('Expired verification');
+    process.env.OPERATOR_SUBJECT=proof.subject;
+    process.env.ADMIN_DATABASE_URL ??= 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+  } catch { console.error('Fresh local Google verification is required. Run npm run auth:verify-local.'); process.exit(1); }
+}
 
 // Explicit development administration, never an application route or auth fallback.
 const env = z.object({

@@ -116,6 +116,8 @@ The first JOIN slice is implemented for architecture review. See the
 [JOIN checkpoint](docs/join-checkpoint.md) for scope, verification and deployment
 gates, and [bootstrap setup and reuse provenance](docs/bootstrap.md) for local setup.
 
+For interactive use with real Google login, follow [local JOIN startup and reset](docs/local-join.md).
+
 **Product/UX architecture → implementation-ready specification → first vertical Golden Flow.**
 
 Before coding a feature, read `docs/99-ai-development-context.md` and the canonical documents relevant to that feature.
