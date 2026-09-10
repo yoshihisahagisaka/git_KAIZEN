@@ -20,7 +20,17 @@ export class SupportQueries {
   const deviceFact=relation?{relation,device:found(await r.core.device(relation.toEntityId)),sourceChange:found(await r.core.change(relation.sourceChangeId))}:null;
   const decision=work?await r.decision(work.id):null,evidence=decision?await r.evidence(decision.evidenceId):null,action=decision?await r.core.action(decision.actionId):null;
   const contract=found(await r.core.contract(event.contractProfileId));
-  return {event,person,observation,evaluation,work,owner:work?await r.core.operator(work.workOwnerOperatorId):null,deviceFact,unknowns:['VPN利用要否','発生時刻','表示されたエラー','他ネットワークでの再現'],decision,evidence,action,knowledge:work?await r.knowledge(work.id):null,relatedKnowledge:await r.candidates(event.serviceId),timeline:await r.core.timeline(eventId),executeRoles:contract.configurationJson.support?.executeRoles??[]};
+  // Related by the same Person AND Service, never by a copied device label.
+  // Completed history only; drafts and future work are not recommendations.
+  const previousWork=[];
+  for(const other of await r.events()){
+   if(other.id===event.id||other.serviceId!==event.serviceId) continue;
+   const p=await r.core.recipientPerson(other.serviceRecipientId);if(p?.id!==person.id)continue;
+   const w=await r.workForEvent(other.id);if(!w||w.status!=='COMPLETED')continue;
+   const d=await r.decision(w.id);if(!d)continue;
+   previousWork.push({eventId:other.id,work:w,observation:await r.observation(other.id),action:await r.core.action(d.actionId),evidence:await r.evidence(d.evidenceId),record:(await r.records(w.id)).filter(x=>x.kind!=='DRAFT').at(-1)??null});
+  }
+  return {event,person,observation,evaluation,work,owner:work?await r.core.operator(work.workOwnerOperatorId):null,deviceFact,unknowns:['VPN利用要否','発生時刻','表示されたエラー','他ネットワークでの再現'],decision,evidence,action,records:work?await r.records(work.id):[],previousWork,knowledge:work?await r.knowledge(work.id):null,relatedKnowledge:await r.candidates(event.serviceId),timeline:await r.core.timeline(eventId),executeRoles:contract.configurationJson.support?.executeRoles??[]};
  });}
 }
 export type SupportListView=Awaited<ReturnType<SupportQueries['list']>>;

@@ -39,6 +39,12 @@ details { margin:14px 0; overflow-wrap:anywhere; } summary { cursor:pointer; col
 pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .timeline { border-top:1px solid #ccdce0; padding-top:24px; }
 .timeline li { margin-bottom:14px; padding-left:8px; } time { display:block; font-size:13px; color:#506970; }
+.support-steps { display:flex; flex-wrap:wrap; gap:12px; padding:0; list-style:none; }
+.support-steps li { padding:8px; border-bottom:3px solid #d5e1e3; }
+.support-steps [aria-current=step] { border-color:#007d80; font-weight:700; }
+.support-wizard fieldset { border:0; padding:0; min-width:0; }
+.support-summary dt { font-weight:600; margin-top:14px; }
+.support-summary dd { margin:4px 0 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
 [role=alert] { color:#922b1c; background:#fff2ed; padding:12px; border:1px solid currentColor; }
 .login { max-width:600px; margin:60px auto; padding:30px; background:white; }
 @media(max-width:1050px) { .workspace { grid-template-columns:1fr; } }

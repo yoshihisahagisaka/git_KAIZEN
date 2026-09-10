@@ -76,6 +76,9 @@ with that test IdP for local interactive use.
 
 ## Enable SUPPORT on an existing local JOIN demo without resetting it
 
+For the V2 wizard, draft/correction controls and Golden Human Review steps, see
+`support-v2-checkpoint.md`. Apply its additional migration before starting the app.
+
 1. `npm.cmd run db:start`
 2. `npm.cmd run db:migrate` — required after pulling the SUPPORT checkpoint.
 3. `npm.cmd run db:prepare-support` — explicit local administration using the

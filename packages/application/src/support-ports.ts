@@ -2,6 +2,8 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit } from '../../domain/src/support.js';
 export interface SupportRepository {
+ records(workId:string):Promise<import('../../domain/src/support.js').SupportRecord[]>;
+ insertRecord(record:import('../../domain/src/support.js').SupportRecord):Promise<void>;
  core:JoinRepository;
  lockRequest(id:string):Promise<void>;
  byRequest(id:string):Promise<SupportEvent|null>;

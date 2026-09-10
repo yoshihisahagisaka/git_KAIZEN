@@ -9,6 +9,8 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
 class PgSupportRepository implements SupportRepository {
+ records(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportRecord>('select * from factact.support_work_records where work_id=$1 order by revision',[id]);}
+ insertRecord(record:import('../../../../../packages/domain/src/support.js').SupportRecord){return this.insert('support_work_records',record);}
  core:PgJoinRepository;
  constructor(private db:PoolClient,private tenant:string){this.core=new PgJoinRepository(db,tenant);}
  private async many<T>(sql:string,args:unknown[]=[]):Promise<T[]>{return (await this.db.query(sql,args)).rows.map(raw=>Object.fromEntries(Object.entries(raw).map(([k,v])=>[k.replace(/_([a-z])/g,(_,c:string)=>c.toUpperCase()),v instanceof Date?v.toISOString():v])) as T);}

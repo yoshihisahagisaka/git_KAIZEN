@@ -1,0 +1,77 @@
+# SUPPORT Human-usable V2 checkpoint
+
+The operator follows 確認 → 対応 → 結果確認 → 完了前レビュー. Confirmed PC context
+comes from JOIN; there is no PC input. Start and standard guidance need no typed
+reason. Exceptions do. Results retain caller/direct-observation/unknown source;
+there are no Workaround/Root Cause classification inputs or mandatory Knowledge.
+
+Drafts persist in PostgreSQL, survive reload, and can be revised. Back preserves
+input. Stale saves are rejected with instructions to retain input and reload;
+they never overwrite another operator's revision. Unsaved reload/link navigation
+warns the operator. This is not offline storage or automatic save on every key.
+
+Completion stores the reviewed account atomically. Corrections preserve original
+Evidence, Action and completion notes, record author/time/reason, and appear in
+later related Work. They do not reopen Work or change its completion category.
+See ADR 0007 for the boundary and V1 compatibility.
+
+## Local startup and Human Review
+
+Keep the existing ignored `.env` and real Google Operator binding. Do not reset
+the current demo or enter new credentials. With local Supabase running:
+
+1. Run `npm.cmd run db:migrate` (includes
+   `20260911000400_support_operator_records.sql`).
+2. For an older unscoped JOIN demo, run `npm.cmd run db:prepare-support`.
+3. Start/restart `npm.cmd run dev` and `npm.cmd run dev:ui` in separate terminals.
+4. Open `http://localhost:5173`, sign in through Google, and open 「問い合わせ」.
+5. Select 田中 一郎 and the scoped service. Enter the synthetic report
+   「会社PCでVPNにつながりません」. PC-0073 should already be 確認済み from JOIN.
+6. Click 「対応を開始」. Record only what was checked, including unknowns and
+   their sources. Save a draft and reload to confirm restoration.
+7. Continue, select 「PC再起動を案内」 and describe the actual guidance/caller
+   response. No device command is executed by this demo.
+8. Select 「接続できた」 only for the synthetic scenario's stated result, choose
+   「本人からの申告」, and record what the caller reported. Never claim a real
+   connection was restored merely because the demo was completed.
+9. Review, go back to amend a detail, then complete. Leave Knowledge as 特になし.
+10. Inspect 「対応の記録」 and 「対応履歴」. Add a correction with a reason and
+    verify that the original remains available under audit details.
+11. Create another inquiry for the same Person/service. 「過去の関連する対応」
+    shows the previous dated report → guidance → result, including corrections.
+
+For a clean disposable demo use `docs/local-join.md`, including explicit reset,
+runtime password configuration and real identity binding; complete JOIN first.
+Migration alone preserves current Facts and does not silently authorize SUPPORT.
+
+## Verification
+
+- `npm test`: **16 passed** (bootstrap).
+- `npm run test:db`: **59 passed**: 12 bootstrap DB, 19 JOIN, 25 SUPPORT
+  (16 V1 plus 9 V2), and 3 local setup tests.
+- `npm run test:browser`: **5 passed**: 3 unchanged JOIN scenarios and 2 SUPPORT
+  scenarios covering the Golden Human Review, drafts/reload/back, corrections,
+  related history, optional Knowledge provenance, exceptions and Unknowns.
+- `npm run build`, including `npm run typecheck`: passed.
+
+The new migration runs with all earlier migrations and seed in the real PostgreSQL
+test fixture. Runtime writes remain behind shared Origin/CSRF and Contract checks;
+tests verify tenant isolation, append-only grants, retry/stale-save rejection,
+atomic rollback, and editing a V1 account without rewriting its original evidence.
+
+Local verification: the additive V2 migration was also applied to the existing
+Supabase demo without reset, and the real server passed startup checks and listened
+on 8080. Interactive UI startup currently encounters a Windows environment blocker:
+port 5173 lies in the OS TCP excluded range 5146–5245 (IPv4 and IPv6). Vite returns
+`EACCES` on both `::1:5173` and `127.0.0.1:5173`. This is separate from the passing
+browser suite, which uses isolated available ports. No OS exclusions, OAuth redirect
+or credentials were changed. Before interactive Google Human Review, make the
+configured localhost port available through an approved Windows configuration
+change; inspect it with `netsh interface ipv4 show excludedportrange protocol=tcp`.
+Then restart `dev:ui` and use the existing localhost OAuth origin.
+
+Automated browser acceptance uses a test-only IdP through real HTTP session
+routes; Product Owner Google/browser Human Review remains a separate step.
+
+No AI, external search, CMS, workflow editor, Work Graph UI or adjacent service
+features are included. Stop for architecture/UX review after this checkpoint.
