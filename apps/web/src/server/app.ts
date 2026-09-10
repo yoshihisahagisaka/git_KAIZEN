@@ -40,7 +40,10 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
     if (error instanceof DomainError) { res.status(error.status).json({ok:false,error:{code:error.code,message:error.message},correlationId:req.id}); return; }
     if (error instanceof ZodError || (error instanceof SyntaxError && 'body' in error)) { res.status(400).json({ok:false,error:{code:'INVALID_INPUT',message:'入力内容を確認してください。'},correlationId:req.id}); return; }
     // Avoid provider/DB error bodies that can contain SQL parameters or tokens.
-    req.log.error({ correlationId: req.id }, 'Request failed');
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    // SQLSTATE only, never SQL text, detail, parameters or provider response bodies.
+    const databaseCode = typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
+    req.log.error({ correlationId: req.id, databaseCode }, 'Request failed');
     res.status(500).json({ ok: false, error: { code: 'INTERNAL_ERROR', message: '処理を完了できませんでした。' }, correlationId: req.id });
   };
   app.use(errors);

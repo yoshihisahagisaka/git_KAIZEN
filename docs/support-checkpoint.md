@@ -82,10 +82,46 @@ assertions establish visible explanations and behavior, not human understanding.
 
 ## Local review and deployment limits
 
+### Human Review startup blocker correction
+
+The running local server recorded authenticated `GET /api/support` requests as
+HTTP 500. Inspection through `factact_runtime` found the SUPPORT tables absent;
+the underlying query failed with SQLSTATE `42P01` (`support_events` missing).
+Migration `20260910000300_support_slice.sql` had not been applied to the existing
+local database. Its existing Contract Profile also lacked SUPPORT scope: applying
+the migration alone would not authorize the review flow. This was a local setup
+gap, not an RLS defect or an unwired SUPPORT route.
+
+The additive migration was applied and `db:prepare-support` created the explicit
+dedicated demo service. The original JOIN contracts, pending entries, completed
+Work, active Person–Device Relation and verified Google binding were retained.
+The server restarted with the schema guard and SUPPORT services. Runtime access
+remains `factact_runtime`; SUPPORT RLS remains enabled and forced.
+
+Fix verification: `npm test` **16 passed**; `npm run test:db` **50 passed**
+(12 bootstrap, 19 JOIN, 16 SUPPORT, 3 local setup); `npm run test:browser`
+**4 passed** (3 JOIN, 1 cross-flow); typecheck/build passed. The added setup tests
+cover fresh migrations/seed, idempotent preparation of an existing unscoped demo
+without changing its original contract/bindings, and rejection of missing schema.
+
+In the actual local database, application commands using the already bound
+Operator completed a clearly labeled synthetic SUPPORT inquiry against the
+existing JOIN-confirmed PC-0073 Relation, retained four Unknowns and created only
+a Knowledge candidate. No new PC Fact or Change was fabricated. Automated browser
+coverage uses the real HTTP application with a test-only identity provider;
+confirmation in the Product Owner's signed-in Google/Chrome session remains a
+separate Human Review step. No session or authentication bypass was introduced.
+
 The existing local database is not reset or silently authorized by this checkpoint.
 `npm run db:migrate` applies the additive schema, but existing Contract Profiles
 without `support.enabled` and `support.executeRoles` continue to deny SUPPORT.
 Do not rewrite a historical Contract Profile in place to enable the new scope.
+
+Human Review setup correction: on an existing local demo run `db:migrate`, then
+the explicit `db:prepare-support` administration command, then restart the app/UI.
+This preserves original contracts and JOIN data by creating a dedicated authorized
+SUPPORT service when needed. See `local-join.md` for the complete non-reset path.
+The application now checks required schema objects before listening.
 
 For a disposable demo, follow the explicit reset/password/real Google binding
 procedure in `local-join.md`. The fresh seed contains the bounded SUPPORT scope.

@@ -4,7 +4,15 @@ import type {SupportRepository,SupportUnitOfWork} from './support-ports.js';
 export class SupportQueries {
  constructor(private uow:SupportUnitOfWork){}
  private run<T>(a:Operator,fn:(r:SupportRepository)=>Promise<T>){return this.uow.run(a.tenantId,async r=>{found(await r.core.operator(a.id));return fn(r);},true);}
- list(a:Operator){return this.run(a,async r=>({people:await r.core.people(),services:await r.core.services(),inquiries:await Promise.all((await r.events()).map(async e=>({event:e,person:found(await r.core.recipientPerson(e.serviceRecipientId)),work:await r.workForEvent(e.id)})))}));}
+ list(a:Operator){return this.run(a,async r=>{
+  const now=new Date().toISOString();
+  const services=[];
+  for(const service of await r.core.services()) {
+    const contracts=await r.core.effectiveContracts(service.id,now);
+    if(contracts.length===1&&contracts[0]?.configurationJson.support?.enabled) services.push(service);
+  }
+  return {people:await r.core.people(),services,inquiries:await Promise.all((await r.events()).map(async e=>({event:e,person:found(await r.core.recipientPerson(e.serviceRecipientId)),work:await r.workForEvent(e.id)})))};
+ });}
  detail(a:Operator,eventId:string){return this.run(a,async r=>{
   const event=found(await r.event(eventId)),person=found(await r.core.recipientPerson(event.serviceRecipientId)),observation=found(await r.observation(eventId)),evaluation=await r.evaluation(eventId),work=await r.workForEvent(eventId);
   const relation=await r.core.currentRelation(person.id);

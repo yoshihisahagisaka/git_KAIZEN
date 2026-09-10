@@ -4,6 +4,7 @@ import { SupportQueries } from '../../../../packages/application/src/support-que
 import pino from 'pino';
 import { loadConfig } from './config.js';
 import { createPool, assertRuntimeRole } from './persistence/database.js';
+import { assertSchemaReady } from './persistence/schema-ready.js';
 import { PgIdentityStore } from './persistence/identity-store.js';
 import { createGoogleProvider } from './auth/oidc.js';
 import { createApp } from './app.js';
@@ -18,6 +19,7 @@ async function main() {
   const pool = createPool(config);
   try {
     await assertRuntimeRole(pool);
+    await assertSchemaReady(pool);
     const provider = await createGoogleProvider(config);
     const uow = new PgJoinUnitOfWork(pool);
     const supportUow = new PgSupportUnitOfWork(pool);
@@ -34,4 +36,4 @@ async function main() {
     throw error;
   }
 }
-main().catch(() => { logger.fatal('Startup failed; check configuration, restricted database role and OIDC availability'); process.exitCode = 1; });
+main().catch(() => { logger.fatal('Startup failed; check configuration, apply pending migrations (npm run db:migrate locally), verify the restricted database role and OIDC availability'); process.exitCode = 1; });

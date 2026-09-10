@@ -35,7 +35,9 @@ or Supabase Auth setup is required. Google OIDC remains server-owned.
    `http://localhost:5173` and use Google login again. This time the real
    application resolves the bound Operator and creates its normal opaque session.
 
-For subsequent starts, use `db:start`, then `dev` and `dev:ui`. Repeat neither
+For subsequent starts (including after pulling code), use `db:start`, then
+`db:migrate`, then `dev` and `dev:ui`. The server checks required schema objects
+at startup and refuses to listen when migrations are missing. Repeat neither
 password rotation nor binding unless the database was reset. Stop application
 terminals with Ctrl+C; `npx.cmd supabase stop` stops local containers while keeping
 their data. Do not append flags that delete data for ordinary shutdown.
@@ -71,3 +73,35 @@ and Timeline. Treat the assignment as a synthetic demo, not a real customer reco
 test-only PostgreSQL. It does not test your Google account or change your demo DB;
 the real Google/browser check above is separate. Never replace Google verification
 with that test IdP for local interactive use.
+
+## Enable SUPPORT on an existing local JOIN demo without resetting it
+
+1. `npm.cmd run db:start`
+2. `npm.cmd run db:migrate` — required after pulling the SUPPORT checkpoint.
+3. `npm.cmd run db:prepare-support` — explicit local administration using the
+   local Supabase administrative connection. If the original demo contract already
+   enables SUPPORT, this is a no-op. Otherwise it creates a dedicated
+   `情シスKAIZEN（問い合わせデモ）` service and scoped Contract Profile, with an audit
+   entry. It never rewrites the original contract or closes its effective period,
+   so unfinished JOIN entries remain usable. Repeating the command is safe.
+4. Restart `npm.cmd run dev` and `npm.cmd run dev:ui`. Keep the existing `.env`,
+   runtime password, Google binding and local data.
+5. Sign in normally, open 「問い合わせ」, select the offered authorized service,
+   and record the synthetic VPN inquiry for 田中 一郎. The existing JOIN-confirmed
+   PC-0073 should appear without entering a PC value again. Follow the confirmation,
+   guidance, reference-knowledge and completion steps in document 19.
+
+The SUPPORT service picker lists only active services with one effective Contract
+Profile explicitly enabling SUPPORT. Command-side role and Contract checks still
+apply. An empty picker requires contract setup; it is not solved by relaxing RLS.
+
+A clean demo instead follows the explicit reset and binding procedure above. Its
+seed already includes SUPPORT scope, so `db:prepare-support` changes nothing.
+Generate the Person–Device Fact through JOIN before reviewing SUPPORT. Do not reset
+an existing review database just to apply migrations.
+
+For diagnosis, inspect `/api/support` in the signed-in browser Network panel. An
+unauthenticated command-line request correctly returns 401. Server request errors
+record correlation ID and SQLSTATE only (for example `42P01` for a missing table),
+without SQL parameters, cookies or credentials. `/healthz` on older builds only
+proved that the server was listening; it did not prove migrations were current.
