@@ -1,5 +1,25 @@
 # SUPPORT Human-usable V2 checkpoint
 
+## Round 3 Phase 1 notice — design update only
+
+更新理由（2026-09-11）: Human Review Round 3により、登録Factと今回対象の区別、
+FACT Confirmation / Situation Triageの分離、未解決Workの継続・Ownership、
+My/Team/Follow-up Views、Human Knowledge Reviewを正本へ反映した。
+[docs/17のRound 3原則](17-factact-ux-translation-layer.md)と
+[docs/18のProduct原則](18-operator-work-context-v1.md)を以後の設計の基準とする。
+[21項目のCore Fit/Gap・Phase 2案](support-round3-core-fit-gap.md)を追加した。
+
+以下に記録されたV2の4段階操作・テスト結果は過去checkpointの実装記録であり、
+Round 3の実装完了を意味しない。今回のPhase 1でUI/API/Domainコード/schemaは変更しない。
+特に現行V2は登録PCを表示するだけで今回対象を構造化確認できず、未解決結果でも
+completion操作がWorkを閉じる。これを次Phaseで修正する計画とし、既存データを
+対象確認済みに自動backfillしたり、過去の完了を推測で再解釈したりしない。
+
+Knowledge demo dataの文字化けはHuman Review指摘として次Phaseの調査・修正対象に登録。
+Historyに内部作成/担当決定イベントを並べる現在の表示も、業務変化→Audit→Technical
+の3層へ見直す。元データは保持する。新Core Objectは追加せず、migrationも実行しない。
+Phase 2はProduct Owner承認後のみ開始する。
+
 The operator follows 確認 → 対応 → 結果確認 → 完了前レビュー. Confirmed PC context
 comes from JOIN; there is no PC input. Start and standard guidance need no typed
 reason. Exceptions do. Results retain caller/direct-observation/unknown source;

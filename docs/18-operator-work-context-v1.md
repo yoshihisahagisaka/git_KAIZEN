@@ -473,8 +473,9 @@ the existing Person Context, JOIN evidence source, previous SUPPORT history and
 Knowledge. Modal close/Escape restores focus and preserves unsaved Work inputs.
 
 The right-hand reference area summarizes caller Observation and verified PC Fact.
-Unknowns and longer references are available on demand. The current PC is always
-resolved from the existing Relation; no copied SUPPORT device field is introduced.
+Unknowns and longer references are available on demand. The registered current PC
+is resolved from the existing Relation; it is not proof of this Work's target PC.
+Round 3 below requires a separate explicit target confirmation, not a copied assignment.
 The same underlying Event/Evidence/Record supports both readable history and
 separately expandable Audit. Raw technical provenance does not replace the story
 of who received which service, what was checked/done, and what happened.
@@ -483,3 +484,60 @@ For standard guidance, structured action/result/source values are sufficient
 without duplicate narrative. Only meaningfully missing information requires
 supplementary text. See section 17 of `17-factact-ux-translation-layer.md` and the
 Human Review amendment in `support-v2-checkpoint.md`.
+
+## 13. Round 3: applicability, continuity and Progressive Verification
+
+更新理由（2026-09-11）: 既存の確認済み情報を今回のWorkへ無条件に適用しないこと、
+未解決Workを責任付きで継続することをHuman Reviewで確定した。
+この節は次実装のProduct設計であり、現在のV2に実装済みという宣言ではない。
+詳細な[21項目のFit/Gap](support-round3-core-fit-gap.md)を合わせて参照する。
+
+**Known Fact is context, not proof that the same Fact applies to the current event.**
+確認済みのFACTがあっても、それが今回の事象に当てはまるとは限らない。
+登録Person USES Deviceと、確認したCurrent Work target Deviceは異なる関係である。
+前者のPC番号をコピーせず候補表示し、後者は対象ID・確認者・時点・根拠・信頼性を持つ
+既存Relation / Evidenceの考え方で接続する。対象確認は貸与変更を意味しない。
+未確認の候補は対象Factではない。後日の登録変更でも過去の対象確認は書き換えない。
+
+Target候補は「登録PC」「別の貸与PC」「持込みPC」「特定できない」。初期選択なし。
+別PCならDevice検索と登録利用者の参照を提供する。不一致は表示し、原因を解釈しない。
+BYODはサポート範囲判定とは別。識別できない場合はObservationに留め、架空のDeviceを
+生成しない。Registry修正が必要なら既存Authority / Change / Verify / Commitを経る。
+別の是正Workが必要なら既存Work間Relationの方向性を利用する。実装にWorkRelation
+テーブルが既にあるとは限らないため、現在の制約はFit/Gapで区別する。
+
+FACT ConfirmationはWorkと対象Entityを構造化して接続する。Situation Triageは
+自由記述と任意の確認観点でHumanの理解を助ける。全項目必須・固定順序・固定回数なし。
+標準選択は記録として再利用し、補足のためだけに同じ事実を再入力させない。
+Pattern / Knowledgeは適用範囲・承認状態・出典を表示する。デモ手順はデモと明示する。
+
+Workの継続ではAction ActorとWork Ownerを分ける。今回の対応終了だけでCloseしない。
+未解決ならNext Action、Owner、Due / Follow-up、待ち先・理由やEscalation文脈を保持する。
+Waitingは責任の消失ではなく、Ownerを保持する継続の状態である。正式引継ぎのみ
+明示的なOwner変更を行い、前後の担当者・変更者・日時・理由を監査可能にする。
+
+My Work / Team Work / フォローが必要 / Service Owner Viewは同じWorkのProjection。
+フォロー理由は期限・再確認日・最後の有意味なAction・回答受領などから決定論的に導出する。
+単なる下書き保存で「進展あり」と見なして長期停止を隠さない。
+存在しないDueや回答受領を生成せず、欠落と期限超過を区別する。放置Statusは作らない。
+
+Triage→Action→Resultの経験をHumanが明示選択して既存Knowledge Candidateへ送る。
+元の記録への参照を保持し、承認前はKnowledgeとして適用しない。Human Reviewでは
+適用条件・顧客固有性・機微情報を確認する。承認後も元Workを破壊しない。
+
+### BUILDのProduct実装原則
+
+**BUILDでFACTを完成させるのではない。運用によってFACTを確認・更新できる状態をBUILDする。**
+Excel / MDM / SaaS等からの取り込みは、古い・未確認・不完全・矛盾した情報を含み得る。
+取り込み元、観測時点、Reliability、Evidence source、Unknownを保持して開始できるようにする。
+取り込んだだけでVERIFIEDとしない。完全台帳の強制でも、最低限のSecurity / Authority /
+tenant・Service対象範囲の確認を省くことでもない。
+
+Imported / Registry information → Current Work Observation → Difference →
+Human Confirmation → Decision / Change → verified new FactというProgressive
+Verificationを支える。Knowledge Stateの確認と現実の変更を混同せず、古いRelationは
+有効期間を終了して保持する。この原則のためにBusiness Laneの仕様や外部連携を拡張しない。
+
+Historyは業務の意味、Auditは明示的な監査閲覧、Technical Detailはその内部の技術情報。
+同じデータを再利用し、入力中Workから離脱しない。新しいTriage / Follow-up / Stale /
+Mismatch / Team / Session / Bridge / Workflow Definition Objectは導入しない。

@@ -583,8 +583,9 @@ This document is the canonical UX translation rule for JOIN and should be reused
 These principles are confirmed by SUPPORT Human Review and govern the V2
 translation. They do not introduce a Core Object, Work type or Bridge concept.
 
-- **Main Work first:** 確認 → 対応 → 結果確認 → 完了前レビュー is the primary
-  input and decision area. Show the job, not the database.
+- **Main Work first:** 確認 → 対応 → 結果確認 → 完了前レビュー is the bounded V2
+  presentation, not a mandatory workflow for all SUPPORT. Round 3 below defines
+  the future flexible execution pattern. Show the job, not the database.
 - **Context stays within Work:** Person, current verified relations, prior Work,
   procedure and Knowledge references open in a modal or drawer. Keep the Work
   mounted and its input intact. Closing returns focus and the operator to the
@@ -608,3 +609,97 @@ translation. They do not introduce a Core Object, Work type or Bridge concept.
 Preserve draft/reload/back, stale-save rejection, append-only corrections and
 original Evidence/Action, optional Knowledge, tenant isolation, Contract Authority,
 Origin/CSRF and provenance. There is no AI or external search in this slice.
+
+## 18. SUPPORT Human Review Round 3 — canonical principles
+
+更新理由（2026-09-11）: Human Reviewで、登録済みFactの今回の対象への自動適用、
+一次対応終了とWork Closeの混同、内部イベント中心の履歴が問題と確認された。
+この節はProduct原則として確定する。実装済みという意味ではない。
+以前の「確認済みPCを聞き直さない」「固定の4ステップ」は、以下の意味に限定する。
+Phase 1はドキュメント更新のみ。[適合性分析とPhase 2案](support-round3-core-fit-gap.md)を参照。
+
+### A–F: 現実との接続と柔軟な切り分け
+
+**A. Known Fact != Current Context Fact.**
+Known Fact is context, not proof that the same Fact applies to the current event.
+確認済みのFACTがあっても、それが今回の事象に当てはまるとは限らない。
+田中さんの登録利用PCがPC-0073でも、今回の問い合わせ対象は未確認である。
+登録Factを候補・根拠として提示し、今回の対象には初期選択しない。
+「既存Factを再入力させない」と「今回その対象かを確認する」は両立する。
+
+**B. FACTACTは現時点で分かっているFACTを扱う。**
+登録情報、今回の確認、本人の申告、Unknownの時点・適用範囲・信頼性を分ける。
+本人が述べただけの内容を自動的にVERIFIEDへ昇格させない。
+
+**C. FACTACTは不一致を解釈しない。**
+登録PC=PC-0073、今回確認した対象=PC-0128、登録利用者=佐藤さんであれば、
+その根拠と「登録されているPCと一致しません」を示す。台帳ミス、取り違え、
+不正利用、正式貸与変更などの原因は推測しない。Humanが確認した内容を
+Observation / Evidence / Decisionとして残す。Registry是正には既存の
+Authority → Decision / Change → Verify → Commitを使い、過去Relationを保持する。
+
+**D. FACT ConfirmationとSituation Triageを分ける。**
+FACT Confirmation connects the Work to reality.
+Situation Triage supports human understanding of the problem.
+前者は今回の対象Person / Device / Account / Applicationを確認すること。
+後者は発生時期・表示・通信可否・環境・直前変更などから状況を理解すること。
+
+**E. FACT Confirmationは構造化。Situation Triageは柔軟。**
+対象Entityへの接続をTriage自由記述に埋め込まない。登録PC、別の貸与PC、
+持込みPC、特定できないPCを区別する。別PCは管理番号からDeviceを検索する。
+特定不能ならOS・メーカー・機種・外観・場所等をObservationとして残し、
+既存Deviceへ推測で紐付けない。持込みPCであることとサポート可否は別判断であり、
+Contract / Rule / Humanの根拠なしに対象外にしない。
+
+**F. 問い合わせ対応を固定Workflowにしない。**
+Target Identification / Fact Confirmation / Situation Triage / Action / Verifyは
+支援Patternであり、順番・回数・全項目必須を定義するWorkflowではない。
+Triageは自由記述を中心に、必要な観点だけを参照する。確認・Action・結果を
+繰り返せることを前提とし、巨大フォームや全分岐Wizardを作らない。
+標準の構造化Action / Result / Sourceを自由記述で重複入力させない原則も維持する。
+
+### G–L: 完了までの責任と運用による確認
+
+**G. 今回の対応終了 != Work Close.** 電話・チャットの終了、未解決、追加調査、
+利用者・ベンダー・他部署待ち、後日作業は、それだけではWork完了ではない。
+同じ未完了WorkにNext Action / Owner / Due・Follow-up / 待ち・Escalationの文脈を残す。
+Workは一つ。完了まで追う。独立した是正作業が必要な場合の関連Workは別であり、
+新しいMismatch種別やBridge Workを導入しない。
+
+**H. Waiting != No Owner.** 回答待ちでもOwnerと次回確認責任を消さず、一覧に残す。
+例: 利用者待ち / 回答がなければ再連絡 / Owner A / Follow-up 2026-09-13。
+
+**I. 放置はStatusではなくFACTから検出する。** Open + Next Action欠落、Owner欠落、
+期限超過、Waiting再確認日超過、長期間Actionなし、回答受領後未再開等を、
+Fact / Rule / Timeから説明可能な「フォローが必要」Viewとして導出する。
+データが存在しない回答受領や期限を推測で補わない。
+
+**J. Ownerは明確にするが、仕事をOwnerに閉じ込めない。**
+権限のあるBがOwner AのWorkにActionを実行してもOwnerはAのまま。
+正式引継ぎA→Bは別の明示的操作として履歴を残す。My Work / Team Work /
+フォローが必要 / Service Ownerの停滞・負荷Viewは同じWorkから作り、
+チーム表示がtenant・Service・Authority境界を拡大しないこと。
+
+**K. Workの経験はHuman Reviewを経てKnowledge化する。**
+Triage記録はまず今回のWork Record。有用だとHumanが選んだ内容だけを、
+元Work・Evidence・Action・Resultの出典を保つ既存Knowledge Candidateにする。
+Candidate != Approved Knowledge。再利用価値、適用条件、顧客固有性、機微情報を
+Humanが確認する。AIは候補化・承認・Rule昇格を勝手に実行しない。
+
+**L. BUILD時に完全な台帳を要求しない。**
+運用によるProgressive Verificationを可能にするProduct原則としてdocs/18に定義する。
+Security / Authority等、開始前に必須の条件までUnknownでよいという意味ではない。
+
+### History / Audit / Technical Detail
+
+通常Historyは意味のある業務変化を表示する（入社予定登録、PC準備中、PC準備完了、
+PC引渡し済み等）。「記録を作成」「担当を決定」「反映内容を作成」等の内部通知を
+大量表示しない。実際の引継ぎなど業務上必要な変化は、人間に分かる言葉で表示する。
+監査は明示的展開、その中のTechnical DetailでUUID・Event code・raw payload・
+Contract Profile ID/versionを表示する。元データは削除せずViewだけを分ける。
+Work中の参照は画面内で開き、未保存入力と戻り先を保持する。
+文字化けしたKnowledge demo dataは次の実装Phaseで出典から検証・修正する対象とする。
+
+FACT FIRST、Human Decides / System Records、One Fact, Multiple Views、
+Event → Requirement Evaluation → Work、Action → Change → Verify → Commit、
+Ownership、RLS、Origin/CSRF、訂正履歴を維持する。AI・外部検索・Workflow Builderは追加しない。

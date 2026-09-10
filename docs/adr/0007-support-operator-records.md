@@ -53,3 +53,13 @@ and exception/correction reasons remain required. The Application still validate
 these semantics and atomically persists Evidence/Action plus structured Record.
 Existing record columns, provenance, grants and original records are unchanged.
 Reference dialogs and business/audit projections are Views only, not new objects.
+
+Round 3 Phase 1 design note (2026-09-11): Human Review requires a confirmed Work
+target distinct from the registered Person–Device Relation, repeatable execution
+and unresolved continuation. The single completion path documented above is a V2
+implementation boundary, not a universal SUPPORT lifecycle. Correction must not
+be reused to pretend a new Action occurred. Candidate-only storage is not an
+implemented Knowledge approval flow. See [Core Fit/Gap](../support-round3-core-fit-gap.md)
+for source constraints and required decisions. No ADR lifecycle, code, migration
+or new Core Object is implemented by this documentation amendment; Phase 2 needs
+approval of the data/Authority/confirmation contracts first.
