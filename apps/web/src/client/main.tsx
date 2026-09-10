@@ -27,10 +27,10 @@ function App() {
   return <main>
     <header><strong>FACTACT</strong><span>From Fact to Action.</span></header>
     {loading ? <p role="status">確認しています…</p> : error ? <p role="alert">{error}</p> : session ? <>
-      <p>{session.operator.displayName} / {session.operator.tenantName}</p>
-      <button onClick={() => void logout()}>ログアウト</button>
+      <div className="account"><p>{session.operator.displayName} / {session.operator.tenantName}</p>
+      <button className="secondary" onClick={() => void logout()}>ログアウト</button></div>
       <JoinUI csrf={session.csrfToken} operator={session.operator}/>
-    </> : <><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href="/auth/login">Googleでログイン</a></>}
+    </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href="/auth/login">Googleでログイン</a></div>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

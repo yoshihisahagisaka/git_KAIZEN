@@ -118,6 +118,9 @@ gates, and [bootstrap setup and reuse provenance](docs/bootstrap.md) for local s
 
 For interactive use with real Google login, follow [local JOIN startup and reset](docs/local-join.md).
 
+The operator-language UI and its verification limits are described in the
+[Human-usable JOIN UX checkpoint](docs/human-usable-join-checkpoint.md).
+
 **Product/UX architecture → implementation-ready specification → first vertical Golden Flow.**
 
 Before coding a feature, read `docs/99-ai-development-context.md` and the canonical documents relevant to that feature.
