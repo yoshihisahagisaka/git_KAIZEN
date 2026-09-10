@@ -19,6 +19,8 @@ A workflow is not successful merely because the user reached the end. It is succ
 
 - what is happening;
 - why the action is needed;
+- **why this task is assigned to them;**
+- **who owns the task and who requested/triggered it;**
 - what will change if they continue;
 - what has already been confirmed;
 - what is still unknown;
@@ -44,6 +46,7 @@ FACTACT's internal domain model is intentionally precise:
 Event
 → Requirement Evaluation
 → Work
+→ Ownership / Assignment
 → Action
 → Change
 → Verify
@@ -57,12 +60,15 @@ Operators should not be required to learn these terms before they can use the pr
 The UI should express the operator's real-world task instead:
 
 ```text
-入社予定がある
-→ 何を準備する必要がある？
-→ PCが必要
-→ どのPCを用意する？
-→ 実際に準備・引き渡した？
-→ 内容を確認する
+田中さんの入社予定が登録される
+→ 必要な準備を確認する
+→ PC準備が必要と分かる
+→ PC準備という「やること」が発生する
+→ 担当チーム／担当者が決まる
+→ 「あなたの担当」として届く
+→ 利用可能なPCから候補を選ぶ
+→ 実際に準備・引き渡す
+→ 引き渡した事実を確認する
 → 利用PCとして管理情報に反映する
 → 完了
 ```
@@ -84,6 +90,10 @@ The internal chain remains unchanged. Only the user-facing language and interact
 | ALREADY_SATISFIED | 準備済み | |
 | DECISION_REQUIRED | 判断が必要 | |
 | Work | やること / 対応 | Use Work only in advanced/admin surfaces if needed |
+| Work Owner | この対応の担当 / 担当者 | Show clearly on operator task surfaces |
+| Service Owner | このサービスの責任者 | Usually secondary/expandable |
+| Assignee | 作業担当 | Distinguish from accountable Work Owner when necessary |
+| Assignment | 担当を決める / あなたの担当になりました | Explain source where useful |
 | Next Action | 次にやること | Primary operator anchor |
 | Action | 実施内容 / 作業 | Prefer specific verb: PCを準備する, アカウントを作成する |
 | Change Proposal | 反映する内容を確認 | Avoid teaching “proposal” unless useful |
@@ -103,7 +113,65 @@ Advanced users, administrators, auditors and developers may access exact interna
 
 ---
 
-# 4. Action Labels Must Describe Consequences
+# 4. Ownership Context — Why am I doing this?
+
+`Ownership Always` is not only a backend invariant. It is an operator UX requirement.
+
+A task must not simply appear with an action button. The operator must be able to answer:
+
+```text
+WHY THIS WORK?      なぜこの対応が必要？
+WHY ME?             なぜ私が担当？
+WHO OWNS IT?        誰が責任を持っている？
+WHAT NEXT?          次に何をすればいい？
+```
+
+Canonical JOIN story:
+
+```text
+入社予定
+→ COMPANY_PC が対応必要
+→ PC準備のWorkが発生
+→ Ownership / Assignment
+→ Operatorの「自分のやること」に届く
+→ PC選定・準備へ進む
+```
+
+Assignment may be produced by different mechanisms without changing the operator experience:
+
+1. **Leader assignment** — リーダーが担当者を指定する。
+2. **Team rule** — 「PC準備は情シス端末チーム」のようなルールでOwner候補が決まる。
+3. **Rotation / duty** — 当番・担当期間によって割り当てられる。
+4. **Self-take** — 未担当キューから権限のあるOperatorが引き取る。
+5. **Progressive automation** — 十分に統制されたルールにより自動割当される。
+
+The first JOIN demo may use a deterministic seeded/current Operator for implementation convenience, but the UI must not make this look like unexplained assignment.
+
+A Work screen should normally show, near the top:
+
+```text
+田中 一郎さんのPC準備
+
+あなたの担当です
+担当: 山田 太郎
+依頼元: 田中さんの入社対応
+担当になった理由: 情シス端末担当として割り当て
+期限: 9月30日 17:00
+
+なぜこの対応が必要？
+入社日に会社PCが必要と確認されています。
+
+次にやること
+利用するPCを選ぶ
+```
+
+If the assignment source is not known, show **「担当になった理由: 未確認」** rather than inventing a leader or rule.
+
+A leader/admin surface may expose assignment controls, but a normal operator flow should not require learning `Work Owner`, `Assignee`, EODA, or Authority terminology.
+
+---
+
+# 5. Action Labels Must Describe Consequences
 
 Buttons must answer:
 
@@ -134,25 +202,31 @@ Generic “次へ” may be used only where the next step is already unambiguous
 
 ---
 
-# 5. Before-Action Explanation
+# 6. Before-Action Explanation
 
-For consequential actions, the operator should see four things before pressing the button:
+For consequential actions, the operator should see five things before pressing the button:
 
 ```text
-WHAT   何をする？
-WHY    なぜ必要？
-CHANGE 何が変わる？
-TRUST  何を根拠にしている？
+CONTEXT 誰の・何の対応？
+WHAT    何をする？
+WHY     なぜ必要？ / なぜ自分の担当？
+CHANGE  何が変わる？
+TRUST   何を根拠にしている？
 ```
 
 Example:
 
 ```text
+対応
+田中 一郎さんの入社PC準備
+あなたの担当です
+
 次にやること
 田中さんへPC-0073を引き渡す
 
 なぜ？
 入社日に会社PCが必要と確認されています。
+あなたはこのPC準備の担当者です。
 
 この操作のあと
 実際に引き渡したことを確認すると、PC-0073を田中さんの利用PCとして管理情報へ反映できます。
@@ -166,15 +240,16 @@ The system must not visually suggest that a proposed or selected value is alread
 
 ---
 
-# 6. Progressive Disclosure
+# 7. Progressive Disclosure
 
 Do not hide strict semantics; layer them.
 
 ## Level 1 — Operator language
 
-Shows only the real-world task and consequence.
+Shows only the real-world task, ownership and consequence.
 
 ```text
+あなたの担当
 PCを準備する
 実際に引き渡したことを確認
 利用PCとして反映
@@ -186,6 +261,7 @@ Expandable explanation:
 
 ```text
 なぜこの対応が必要？
+なぜ自分が担当？
 確認根拠
 現在わかっている情報
 未確認の情報
@@ -197,6 +273,8 @@ For expert users:
 
 ```text
 Requirement Evaluation
+Work Owner / Assignee
+Assignment source
 Change ID
 Source Work
 Contract Profile version
@@ -209,7 +287,7 @@ Normal operators should not need Level 3 to work safely.
 
 ---
 
-# 7. Progress Must Reflect User Intent, Not Internal State Machine
+# 8. Progress Must Reflect User Intent, Not Internal State Machine
 
 Bad progress indicator:
 
@@ -225,17 +303,20 @@ Preferred JOIN progress:
 
 ```text
 1. 必要な準備を確認
-2. PCを用意
-3. 引き渡しを確認
-4. 管理情報に反映
-5. 入社準備完了
+2. 担当を決める
+3. PCを用意
+4. 引き渡しを確認
+5. 管理情報に反映
+6. 入社準備完了
 ```
+
+If assignment has already occurred before the operator opens the Work, the operator view may collapse step 2 into contextual text such as **「あなたの担当です」** rather than forcing an extra workflow step.
 
 The internal state machine remains available for audit and implementation.
 
 ---
 
-# 8. Do Not Reward Blind Progression
+# 9. Do Not Reward Blind Progression
 
 FACTACT must avoid interactions where the easiest behavior is:
 
@@ -247,14 +328,16 @@ Guardrails:
 2. consequences are shown before the click;
 3. UNKNOWN and VERIFIED states are visually distinct;
 4. a user can see why the action is needed without opening documentation;
-5. no required confirmation checkbox exists only as ritual friction;
-6. confirmation text must describe the reality being attested;
-7. after clicking, the UI must clearly show what changed and what did not;
-8. automated recommendation and authoritative Fact must never look identical.
+5. a user can see why the task belongs to them;
+6. no required confirmation checkbox exists only as ritual friction;
+7. confirmation text must describe the reality being attested;
+8. after clicking, the UI must clearly show what changed and what did not;
+9. automated recommendation and authoritative Fact must never look identical;
+10. progression must not depend on guessing unfamiliar terminology.
 
 ---
 
-# 9. Inventory / Device Assignment UX
+# 10. Inventory / Device Assignment UX
 
 The first demo used deterministic seed Device `PC-0073`. This must not imply that FACTACT arbitrarily assigned a device.
 
@@ -262,6 +345,8 @@ Canonical V1 behavior:
 
 ```text
 会社PCが必要
+→ PC準備WorkのOwner/担当が決まる
+→ 担当者に「利用PCを選ぶ」がNext Actionとして届く
 → 利用可能なPCを表示
 → operator selects a candidate
 → operator performs preparation/assignment
@@ -305,7 +390,7 @@ If required selection facts are UNKNOWN, FACTACT must expose that uncertainty in
 
 ---
 
-# 10. AI Guided Operations Language
+# 11. AI Guided Operations Language
 
 AI should guide work, not teach architecture first.
 
@@ -320,6 +405,7 @@ Prefer:
 
 ```text
 田中さんの入社には会社PCの準備が必要です。
+このPC準備はあなたの担当です。
 利用可能なPCが3台あります。条件を確認して候補を選びますか？
 ```
 
@@ -343,7 +429,7 @@ AI must preserve the core rule:
 
 ---
 
-# 11. State Language
+# 12. State Language
 
 The epistemic model must remain visible without forcing technical vocabulary.
 
@@ -380,7 +466,7 @@ Correct:
 
 ---
 
-# 12. Completion Feedback
+# 13. Completion Feedback
 
 After a consequential action, show:
 
@@ -412,7 +498,7 @@ Do not merely show “Success” or a green toast.
 
 ---
 
-# 13. UX Acceptance Tests
+# 14. UX Acceptance Tests
 
 In addition to domain Golden Tests, every core operator flow should pass these human-comprehension checks.
 
@@ -440,19 +526,29 @@ After completion, the operator can tell what was recorded as confirmed reality a
 ## UX-GT-08
 A recommended device is not presented as automatically or authoritatively assigned before the human/authority boundary allows it.
 
+## UX-GT-09
+Before acting, the operator can explain why the task is assigned to them or see that the assignment reason is unknown.
+
+## UX-GT-10
+The operator can distinguish “this is my responsibility” from “I am merely performing one step” when Work Owner and Assignee differ.
+
 ---
 
-# 14. Design Review Question
+# 15. Design Review Questions
 
 For every operator-facing screen, ask:
 
-> **もしこの用語を初めて見る人でも、説明書なしで「今何が起きていて、次に何をすればよく、その結果何が変わるか」を理解できるか？**
+> **もしこの用語を初めて見る人でも、説明書なしで「今何が起きていて、なぜ自分がこれを担当し、次に何をすればよく、その結果何が変わるか」を理解できるか？**
+
+And:
+
+> **この仕事が自分の画面に現れた理由を説明できるか？**
 
 If not, translation is incomplete.
 
 ---
 
-# 15. Product Principle
+# 16. Product Principle
 
 FACTACT should make correct work easier than ambiguous work.
 
@@ -467,6 +563,7 @@ It is:
 
 ```text
 Understand the real-world situation
+→ understand why this is my responsibility
 → perform the right action
 → FACTACT preserves the correct semantics underneath
 ```
@@ -474,5 +571,9 @@ Understand the real-world situation
 Therefore:
 
 > **ユーザーにDomain Modelを理解させるのではなく、Domain Modelがユーザーを正しい仕事へ導く。**
+
+And:
+
+> **Workがある → Ownerがいる → Ownerには「なぜ自分の仕事なのか」と「次に何をするか」が見える。**
 
 This document is the canonical UX translation rule for JOIN and should be reused by SUPPORT, DEVICE, SaaS, SECURITY, IT_CHANGE and future Service Models.
