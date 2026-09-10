@@ -45,3 +45,11 @@ The wizard is a fixed SUPPORT Service Model procedure, not a builder. No new
 Event-to-Work uniqueness or cardinality constraint is introduced. Existing V1
 single-requirement queries remain bounded projections; future many-to-many
 WorkRelation and multiple requirement/Work execution remain possible.
+
+Human Review amendment: existing `SupportNotes` action/result/source choices are
+the formal operator account; standard action/result supplementary text may be
+empty. Other actions require actual-content text, Unknown results require context,
+and exception/correction reasons remain required. The Application still validates
+these semantics and atomically persists Evidence/Action plus structured Record.
+Existing record columns, provenance, grants and original records are unchanged.
+Reference dialogs and business/audit projections are Views only, not new objects.

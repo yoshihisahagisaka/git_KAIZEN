@@ -75,3 +75,58 @@ routes; Product Owner Google/browser Human Review remains a separate step.
 
 No AI, external search, CMS, workflow editor, Work Graph UI or adjacent service
 features are included. Stop for architecture/UX review after this checkpoint.
+
+## Human Review amendment: keep Work visible and avoid duplicate recording
+
+This amendment supersedes the earlier instruction to repeat standard guidance and
+known result/source selections in free text. It adds no Domain Object, Work type,
+schema migration or Bridge. Canonical principles are recorded in docs 17 and 18.
+
+Main Work stays in the main column; caller report and verified PC are summarized
+in the reference column. Person Context, JOIN confirmation source, previous SUPPORT
+history and Knowledge open in native modal dialogs. Close/Escape restores focus
+and leaves the Work input mounted. The bundled reference is explicitly labeled
+デモ用参考手順 and is not an approved production Procedure.
+
+Business history shows Japanese activities, recipient, checks, actions, results
+and record authors. Audit details separately retain technical event names,
+IDs, snapshots, original Evidence/Action and raw payloads. Existing Person/Work
+queries and records are reused; the UI does not manufacture missing work history.
+
+Standard action + known result + known source may be completed without repeating
+them as prose. Application validation still requires checks, actual content for
+Other guidance, a situation for Unknown results, exception reasons and correction
+reasons. Structured values remain in the append-only Record; the initial Action
+summary and Evidence incorporate their labels/source in the same transaction.
+No caller report or Unknown is promoted to Fact.
+
+### Human Review A–F
+
+1. Start a synthetic SUPPORT inquiry for 田中 一郎. While typing checks, open
+   「対象者の現在の利用状況」. Confirm the Work URL is unchanged, JOIN PC-0073 is
+   reused, and closing restores both input and focus. Repeat with Escape and the
+   demo reference dialog. Save/reload/back must still retain the input.
+2. Open 「過去の関連する対応」. Read the dated caller report → action → result.
+   Open its detailed history, then explicitly expand 「監査用の詳細」 to see raw
+   provenance. Close to return to the current Work; do not use browser Back.
+3. Select 「PC再起動を案内」 and leave 「対応の補足（任意）」 empty. Proceed.
+4. Select 「接続できた」 + 「本人からの申告」 and leave result supplement empty.
+   Review and complete. The choices themselves must appear in the record.
+5. With Other, blank action detail must block advancing; with an unconfirmed
+   result, record its situation. Exceptions and corrections still need reasons.
+6. Inspect readable completion history; technical JSON must be collapsed under
+   the separate Audit view. Correct the account and confirm original Action,
+   Evidence and completion record remain available in Audit and later history.
+
+Human review should assess the information hierarchy at the operator's normal
+viewport, keyboard/focus behavior and whether terminology is understandable.
+Automated tests cannot establish first-time operator comprehension.
+
+Amendment verification: `npm test` **16 passed**; `npm run test:db` **61 passed**
+(12 bootstrap DB, 19 JOIN, 27 SUPPORT, 3 local setup); `npm run test:browser`
+**5 passed** (3 JOIN, 2 SUPPORT); typecheck/build passed. Browser assertions cover
+same-URL Person/PC/procedure/history dialogs, close/Escape/focus restoration,
+unsaved input preservation, hidden raw JSON with opt-in Audit, empty standard
+supplements, required Other/Unknown text, draft reload, back, corrections and
+optional Knowledge provenance. PostgreSQL checks prove empty standard supplements
+still produce linked Evidence/Action/Record and preserve originals on correction.

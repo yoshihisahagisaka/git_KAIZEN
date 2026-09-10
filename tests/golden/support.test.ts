@@ -94,7 +94,7 @@ it('V2 correction preserves original Evidence/Action and surfaces corrected hist
 });
 it('V2 unsupported certainty and unexplained exceptions are rejected',async()=>{
  const {w}=await work();for(const n of [{...notes,resultSource:'UNKNOWN' as const},{...notes,action:'NO_ACTION_REQUIRED' as const},{...notes,action:'OTHER_GUIDANCE' as const}])await expect(s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:n})).rejects.toMatchObject({status:400});
- await s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:{...notes,result:'UNCONFIRMED',resultSource:'UNKNOWN',resultDetails:''}});expect((await q.detail(a,(await intake()).id)).previousWork[0]?.record?.notes.result).toBe('UNCONFIRMED');
+ await s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:{...notes,result:'UNCONFIRMED',resultSource:'UNKNOWN',resultDetails:'本人からの連絡待ち'}});expect((await q.detail(a,(await intake()).id)).previousWork[0]?.record?.notes.result).toBe('UNCONFIRMED');
 });
 it('V2 records honor tenant isolation and current Contract Authority',async()=>{
  const {w}=await work();await s.recordWork(a,w.id,recordInput('DRAFT'));
@@ -112,4 +112,17 @@ it('V2 edits an unfinished V1 account while retaining its original execution evi
  const {e,w}=await work();await s.recordResolution(a,w.id,resolution);const original=await q.detail(a,e.id);
  await s.recordWork(a,w.id,recordInput('DRAFT'));await s.recordWork(a,w.id,recordInput('COMPLETION',1));
  const v=await q.detail(a,e.id);expect(v.work?.status).toBe('COMPLETED');expect(v.evidence).toEqual(original.evidence);expect(v.action).toEqual(original.action);expect(v.records.at(-1)?.notes.actionDetails).toBe(notes.actionDetails);
+});
+it('Human Review C/D: structured action/result/source suffice without repeated free text and survive correction',async()=>{
+ const {e,w}=await work(),input={...recordInput('COMPLETION'),notes:{...notes,actionDetails:'',resultDetails:''}};
+ const record=await s.recordWork(a,w.id,input);const v=await q.detail(a,e.id);
+ expect(v.records[0]?.notes).toEqual(input.notes);expect(v.action?.resultSummary.trim()).toBe('PC再起動を案内');
+ expect(v.evidence?.contentText).toContain('接続できた');expect(v.evidence?.contentText).toContain('CALLER');
+ expect(v.decision?.evidenceId).toBe(v.evidence?.id);expect(v.recordAuthors).toContainEqual({id:a.id,displayName:'開発オペレーター'});
+ await s.recordWork(a,w.id,{...recordInput('CORRECTION',record.revision),notes:{...input.notes,result:'NOT_CONNECTED'}});
+ const corrected=await q.detail(a,e.id);expect(corrected.evidence).toEqual(v.evidence);expect(corrected.action).toEqual(v.action);expect(corrected.records.at(-1)?.notes.result).toBe('NOT_CONNECTED');
+});
+it('Human Review E: Other and Unknown require explanation, not fabricated default evidence',async()=>{
+ const {w}=await work();
+ for(const n of [{...notes,action:'OTHER_GUIDANCE' as const,actionDetails:'',exceptionReason:'標準外の確認が必要'},{...notes,result:'UNCONFIRMED' as const,resultSource:'UNKNOWN' as const,resultDetails:''}])await expect(s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:n})).rejects.toMatchObject({code:'EVIDENCE_REQUIRED'});
 });

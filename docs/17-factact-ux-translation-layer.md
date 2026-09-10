@@ -577,3 +577,34 @@ And:
 > **Workがある → Ownerがいる → Ownerには「なぜ自分の仕事なのか」と「次に何をするか」が見える。**
 
 This document is the canonical UX translation rule for JOIN and should be reused by SUPPORT, DEVICE, SaaS, SECURITY, IT_CHANGE and future Service Models.
+
+## 17. SUPPORT Human Review: Work / Context / Audit
+
+These principles are confirmed by SUPPORT Human Review and govern the V2
+translation. They do not introduce a Core Object, Work type or Bridge concept.
+
+- **Main Work first:** 確認 → 対応 → 結果確認 → 完了前レビュー is the primary
+  input and decision area. Show the job, not the database.
+- **Context stays within Work:** Person, current verified relations, prior Work,
+  procedure and Knowledge references open in a modal or drawer. Keep the Work
+  mounted and its input intact. Closing returns focus and the operator to the
+  same Work without navigation or re-entry. Reuse existing tenant-scoped Views.
+- **Business history and Audit are distinct Views:** normal history shows when,
+  recipient, work, checks, actions and results in ordinary Japanese. Technical
+  event names, UUIDs, contract snapshots and raw JSON are available only through
+  explicit audit expansion. Keep the original records; never invent activities
+  such as account creation when the stored data does not contain them.
+- **Structured choices are records:** a selected standard Action, Result and
+  Source constitute the operator's reviewed account. Do not demand the same
+  statement again as prose. Additional text is optional unless Other, Unknown,
+  contradiction, deviation or an exception leaves the meaning incomplete.
+- **Evidence remains typed:** a caller-reported connection result stays a caller
+  report. A selected successful result is not permanent-resolution proof and
+  does not grant VPN eligibility or mutate a Registry Fact.
+- **Procedure honesty:** bundled content must say デモ用参考手順 and must not
+  imply operational approval. No generic Workflow Builder or Procedure Editor
+  is needed for this translation.
+
+Preserve draft/reload/back, stale-save rejection, append-only corrections and
+original Evidence/Action, optional Knowledge, tenant isolation, Contract Authority,
+Origin/CSRF and provenance. There is no AI or external search in this slice.

@@ -16,8 +16,10 @@ export class SupportCommands {
   requireCondition([n.checks,n.actionDetails,n.resultDetails,n.exceptionReason,input.correctionReason].every(s=>typeof s==='string'&&s.length<=1000),'INVALID_INPUT','各欄は1000文字以内で入力してください。',400);
   requireCondition(input.kind==='CORRECTION'?w.status==='COMPLETED':w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応には訂正を追加してください。');
   if(input.kind!=='DRAFT'){
-   requireCondition(n.actionDetails.trim()&&n.checks.trim(),'EVIDENCE_REQUIRED','確認した内容と、実際に行ったことを入力してください。',400);
-   requireCondition(n.result==='UNCONFIRMED'||(n.resultSource!=='UNKNOWN'&&n.resultDetails.trim()),'EVIDENCE_REQUIRED','結果を誰がどう確認したか入力してください。',400);
+   requireCondition(n.checks.trim(),'EVIDENCE_REQUIRED','今回確認した内容と根拠を入力してください。',400);
+   requireCondition(n.action!=='OTHER_GUIDANCE'||n.actionDetails.trim(),'EVIDENCE_REQUIRED','その他の対応は実施内容を補足してください。',400);
+   requireCondition(n.result==='UNCONFIRMED'||n.resultSource!=='UNKNOWN','EVIDENCE_REQUIRED','結果の確認元を選択してください。',400);
+   requireCondition(n.result!=='UNCONFIRMED'||n.resultDetails.trim(),'EVIDENCE_REQUIRED','結果が未確認の場合は、未確認の内容・状況を補足してください。',400);
    requireCondition(!['NO_ACTION_REQUIRED','OTHER_GUIDANCE'].includes(n.action)||n.exceptionReason.trim(),'REASON_REQUIRED','追加対応なし・標準外の対応には理由を入力してください。',400);
   }
   if(input.kind==='CORRECTION') {

@@ -45,6 +45,14 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .support-wizard fieldset { border:0; padding:0; min-width:0; }
 .support-summary dt { font-weight:600; margin-top:14px; }
 .support-summary dd { margin:4px 0 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.context-dialog { width:min(760px,92vw); max-height:85vh; overflow:auto; border:1px solid #80989f; border-radius:10px; padding:24px; color:#203c43; }
+.context-dialog::backdrop { background:rgb(15 36 40 / 45%); }
+.context-dialog header { display:flex; justify-content:space-between; align-items:center; padding:0; gap:16px; }
+.context-dialog h2 { margin:0; }
+.audit-detail { border-top:1px solid #d5e1e3; padding-top:12px; }
+.support-workspace > aside { font-size:14px; }
+.support-workspace > aside button { display:block; width:100%; text-align:left; }
+.support-workspace > aside .context-dialog button { width:auto; }
 [role=alert] { color:#922b1c; background:#fff2ed; padding:12px; border:1px solid currentColor; }
 .login { max-width:600px; margin:60px auto; padding:30px; background:white; }
 @media(max-width:1050px) { .workspace { grid-template-columns:1fr; } }

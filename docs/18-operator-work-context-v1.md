@@ -464,3 +464,22 @@ Therefore:
 And the operator experience should remain:
 
 > **何をするかだけでなく、なぜ・どうやって・何を根拠に・何が変わるかまで、一つの仕事の中で分かる。**
+
+## 12. Confirmed SUPPORT Human Review translation
+
+Operational Context is a supporting View, not a reason to leave the active Work.
+The SUPPORT screen keeps its Main Work mounted while native modal dialogs display
+the existing Person Context, JOIN evidence source, previous SUPPORT history and
+Knowledge. Modal close/Escape restores focus and preserves unsaved Work inputs.
+
+The right-hand reference area summarizes caller Observation and verified PC Fact.
+Unknowns and longer references are available on demand. The current PC is always
+resolved from the existing Relation; no copied SUPPORT device field is introduced.
+The same underlying Event/Evidence/Record supports both readable history and
+separately expandable Audit. Raw technical provenance does not replace the story
+of who received which service, what was checked/done, and what happened.
+
+For standard guidance, structured action/result/source values are sufficient
+without duplicate narrative. Only meaningfully missing information requires
+supplementary text. See section 17 of `17-factact-ux-translation-layer.md` and the
+Human Review amendment in `support-v2-checkpoint.md`.
