@@ -7,6 +7,7 @@ import { withTenant } from './database.js';
 
 const roles = z.array(z.enum(['ADMIN','OPERATOR','REVIEWER'])).min(1);
 const configuration = z.strictObject({
+  support: z.strictObject({ enabled:z.boolean(), executeRoles:roles }).optional(),
   requirements: z.strictObject({ COMPANY_PC: z.strictObject({ policy: z.enum(['REQUIRED','NOT_APPLICABLE','DECISION_REQUIRED']), basis: z.string().min(1) }) }),
   deviceAssignment: z.strictObject({ executeRoles: roles, reviewRoles: roles, allowSelfReview: z.boolean() }),
 });
@@ -20,7 +21,7 @@ export class PgJoinUnitOfWork implements JoinUnitOfWork {
     return withTenant(this.pool, tenantId, client => fn(new PgJoinRepository(client, tenantId)),readOnly);
   }
 }
-class PgJoinRepository implements JoinRepository {
+export class PgJoinRepository implements JoinRepository {
   constructor(private readonly db: PoolClient, private readonly tenantId: string) {}
   private async one<T>(sql: string, args: unknown[] = []): Promise<T | null> { const { rows } = await this.db.query(sql,args); return rows[0] ? row<T>(rows[0]) : null; }
   private async many<T>(sql: string, args: unknown[] = []): Promise<T[]> { return (await this.db.query(sql,args)).rows.map(r => row<T>(r)); }
@@ -58,7 +59,7 @@ class PgJoinRepository implements JoinRepository {
   insertEvaluation(evaluation: Evaluation) { return this.insert('requirement_evaluations',{...evaluation,evaluatedByType:'RULE'}); }
   async markEvaluated(eventId: string) { await this.db.query("update factact.join_events set status='EVALUATED' where id=$1",[eventId]); }
   insertWork(work: Work) { return this.insert('work',{...work, workType:'EVENT_TASK',lane:'CHANGE'}); }
-  work(id: string, lock=false) { return this.one<Work>(`select * from factact.work where id=$1 ${lock?'for update':''}`,[id]); }
+  work(id: string, lock=false) { return this.one<Work>(`select * from factact.work where lane='CHANGE' and id=$1 ${lock?'for update':''}`,[id]); }
   async saveWorkProgress(w: Work) {
     await this.db.query('update factact.work set status=$2,outcome=$3,work_owner_operator_id=$4,next_action=$5,next_action_owner_operator_id=$6,updated_at=$7,closed_at=$8 where id=$1',
       [w.id,w.status,w.outcome,w.workOwnerOperatorId,w.nextAction,w.nextActionOwnerOperatorId,w.updatedAt,w.closedAt]);
@@ -89,5 +90,5 @@ class PgJoinRepository implements JoinRepository {
   events() { return this.many<JoinEvent>('select * from factact.join_events order by created_at desc,id'); }
   devices() { return this.many<Device>("select d.* from factact.devices d where d.device_status='AVAILABLE' and not exists(select 1 from factact.relations r where r.to_entity_id=d.id and r.tenant_id=d.tenant_id and r.status='ACTIVE') order by asset_tag"); }
   relations(personId: string) { return this.many<Relation>('select * from factact.relations where from_entity_id=$1 order by effective_from,id',[personId]); }
-  personWorks(personId: string) { return this.many<Work>('select w.* from factact.work w join factact.service_recipients r on r.id=w.service_recipient_id and r.tenant_id=w.tenant_id where r.recipient_id=$1 order by w.created_at,w.id',[personId]); }
+  personWorks(personId: string) { return this.many<Work>(`select w.* from factact.work w join factact.service_recipients r on r.id=w.service_recipient_id and r.tenant_id=w.tenant_id where w.lane='CHANGE' and r.recipient_id=$1 order by w.created_at,w.id`,[personId]); }
 }

@@ -1,3 +1,6 @@
+import { PgSupportUnitOfWork } from './persistence/support-repository.js';
+import { SupportCommands } from '../../../../packages/application/src/support-commands.js';
+import { SupportQueries } from '../../../../packages/application/src/support-queries.js';
 import pino from 'pino';
 import { loadConfig } from './config.js';
 import { createPool, assertRuntimeRole } from './persistence/database.js';
@@ -17,7 +20,8 @@ async function main() {
     await assertRuntimeRole(pool);
     const provider = await createGoogleProvider(config);
     const uow = new PgJoinUnitOfWork(pool);
-    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) });
+    const supportUow = new PgSupportUnitOfWork(pool);
+    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) }, {commands:new SupportCommands(supportUow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(supportUow)});
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void pool.end(); });

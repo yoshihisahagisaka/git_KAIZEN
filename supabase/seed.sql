@@ -20,4 +20,4 @@ insert into factact.services (id,tenant_id,organization_id,service_model_code,na
 ('60000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','JOSYS_KAIZEN','情シスKAIZEN','ACTIVE','2026-09-09Z','2026-09-09Z');
 insert into factact.contract_profiles (id,tenant_id,service_id,version,effective_from,status,configuration_json,created_at) values
 ('70000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,'2026-09-09Z','ACTIVE',
-'{"requirements":{"COMPANY_PC":{"policy":"REQUIRED","basis":"契約範囲として会社PCの準備・割当を必要とする"}},"deviceAssignment":{"executeRoles":["OPERATOR"],"reviewRoles":["REVIEWER"],"allowSelfReview":true}}', '2026-09-09Z');
+'{"support":{"enabled":true,"executeRoles":["OPERATOR"]},"requirements":{"COMPANY_PC":{"policy":"REQUIRED","basis":"契約範囲として会社PCの準備・割当を必要とする"}},"deviceAssignment":{"executeRoles":["OPERATOR"],"reviewRoles":["REVIEWER"],"allowSelfReview":true}}', '2026-09-09Z');

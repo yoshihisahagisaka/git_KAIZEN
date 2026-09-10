@@ -8,6 +8,7 @@ export function requireCondition(ok: unknown, code: string, message: string, sta
 export function found<T>(value: T | null): T { requireCondition(value, 'NOT_FOUND', '対象が見つかりません。', 404); return value; }
 export type EvaluationResult = 'REQUIRED' | 'CONDITIONAL' | 'DECISION_REQUIRED' | 'ALREADY_SATISFIED' | 'NOT_APPLICABLE' | 'WAIVED' | 'CONDITION_NOT_MET';
 export interface ContractConfiguration {
+  support?: { enabled: boolean; executeRoles: Operator['roles'] } | undefined;
   requirements: { COMPANY_PC: { policy: 'REQUIRED' | 'NOT_APPLICABLE' | 'DECISION_REQUIRED'; basis: string } };
   deviceAssignment: { executeRoles: Operator['roles']; reviewRoles: Operator['roles']; allowSelfReview: boolean };
 }
