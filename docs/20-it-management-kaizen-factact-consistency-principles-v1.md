@@ -1,4 +1,4 @@
-# IT経営KAIZEN × FACTACT 一貫設計原則 v1.0
+# IT経営KAIZEN × FACTACT 一貫設計原則 v1.1
 
 Status: **CANONICAL — CROSS-SERVICE DESIGN PRINCIPLES**
 
@@ -6,9 +6,7 @@ Status: **CANONICAL — CROSS-SERVICE DESIGN PRINCIPLES**
 
 ## 1. 基本認識
 
-IT経営KAIZENをFACTACTに合わせるのではない。
-
-IT経営KAIZENをFACT FIRSTで正しく設計した結果として、FACTACTの設計原則と自然に一致する状態を維持する。
+IT経営KAIZENをFACTACTに合わせるのではない。IT経営KAIZENをFACT FIRSTで正しく設計した結果として、FACTACTの設計原則と自然に一致する状態を維持する。
 
 > **MethodとSystemで原則を変えない。**
 
@@ -21,15 +19,7 @@ IT経営KAIZENをFACT FIRSTで正しく設計した結果として、FACTACTの�
 
 アンケート、ヒアリング、営業担当者の解釈、AIの推論をEvidence確認済みのFACTと混同しない。
 
-意味を区別する。
-
-- FACT
-- UNKNOWN
-- OBSERVATION
-- HYPOTHESIS
-- DECISION
-- RULE
-- EVIDENCE
+意味を区別する：FACT / UNKNOWN / OBSERVATION / HYPOTHESIS / DECISION / RULE / EVIDENCE。
 
 UNKNOWNは無理に埋めない。Future・Decision・Workに影響する場合に必要なEvidenceを確認する。
 
@@ -37,11 +27,7 @@ UNKNOWNは無理に埋めない。Future・Decision・Workに影響する場合�
 
 > **AIは提案する。人が決める。システムが記録する。**
 
-AIは、重点テーマ、確認質問、仮説、分類、改善候補、次の行動等を提案できる。
-
-AIはEvidenceなしに事実、原因、経営判断を確定しない。
-
-人間が確認・判断・承認し、システムはその判断と根拠を記録する。
+AIは重点テーマ、確認質問、仮説、分類、改善候補、次の行動等を提案できる。AIはEvidenceなしに事実、原因、経営判断を確定しない。人間が確認・判断・承認し、システムはその判断と根拠を記録する。
 
 この原則は無料診断、Assessment、KAIZEN実行、FACTACTの日常運用のすべてに適用する。
 
@@ -63,9 +49,7 @@ AIはEvidenceなしに事実、原因、経営判断を確定しない。
 
 ## 5. 無料診断における適用
 
-無料診断では、顧客回答やヒアリング内容からGapやRoot Causeの「可能性」を提示する。
-
-AIは確認すべき重点テーマや質問を提案するが、診断結果を自動確定しない。
+無料診断では、顧客回答やヒアリング内容からGapやRoot Causeの「可能性」を提示する。AIは確認すべき重点テーマや質問を提案するが、診断結果を自動確定しない。
 
 > **顧客が話す → AIが構造化する → 人間が意味を確認する → システムが状態として記録する → AIが次の確認を提案する → 人間が判断する**
 
@@ -73,12 +57,7 @@ AIは確認すべき重点テーマや質問を提案するが、診断結果を
 
 Assessmentでは管理表、台帳、手順書、規程、システム情報等のEvidenceを必要な範囲で確認する。
 
-無料診断から引き継いだObservation / UNKNOWN / Hypothesis / Evidence Candidate等を、確認結果に応じて次のように更新する。
-
-- FACTとして確認
-- Hypothesisを棄却
-- UNKNOWNのまま維持
-- 追加Evidence確認へ進む
+無料診断から引き継いだObservation / UNKNOWN / Hypothesis / Evidence Candidate等を、確認結果に応じてFACTとして確認、Hypothesisを棄却、UNKNOWN維持、追加Evidence確認へ更新する。
 
 全量調査やUNKNOWNゼロを目的にしない。
 
@@ -89,6 +68,42 @@ Assessment時点のFACTを基準点とし、KAIZEN実行後はFACTACTの日常�
 > **実施したことではなく、実際に何が変わったかを見る。**
 
 期待した状態とNEW FACTが異なれば、その差も新しいFACTとして次のKAIZENへつなげる。
+
+### 7.1 FACTACTが実現するKAIZENの二つの作用
+
+FACTACTが実現するKAIZENは、主に二つの作用に分ける。
+
+**A. 日々の運用からFACTが蓄積されることによる効率化**
+
+日々のWorkの結果としてFACT / Evidence / Relation / Change / Knowledge等が形成され、管理・集計・Reporting・次の改善確認に再利用される。仕事の後にKAIZENのためだけの二重入力、別台帳更新、再集計、報告用情報収集を増やさない。
+
+> **仕事からFACTをつくる。管理・報告・改善のための重複Workを減らす。**
+
+これは「KAIZENするために、KAIZENのための仕事を増やさない」のSystem上の実現である。
+
+**B. 蓄積されたFACTから次のKAIZEN Optionを提示する**
+
+FACT / Difference / Trend / Gap等から、AIは確認事項、Risk / Impact候補、Root Cause Hypothesis、KAIZEN Option等を提示できる。
+
+> **FACTから、次に何を変えるべきかの候補を提示する。**
+
+### 7.2 Decision / ACTはHuman Responsibility
+
+FACTACTまたはAIがKAIZEN Optionを提示しても、その実行を自動決定しない。
+
+> **FACTACT / AI：KAIZEN Optionを提示する**
+>
+> **Human：何を実行するかDecisionする**
+>
+> **Human / atLIB / Vendor等：決定されたACTを実行する**
+>
+> **FACTACT：Decision / ACT / CHANGEを記録し、NEW FACTへつなげる**
+
+KAIZENの実行主体はatLIBに限定しない。顧客、既存Vendor、他社、atLIB等から、Decisionに応じて人間が決める。
+
+自動化、Tool導入、RPA、System連携等がKAIZEN Optionとなり、顧客が実行をDecisionし、atLIBがActorとして選ばれた場合には、atLIBがKAIZEN Projectとして実行できる。
+
+> **仕事からFACTをつくる。FACTからKAIZENを見つける。決めて動かすのは、人。**
 
 ## 8. 新しいサービス・機能を判断する基準
 
