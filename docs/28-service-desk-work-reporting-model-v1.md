@@ -33,7 +33,7 @@ Service Deskは単なる問い合わせ対応代行ではない。
 - 問い合わせ傾向分析
 - KAIZEN候補形成
 - 実行したKAIZENのCHANGE確認
-- 月次Service Desk / KAIZEN Reporting
+- Monthly / Quarterly / Annual Reporting
 
 条件付きまたは別途相談 / 別途見積：
 
@@ -53,15 +53,19 @@ Service Desk Reportは「何件処理したか」を報告するだけのBPO Rep
 
 > **社員が何に困っているか、Service Deskが正常に機能しているか、何をKAIZENし、その結果として会社のITが実際にどう変わったかをFACTから確認する。**
 
-Reportingは原則として次の2つのViewを持つ。
+同じKPI Reportを期間だけ変えて繰り返すのではなく、Monthly / Quarterly / Annualで役割を分ける。
 
-### A. Service Desk Operational View
+> **Monthlyで運用を管理する。Quarterlyで傾向と経営DecisionをReviewする。Annualで会社が本当にどう変わったかを確認する。**
 
-主な利用者：IT担当者 / Service Desk管理者
+## 4. Monthly — Operational / KAIZEN Report
 
-目的：日常Service Deskが正常に運営されているかを確認する。
+### 目的
 
-標準KPI候補：
+直近1か月のService Desk運営状態を確認し、放置すべきでない問題、当月のKAIZEN / CHANGE、翌月の対応事項を明確にする。
+
+主な利用者：IT責任者 / IT担当者 / Service Desk管理者
+
+### 標準項目候補
 
 - 問い合わせ件数
 - 利用者数 / 利用状況
@@ -75,23 +79,82 @@ Reportingは原則として次の2つのViewを持つ。
 - 長期滞留件数
 - Vendor Waiting件数 / Waiting期間
 - Incident件数
-- Knowledge形成件数
+- Knowledge形成 / 再利用
+- 当月実施したKAIZEN
+- 当月確認できたCHANGE / NEW FACT
+- 翌月対応事項
+- 直近のDecision Required
 
-### B. Management / KAIZEN View
+Monthlyでは、単月の増減だけから長期傾向やRoot Causeを断定しない。
+
+## 5. Quarterly — Trend / Management Review
+
+### 目的
+
+3か月程度のFACTを横断し、単月では判断しにくいTrend、継続問題、KAIZEN成果、Risk / Impactを確認し、次QuarterのDecisionとKAIZENへつなげる。
+
+主な利用者：IT責任者 / 経営
+
+### 標準項目候補
+
+- 主要KPIの3か月Trend
+- 繰り返し問い合わせTop Theme
+- Category / 部門 / System別Trend
+- 社員待ち時間の推移
+- 業務復旧時間の推移
+- 再問い合わせ / 再発傾向
+- Incident Trend
+- Vendor Waiting / Vendor依存傾向
+- Knowledge形成・再利用による変化
+- KAIZEN Portfolio / 進捗
+- KAIZEN Before / After比較
+- 確認できたCHANGE / NEW FACT
+- 未解消Gap / Root Cause Hypothesis
+- Risk / Impact
+- 次QuarterのKAIZEN Option
+- Management Decision Required
+
+QuarterlyではAIが複数月のFACTをもとにTrend、注目点、確認事項、Hypothesis、KAIZEN Optionの説明案を作成できる。ただし因果関係やRoot CauseはEvidenceなしに確定しない。
+
+## 6. Annual — IT Management / CHANGE Review
+
+### 目的
+
+1年間の運用結果をAssessment時点または前年Baselineと比較し、会社のITが実際にどう変わったかを確認する。次年度のIT経営KAIZEN方針と経営Decisionへ接続する。
 
 主な利用者：経営 / IT責任者
 
-目的：Service Deskの仕事をIT経営のDecisionとKAIZENへ接続する。
+### 標準項目候補
 
-標準構造：
+- Assessment / 前年Baselineと現在の比較
+- 社員のIT待ち時間の変化
+- 業務復旧時間の変化
+- 繰り返し問い合わせの変化
+- Incident / 業務停止影響の変化
+- 属人的Workの変化
+- Knowledge / Standardizationの進展
+- Vendor依存 / Riskの変化
+- 実施した主要KAIZEN
+- KAIZENによって確認されたCHANGE / NEW FACT
+- Futureに対する現在のGap
+- 年間で形成された重要Decision
+- 未解消の重要UNKNOWN / Risk
+- 次年度IT経営KAIZEN Theme
 
-1. **Service Desk Health** — 件数、応答、解決、滞留等
-2. **Employee Impact** — 社員待ち時間、業務復旧、再発等
-3. **Top Issues** — 社員を継続的に困らせている問題
-4. **KAIZEN / CHANGE** — 実施した改善と確認できた変化
-5. **Decision Required / NEXT KAIZEN** — 経営または顧客側で判断すべき事項と次の改善候補
+次年度Themeは、必要に応じて6 Lensesを利用する。
 
-## 4. Employee Impact
+- なくす
+- 自動化する
+- 標準化する
+- 任せる
+- 残す
+- 整える
+
+Annual Reportの中心は年間Ticket処理件数ではない。
+
+> **1年前と比べて会社のITがどう変わったか、その変化をFACTで経営へ示す。**
+
+## 7. Employee Impact
 
 Service Deskの価値をIT部門の工数削減だけで評価しない。
 
@@ -112,7 +175,7 @@ Service Deskの価値をIT部門の工数削減だけで評価しない。
 
 ただし「問い合わせ件数が減った」だけを改善と判定しない。Service Deskが利用されなくなっただけでも件数は減るため、再問い合わせ、復旧時間、滞留、Knowledge利用等の複数FACTからCHANGEを確認する。
 
-## 5. AI OFFで成立するReporting
+## 8. AI OFFで成立するReporting
 
 Service Deskの基本KPI集計はAIに依存させない。
 
@@ -132,12 +195,13 @@ Ticket / Work / Action / Relation / Status / Waiting / Incident / Knowledge / De
 - KAIZEN進捗
 - Before / After比較
 - CHANGE / NEW FACTの確認に必要な定量情報
+- Monthly / Quarterly / Annualの期間比較
 
 > **FACTACTが事実を集計する。AIがなくても基本Reportは成立する。**
 
 なお、上記はBusiness Requirementであり、現行FACTACTですべて実装済みであることを意味しない。Product Laneでは既存Coreに対してFIT / GAP / CONFLICT / UNKNOWNを確認する。
 
-## 6. AIのReporting Role
+## 9. AIのReporting Role
 
 Service Desk ReportingにおけるAIの標準役割は、FACTを生成・確定することではない。
 
@@ -150,7 +214,7 @@ Service Desk ReportingにおけるAIの標準役割は、FACTを生成・確定�
 AIが扱えるもの：
 
 - FACTの要約
-- 前月 / 前期間との差分説明
+- 前月 / 前Quarter / 前年 / Baselineとの差分説明
 - 注目すべき傾向の提示
 - 確認すべき事項の提示
 - Risk / Impact候補
@@ -165,19 +229,7 @@ AIが行ってはならないもの：
 - Human Decisionを代替する
 - 相関や時系列一致だけで因果関係を確定する
 
-例えば認証関連問い合わせが増えていても、Evidenceがなければ「MFA変更が原因」と断定しない。
-
-適切な表現例：
-
-> **認証関連問い合わせの増加が確認されています。共通する発生条件があるか確認することを推奨します。**
-
-関連する設定変更がFACTとして存在する場合でも、因果関係が未確認なら、
-
-> **設定変更後に認証関連問い合わせの増加が確認されています。ただし、設定変更が原因であるかは現時点では確認されていません。**
-
-と区別する。
-
-## 7. Human Review
+## 10. Human Review
 
 AI生成Reportをそのまま顧客へ自動送付しない。
 
@@ -192,7 +244,17 @@ atLIB担当者が少なくとも次を確認する。
 
 最終的な顧客向けReportはHuman Review後に確定する。
 
-## 8. 継続支援全体への展開
+## 11. 年間Service Cycle
+
+Service DeskのReportingをAssessmentから切り離さない。
+
+> **Assessmentで現在地をFACT化 → Monthlyで日常運用とKAIZENを管理 → QuarterlyでTrendとDecisionをReview → AnnualでBaselineとのCHANGEを確認 → NEW FACTから次年度KAIZENへ**
+
+継続支援は「月次Reportを12回提出するサービス」ではない。
+
+> **月次で運用し、四半期で経営Reviewし、年次で会社のCHANGEを確認するサービスである。**
+
+## 12. 継続支援全体への展開
 
 このReporting ModelはService Desk固有の一時的設計ではなく、Business WorkflowおよびInfrastructure Operationへ共通化できるReporting Pattern候補とする。
 
@@ -202,12 +264,12 @@ atLIB担当者が少なくとも次を確認する。
 
 将来的にFACTACT上で、各Work領域の標準KPI、差分、CHANGEをAI OFFで形成し、そのFACTをAIが経営向けに翻訳する共通Reporting Engineへ発展させることを想定する。
 
-## 9. 次の設計項目
+## 13. 次の設計項目
 
 Service Deskを販売可能な仕様へ落とすため、次を順に確定する。
 
 1. KPIごとの定義 / 計算式
-2. KPIの対象View（Operational / Management）
+2. KPIのReporting Cycle（Monthly / Quarterly / Annual）
 3. 目標値を持つ指標 / 持たない指標
 4. KPI算出に必要なFACTACT Data
 5. 受付Channel
@@ -216,5 +278,5 @@ Service Deskを販売可能な仕様へ落とすため、次を順に確定す�
 8. SLA / SLO
 9. Authority / Customer Approval
 10. 業務量 / Human Work / Pricing Driver
-11. 月次Report Template
+11. Monthly / Quarterly / Annual Report Template
 12. Product LaneへのFIT / GAP / CONFLICT / UNKNOWN確認
