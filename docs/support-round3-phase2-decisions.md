@@ -131,8 +131,63 @@ The fact that a Work Target is confirmed does not by itself authorize all Action
 
 ## Pending Product Owner decisions
 
-1. Work Close conditions
-2. Due / Follow-up semantics
-3. Team boundary
-4. Escalation recording contract
-5. Knowledge approval authority
+Decision 3 is accepted below. Decisions 4–7 remain pending:
+
+- Decision 4 — Due / Follow-up semantics
+- Decision 5 — Team boundary
+- Decision 6 — Escalation recording contract
+- Decision 7 — Knowledge approval authority
+
+---
+
+## Decision 3 — Work Close conditions
+
+**Status: ACCEPTED — 2026-09-12**
+
+### Decision
+
+**Work Closeは、現在の対話やActionの終了ではなく、Workが担うOutcomeに対する継続責任の終了を意味する。**
+
+対応記録とWork Closeは別操作とする。未解決のNext Action、Waiting、必須Verification、
+未完の責任があるWorkはCloseしない。
+
+CloseはResolvedを意味しない。対象外、撤回、正式な責任移管など、未解決でも責任が
+終了したことをHumanが根拠付きで判断できればClose可能とする。これは残った責任を
+黙って捨てる例外ではない。継続義務が終了・移管した根拠を明示し、未完の責任を残さない。
+
+Close時には以下を保持する:
+
+- Outcome
+- 終了理由
+- 決定したActor
+- 決定時刻
+- 必要なDecision / Rule provenance
+
+時間経過や返信なしだけを理由に自動Closeしない。Ruleに基づく場合でも根拠を明示する。
+別Workの生成は元Workの自動Closeを意味しない。
+FACTACTはClose条件の充足を検査するが、Humanの明示決定なしにWorkをCloseしない。
+
+### Product consequences
+
+- 対応記録を保存してもWorkは継続できる。Actionの完了とWorkの責任終了を別に表示する。
+- 解決したか、責任が終了したかを別々に説明する。Closeから技術的な解決Factを推論しない。
+- 単なる別Work作成や担当者変更は、正式な責任移管の成立を自動的に証明しない。
+- Ruleによる評価・期限経過の検出はHumanの判断を支援する。Close自体を自動実行しない。
+
+### Architecture constraints
+
+- 既存Work / Outcome / Decision / Rule / Evidence / Authority / Auditで表現し、新Core Objectを追加しない。
+- CloseはRegistry変更や必須Verificationの省略を許可しない。Change / Verify / Commit境界を保持する。
+- 元の対応・根拠・所有履歴を保持し、Close理由や移管根拠で過去の記録を上書きしない。
+- Decision 4–7の日時・Team・Escalation・Knowledge承認仕様は、このDecisionから推測して確定しない。
+
+### Required implementation follow-up — not implemented yet
+
+- 対応記録と明示Close commandを分離し、Close時点の未完義務とAuthorityを検査する。
+- Outcome、終了理由、Actor、Time、Decision / Ruleの参照と必要なsnapshotの保存形を設計する。
+- 同時Action追加・Waiting変更・Closeの競合でも、未完義務を見落とさない整合性を設計する。
+- 未完Next Action / Waiting / 必須VerificationがあるCloseの拒否、根拠付きの未解決Close、
+  時間経過・返信なし・別Work作成で自動Closeしないこと、Human決定・出典・retry安全性をテストする。
+
+This acceptance records Product semantics only. Phase 2 migration / Application /
+API / UI implementation remains unstarted and requires implementation approval.
