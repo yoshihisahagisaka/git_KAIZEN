@@ -72,17 +72,57 @@ FACTACTはこれらを分断された商品としてではなく、Evidence / FA
 
 成果を会議回数・資料数・提案件数で定義しない。新しいDecisionが不要であれば「新たな経営Decisionは不要」という確認も正しい結果である。
 
-## 4. Coreに含めないもの
+## 4. CoreとExecutionの責任境界
 
-Coreを「ITのことなら何でも対応する」サービスにしない。
+Coreを「ITのことなら何でも実作業まで対応する」サービスにしない。
 
-日常のHelpdesk、Account、Device、SaaS運用、監視等のOperational Responsibilityや、継続的なTechnology ResponsibilityをatLIBが担う場合は、Coreのプラン分岐を増やすのではなく、別の責任・実行契約として扱う。
+Coreが担う中心責任は、FACT / UNKNOWNを把握し、必要なDecisionを形成し、DecisionされたKAIZENをACTへ接続し、その結果として本当にCHANGE / NEW FACTが生まれたかを継続管理することである。
+
+年次棚卸、Security Incident対応、Migration、大量入退社、Audit対応、Helpdesk、Account / Device / SaaS運用、監視等の日常またはイベント性のOperational Executionは、原則として顧客社員または実行Vendorが担い、その結果・EvidenceをFACTACTへImport / Connection / Recordする。
+
+実行Actorは固定しない。
+
+> **ACTの実行者は、顧客社員、既存Vendor、他Vendor、atLIBのいずれでもよい。**
+
+atLIBが実行Actorとなる場合も、FACTACT上の基本Loopは変わらない。
+
+> **Decision → Actor選択 → ACT → Evidence → CHANGE → NEW FACT → NEXT KAIZEN**
+
+atLIBがOperational Executionを継続的に担う場合は別の責任・実行契約として扱う。人手不足や一時的な作業集中に対してatLIBが実作業を担う場合は、必要に応じてSpot Operational Support等として別途扱う。
 
 大規模Migration、新規System開発、Network全面更改、大量PC Refresh、M&A IT統合、大規模Security導入等は原則として**KAIZEN Project**として別途扱う。
 
 Coreは必要性の確認、Decision支援、Project Governance、実施後のCHANGE確認を担うことができるが、大規模実装工数そのものを無制限に月額内へ含めない。
 
-## 5. 商品分岐を増やさない
+## 5. Execution Actor Neutrality — 何を変えるかを先に決める
+
+IT経営KAIZENは、AssessmentでもCoreでも、atLIBへのExecution発注を目的として結論を作らない。
+
+> **何を変えるかを先にDecisionする。誰が担うかは、その後に決める。**
+
+AssessmentおよびCoreで形成されたFACT / UNKNOWN、Gap、Risk / Impact、KAIZEN Optionから、まず「何を変えるべきか」を人間がDecisionする。その後、ACTを担うActorを選択する。
+
+Actor候補は原則として次を含む。
+
+1. 顧客自身で実行する。
+2. 既存Vendorへ依頼する。
+3. 他Vendorへ依頼する。
+4. atLIBへ依頼する。
+5. 現時点では実行せず、追加Evidenceを確認する。
+
+atLIBは自社が実行可能な場合、そのCapability、Scope、概算または見積等を選択肢として提示できる。ただし、自社受注を目的としてFACT、Risk、KAIZEN Option、Decisionを歪めない。
+
+> **atLIBに発注することがゴールではない。会社が良くなることがゴールである。**
+
+既存Vendorが最適であれば既存Vendorを活かし、顧客自身で実行できるなら内製し、atLIBが適任であればatLIBが実行する。
+
+> **ベンダーを変えることがKAIZENではない。会社が良くなることがKAIZENである。**
+
+atLIB自身がExecutionを担った場合も「atLIBが実施したから成功」とは判定しない。Decision時に期待したOutcome / Change CriteriaとEvidenceに対して、実際にCHANGE / NEW FACTが生じたかを確認する。
+
+このActor NeutralityはAssessmentだけの営業ルールではなく、IT経営KAIZEN全体のCommercial Principleとする。
+
+## 6. 商品分岐を増やさない
 
 > **顧客ごとの分岐を増やさず、atLIB自身もKAIZENのための仕事を増やさない。**
 
@@ -96,7 +136,7 @@ Lite / Standard / Pro等の細かなプラン分岐を基本設計にしない�
 
 この標準化は単なる運用効率化ではなく、常駐支援型の労働集約ビジネスからITコンサルティング事業へ転換するための事業設計原則である。
 
-## 6. 継続支援 CoreからAdvisoryへの責任移管
+## 7. 継続支援 CoreからAdvisoryへの責任移管
 
 CoreとAdvisoryは価格差による上位・下位プランではない。
 
@@ -124,7 +164,7 @@ atLIBは主に次を行う。
 
 Advisoryでは原則として、atLIBはEvidence収集、日々のACT追跡、Vendor追跡、Management Reportのゼロからの作成、FACTACTへの代理入力、日常Operationsを主体的には行わない。
 
-## 7. Advisory移行条件
+## 8. Advisory移行条件
 
 AdvisoryはCoreの廉価版として誰でも選択できる商品にしない。
 
@@ -140,7 +180,7 @@ AdvisoryはCoreの廉価版として誰でも選択できる商品にしない�
 
 移行判定を単純な成熟度スコアにはしない。各条件をEvidenceから確認し、満たしていない条件はUNKNOWNまたはGapとして扱う。
 
-## 8. 内製化・卒業を成功として扱う
+## 9. 内製化・卒業を成功として扱う
 
 IT経営KAIZENの目的はatLIBへの永続依存ではない。
 
@@ -158,7 +198,7 @@ IT経営KAIZENの目的はatLIBへの永続依存ではない。
 
 という原則をatLIB自身の商用モデルにも適用したものである。
 
-## 9. Human Work設計
+## 10. Human Work設計
 
 価格を時間売りとして説明しないが、atLIB側の採算・Scaleを管理するためHuman Workは計測する。
 
@@ -169,7 +209,7 @@ IT経営KAIZENの目的はatLIBへの永続依存ではない。
 
 これらは顧客への契約時間ではなく、atLIB内部のOperating Model上の目標である。実案件でFACTとして計測し、必要に応じて再設計する。
 
-## 10. 現時点の価格
+## 11. 現時点の価格
 
 - 無料IT経営診断：**無料**
 - IT経営KAIZEN 設計Assessment：**120万円（税別）**
@@ -180,7 +220,7 @@ IT経営KAIZENの目的はatLIBへの永続依存ではない。
 
 価格は責任と顧客価値を表すものであり、単純な人月・作業時間換算を顧客価値の中心にしない。
 
-## 11. 事業設計の判断基準
+## 12. 事業設計の判断基準
 
 新しいプラン、オプション、成果物、会議、レポート、管理作業を追加する前に次を問う。
 
@@ -188,4 +228,10 @@ IT経営KAIZENの目的はatLIBへの永続依存ではない。
 >
 > **同時に、atLIB自身に不要な分岐・管理・作業を増やしていないか？**
 
-両方を満たさないものは、単に売りやすい、見栄えが良い、顧客ごとに要望されたという理由だけで標準サービスへ追加しない。
+Executionに関する提案では、さらに次を問う。
+
+> **WHAT（何を変えるか）をFACTから先にDecisionし、その後にWHO（誰が担うか）を選んでいるか？**
+>
+> **atLIBの受注都合によってDecisionを歪めていないか？**
+
+これらを満たさないものは、単に売りやすい、見栄えが良い、顧客ごとに要望されたという理由だけで標準サービスへ追加しない。
