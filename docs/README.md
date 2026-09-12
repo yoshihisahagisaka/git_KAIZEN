@@ -39,26 +39,27 @@ The current hierarchy is:
 
 6. `22-free-it-management-diagnosis-development-canonical-v1.md` — **CANONICAL DEVELOPMENT / MVP DESIGN** — 画面、データ、状態遷移、AI責任境界、Human Review、Evidence境界、Assessment Handoff、MVPスコープ、技術不変条件、実装順序
 7. `23-free-it-management-diagnosis-implementation-spec-v1.md` — **CANONICAL IMPLEMENTATION SPECIFICATION** — ERD / Data Model、Application Commands / API、AI JSON Schema / Context Builder、UI Wireframe / Interaction、State Guards、表示ルール、Acceptance Tests
+8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — `atlib-sales-tools` / `atlib-corporate-site` の既存フォーム、管理画面、API、DB、認証、通知資産の再利用方針と移行境界
 
 ### AI / developer entry point
 
-8. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
+9. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
 
 ### FACTACT Product and Core
 
-9. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
-10. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
-11. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
-12. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
-13. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
+10. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
+11. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
+12. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
+13. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
+14. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
 
 ### UX and implementation handoff
 
-14. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
-15. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
-16. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
-17. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
-18. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
+15. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
+16. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
+17. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
+18. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
+19. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
 
 ## Superseded / legacy service-model material
 
@@ -97,6 +98,8 @@ Do not mechanically copy or rename legacy concepts. Extract only still-valid det
 
 Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
 
+For the free IT management diagnosis implementation, use `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` in addition to `22` and `23`; the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset.
+
 ## Documentation ownership by concern
 
 | Concern | Canonical location |
@@ -108,6 +111,7 @@ Existing atLIB systems have been split out of the former `atlib-msp-dev` reposit
 | 無料診断 Human / AI / System operating model | `21-free-it-management-diagnosis-operating-model-v1.md` |
 | 無料診断 Development / MVP design | `22-free-it-management-diagnosis-development-canonical-v1.md` |
 | 無料診断 implementation specification | `23-free-it-management-diagnosis-implementation-spec-v1.md` |
+| 無料診断 existing-resource reuse map | `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` |
 | FACTACT product identity / philosophy | `00-product-vision.md` |
 | Core requirements / scope | `01-core-prd.md` |
 | Domain objects / invariants | `02-domain-model.md` |
@@ -128,7 +132,7 @@ When documents disagree, do not silently choose whichever is easiest to implemen
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
 2. `17-it-management-kaizen-business-service-canonical-v1.md` for Business / Service design;
-3. `18`–`23` for the current free-diagnosis service/development concern, provided they do not conflict with `17`;
+3. `18`–`24` for the current free-diagnosis service/development concern, provided they do not conflict with `17`;
 4. `00-product-vision.md` / FACTACT Core Fact First principles for Product/Core design;
 5. Core PRD and Domain Model invariants;
 6. current UX specifications;
@@ -157,7 +161,7 @@ Do not use **情シスKAIZEN** as the current top-level business/service archite
 
 ## VS Code / AI handoff
 
-For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis implementation, read `18`–`23`. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
+For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis implementation, read `18`–`24`. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
 
 Do not replace Fact First semantics with generic ticket/CRUD patterns, and do not infer current business hierarchy from legacy 情シスKAIZEN or NEMESIA documents.
 
@@ -165,6 +169,6 @@ Do not replace Fact First semantics with generic ticket/CRUD patterns, and do no
 
 Business Lane priority is service productization first: free IT management diagnosis, 60-minute diagnosis, IT経営KAIZEN 設計Assessment, post-Assessment execution routes, and the FACTACT requirements that support them.
 
-The free IT management diagnosis Development Lane should implement from `22-free-it-management-diagnosis-development-canonical-v1.md` and `23-free-it-management-diagnosis-implementation-spec-v1.md`, creating ADRs only where concrete technology choices are required.
+The free IT management diagnosis Development Lane should implement from `22-free-it-management-diagnosis-development-canonical-v1.md`, `23-free-it-management-diagnosis-implementation-spec-v1.md`, and `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md`, creating ADRs only where concrete technology choices are required.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
