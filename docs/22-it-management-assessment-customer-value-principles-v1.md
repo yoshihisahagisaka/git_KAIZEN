@@ -1,4 +1,4 @@
-# IT経営KAIZEN 設計Assessment 顧客価値設計原則 v1.2
+# IT経営KAIZEN 設計Assessment 顧客価値設計原則 v1.3
 
 Status: **CANONICAL — BUSINESS / CUSTOMER VALUE PRINCIPLE**
 
@@ -137,7 +137,63 @@ Assessment中の基本的な流れは次のように考える。
 
 ただし、FACTACTを使うこと自体を顧客価値にしない。FACTACTは、IT経営KAIZENの原則を一貫して実現し、Assessmentを一度きりの診断・報告書で終わらせないための基盤である。
 
-## 9. 価値判断基準
+## 9. AssessmentからDecision・実行への接続
+
+Assessmentはレポート納品で終了する孤立した商品ではなく、その後のKAIZEN実行へ自然に接続する経営Decisionの起点として設計する。
+
+> **Assessment → Decision → ACT → CHANGE → NEW FACT → NEXT KAIZEN**
+
+Assessmentレポートで提示するKAIZEN Optionには、経営Decisionに必要な範囲で投資規模・概算費用を含めることができる。
+
+ただし、Assessment中の金額は正式見積ではなく、**経営判断のための概算費用**として扱う。FACT / UNKNOWNを根拠に合理的な範囲で示し、不確定要素が大きい場合は無理に金額化しない。
+
+原則：
+
+> **Decisionに必要な情報はAssessmentに含める。契約に必要な詳細はDecision後に詰める。**
+
+atLIBが対応可能な場合は、その実行方法と概算費用を選択肢として提示できる。ただし、AssessmentをatLIBへの発注誘導を目的とした診断にしない。
+
+順序は、まず顧客企業として「何を変えるか」をDecisionし、その後に「誰が実行するか」をDecisionする。
+
+> **何を変えるか → 誰が担うか**
+
+顧客は、自社実施、既存ベンダー、他社、atLIB等から実行主体を選択できる。Assessmentは顧客に選択の自由を残す。
+
+### 9.1 atLIBの実行対応範囲
+
+atLIBの実行対応は特定製品の導入だけに限定しない。
+
+IT経営KAIZENで用いる3領域に対応可能な実行能力を持つ。
+
+- **技術**：製品選定、クラウド、セキュリティ、ネットワーク、ID、AI、自動化、システム導入・構築等
+- **運用**：日常運用、監視、問い合わせ、アカウント、端末、更新、保守、標準化等
+- **管理**：IT方針、報告、判断基準、Authority、リスク管理、KPI、運営設計等
+
+したがってAssessmentで発見したKAIZENが技術・運用・管理のどこに存在しても、atLIBは実行主体の選択肢になり得る。
+
+### 9.2 継続運用サービスへの接続
+
+AssessmentでDecisionされたKAIZENについて、単発の技術導入だけでなく、その後の運用・管理をatLIBが継続的に担う選択肢を持つ。
+
+現時点の継続運用サービスの価格起点は、**月額69.8万円〜**とする。
+
+このサービスは単なる作業代行としてではなく、AssessmentでDecisionされたKAIZENを技術・運用・管理の3領域で継続実行し、FACTACTを通じてACT / CHANGE / NEW FACTを確認し、NEXT KAIZENへ接続する実行モデルとして位置付ける。
+
+Assessmentレポートでは必要に応じて、例えば以下の実行選択肢を提示できる。
+
+1. 顧客自身で実行する
+2. 既存ベンダー・他社へ依頼する
+3. atLIBへ技術導入等の個別実行を依頼する
+4. atLIBへ技術・運用・管理を含む継続運用を依頼する
+5. 現時点では実施しない／追加Evidenceを確認してからDecisionする
+
+これによりAssessment後の営業導線は、別の商品を押し売りする導線ではなく、**顧客がDecisionしたKAIZENを実行するための自然な選択肢**として形成する。
+
+> **Assessmentが営業のために結論を作るのではない。Assessmentで生まれた経営Decisionに対して、atLIBが実行できる選択肢を提示する。**
+
+この順序を維持することで、Assessmentの信頼性・FACT FIRST・顧客の選択自由と、atLIBの技術・運用・管理にわたる事業機会を両立する。
+
+## 10. 価値判断基準
 
 Assessmentのプロセス、ヒアリング、Evidence確認、成果物、機能等を追加・削除する際は、次を判断基準とする。
 
@@ -147,7 +203,7 @@ Assessmentのプロセス、ヒアリング、Evidence確認、成果物、機�
 
 FACTACTの機能についても同様に、機能を使わせることを目的にせず、FACT FIRST、人間のDecision、CHANGE / NEW FACTの継続確認に必要かどうかで判断する。
 
-## 10. 価格の扱い
+## 11. 価格の扱い
 
 Assessmentの商品設計が固まるまで、価格をサービス仕様の制約条件にしない。
 
@@ -155,7 +211,7 @@ Assessmentの商品設計が固まるまで、価格をサービス仕様の制�
 
 価格見直しの結果は80万円の維持、増額、減額のいずれもあり得る。価格ありきで結論を固定しない。
 
-## 11. 関連する価値表現
+## 12. 関連する価値表現
 
 無料診断からAssessmentへの価値接続：
 
