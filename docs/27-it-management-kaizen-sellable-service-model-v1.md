@@ -4,11 +4,13 @@ Status: **CANONICAL — BUSINESS / SELLABLE SERVICE MODEL**
 
 この文書は、Business Laneで確定した「まず売れる形までサービスを単純化する」ための現行販売サービスモデルを記録する。
 
-既存 `docs/24-it-management-kaizen-commercial-service-model-v1.md` のうち、固定商品としての `Core 49.8万円/月`、`Advisory 20万円/月`、およびActor Neutralな継続管理商品を前提とした部分は、**現行の販売サービス設計としてはSUPERSEDED** とする。49.8万円等の検討値は、過去の機能・Human Work・価格設計上の参考値としてのみ保持し、販売商品や標準価格として扱わない。
+既存 `docs/24-it-management-kaizen-commercial-service-model-v1.md` のうち、固定商品としての `Core 49.8万円/月`、`Advisory 20万円/月`、およびActor Neutralな継続管理商品を前提とした部分は、**現行の初期販売サービス設計としてはSUPERSEDED** とする。49.8万円等の検討値は、過去の機能・Human Work・価格設計上の参考値としてのみ保持し、初期リリースの販売商品や標準価格として扱わない。
+
+ただし、継続支援後の出口として **FACTACT SaaS利用** および **Advisory** を将来的に正式商品として追加する方針は維持する。初期リリースでは販売体系・営業訴求へ載せることを必須とせず、まず継続支援までを売れる形にすることを優先する。
 
 ## 1. 現行の販売サービス体系
 
-まず販売開始に必要な体系を次の4段階へ単純化する。
+まず初期販売開始に必要な体系を次の4段階へ単純化する。
 
 1. **無料IT経営診断**
    - IT経営上の可能性・論点を発見する。
@@ -144,7 +146,31 @@ Infrastructure Operationを運用することで、Alert、Incident、Evidence�
 
 > **価格からサービスを逆算しない。サービスを定義してから価格を決める。**
 
-## 8. 当面のBusiness Lane優先順位
+## 8. 将来の商品出口 — SaaS / Advisory
+
+初期リリースでは、継続支援後の出口商品を顧客向け販売体系に必須表示しない。ただし、事業・Productの将来設計として次の2つを正式な商品化候補として保持する。
+
+### A. FACTACT SaaS
+
+顧客自身がFACTACTを利用し、日常WorkからFACT / Decision / ACT / CHANGE / NEW FACT / NEXT KAIZENを継続的に運営するためのSaaS提供。
+
+継続支援を通じて顧客側の運用が標準化・定着し、atLIBによるBPOを必要としなくなった場合の出口の一つとする。
+
+### B. IT経営KAIZEN Advisory
+
+顧客自身が日常運用およびFACTACT運営を主体的に行い、atLIBは経営Review、KAIZEN Review、重要Decisionへの助言等を提供する商品。
+
+継続支援から責任移管が可能になった顧客に対する出口の一つとする。
+
+想定Lifecycle：
+
+> **Assessment → KAIZEN Project / 継続支援 → FACTACT SaaS / Advisory / Self-Run**
+
+すべての顧客をSaaSまたはAdvisoryへ移行させることを目的とはしない。継続支援を長期利用することも、顧客自身で自走することも正しい状態になり得る。
+
+SaaS / Advisoryの具体的な機能、責任境界、移行条件、価格、販売条件は初期リリースの販売開始を遅らせないよう、継続支援の商品化後に別途設計する。
+
+## 9. 当面のBusiness Lane優先順位
 
 新しい思想・商品分岐を増やすより、まず販売可能なサービス仕様を完成させる。
 
