@@ -39,7 +39,6 @@ AIが診断を自動確定する工程は持たない。
 - UNKNOWN
 - Hypothesis
 - Evidence Candidate
-- Confirmed Fact（Evidence等により確認できた場合のみ）
 - Decision
 
 営業代理入力の場合も、顧客発言と営業担当者自身のObservation / Hypothesisを分離する。
@@ -167,7 +166,23 @@ AIはアンケート、診断Plan、ヒアリング内容をもとに、少な�
 
 Evidence未確認事項を断定しない。詳細工数、固定ROI、成熟度点数、最終To-Be、確定ロードマップは無料診断では確定しない。
 
-## 9. Assessmentへの引継ぎ
+## 9. 無料診断と設計AssessmentのEvidence境界
+
+無料 IT経営診断は、原則として **事前アンケートとヒアリングのみ** を情報源として、Futureに対してどこにGapがありそうかという **可能性を発見する工程** とする。
+
+無料診断では、Evidenceの収集・分析によって企業の現在地をFACTとして形成することを目的としない。無料診断で行うのは、ヒアリングから見えたObservation / UNKNOWN / Hypothesis / Gap Candidate / Root Cause Hypothesis等を整理し、**Assessmentで確認すべきEvidence Candidateと確認事項を明らかにするところまで** とする。
+
+> **無料診断：アンケート＋ヒアリング → 可能性を発見する。**
+>
+> **設計Assessment：Evidence収集・確認・分析 → FACT / UNKNOWNで現在地を形成する。**
+
+Evidenceの提出依頼、収集、内容確認、分析、FACT形成は、原則として有料の **IT経営KAIZEN 設計Assessment** で実施する。
+
+したがって、無料診断をEvidence確認まで行う「簡易Assessment」にしない。また、有料Assessmentを単に無料診断の詳しい版として扱わない。両者の価値境界は情報量ではなく、**可能性の発見と、Evidenceに基づく確からしい現在地形成の違い** にある。
+
+無料診断中に顧客が自発的に資料や画面等を提示した場合も、それを契機として無料診断内でEvidence収集・分析工程へ拡張しない。必要な確認事項としてAssessmentへ引き継ぐ。
+
+## 10. Assessmentへの引継ぎ
 
 無料診断で得た情報を捨てず、Assessment Initial Contextとして引き継ぐ。
 
@@ -185,12 +200,13 @@ AssessmentでEvidenceを確認した結果、HypothesisはFACTとして確認さ
 
 > **無料診断とAssessmentを、情報を捨ててやり直す別プロセスにしない。**
 
-## 10. システム実装への制約
+## 11. システム実装への制約
 
 開発時も以下を守る。
 
 - AI自動診断を前提にしない
 - Human Reviewを省略しない
+- 無料診断内でEvidence収集・分析・FACT形成を通常工程にしない
 - EvidenceなしにFACTへ昇格させない
 - UNKNOWNを全部埋めることを目的にしない
 - 固定質問を全件消化することを診断目的にしない
