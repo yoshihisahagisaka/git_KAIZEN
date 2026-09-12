@@ -41,7 +41,7 @@ The current hierarchy is:
 6. `22-free-it-management-diagnosis-development-canonical-v1.md` — **CANONICAL DEVELOPMENT / MVP DESIGN** — 画面、データ、状態遷移、AI責任境界、Human Review、Evidence境界、Assessment Handoff、MVPスコープ、技術不変条件、実装順序
 7. `23-free-it-management-diagnosis-implementation-spec-v1.md` — **CANONICAL IMPLEMENTATION SPECIFICATION** — ERD / Data Model、Application Commands / API、AI JSON Schema / Context Builder、UI Wireframe / Interaction、State Guards、表示ルール、Acceptance Tests
 8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — `atlib-sales-tools` / `atlib-corporate-site` の既存フォーム、管理画面、API、DB、認証、通知資産の再利用方針と移行境界
-9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — READY FOR CODEX** — Slice 1 Case / Application / Survey のCodex実装指示、受入条件、Golden Tests、Stop Conditions
+9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 1 Case / Application / Survey のCodex実装指示、受入条件、Golden Tests、Stop Conditions
 10. `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — Survey v2の正式質問文、選択肢、型、必須区分、stable question code、意味境界
 
 ### AI / developer entry point
@@ -101,7 +101,7 @@ Do not mechanically copy or rename legacy concepts. Extract only still-valid det
 
 Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
 
-For the free IT management diagnosis implementation, use `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` in addition to `22` and `23`; the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset. For Slice 1 implementation, use `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` as the approved execution handoff. Survey v2の質問定義は `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` を正本とする。
+For the free IT management diagnosis implementation, use `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` in addition to `22` and `23`; the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset. Slice 1 was implemented from `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md`. Survey v2の質問定義は `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` を正本とする。
 
 ## Documentation ownership by concern
 
@@ -166,7 +166,7 @@ Do not use **情シスKAIZEN** as the current top-level business/service archite
 
 ## VS Code / AI handoff
 
-For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis design/implementation, read `18`–`26`; for Slice 1 execution also read `25`. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
+For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis design/implementation, read `18`–`26`; `25` is the completed Slice 1 handoff and `26` is the current Survey v2 question definition. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
 
 Do not replace Fact First semantics with generic ticket/CRUD patterns, and do not infer current business hierarchy from legacy 情シスKAIZEN or NEMESIA documents.
 
@@ -174,6 +174,6 @@ Do not replace Fact First semantics with generic ticket/CRUD patterns, and do no
 
 Business Lane priority is service productization first: free IT management diagnosis, 60-minute diagnosis, IT経営KAIZEN 設計Assessment, post-Assessment execution routes, and the FACTACT requirements that support them.
 
-The free IT management diagnosis Development Lane has completed Slice 1 Case / Application / Survey implementation. Continue subsequent slices from `22`–`26`, preserving the Human / AI / System responsibility boundary and the Survey v2 definition.
+**Slice 1 — Case / Application / Survey is completed.** The next Development Lane slice is **Slice 2 — Diagnosis Preparation / AI-01 Pre-Diagnosis Organizer**. Continue from `22`–`26` and preserve the Human / AI / System responsibility boundary, UNKNOWN semantics, and the Survey v2 definition.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
