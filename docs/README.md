@@ -43,26 +43,27 @@ The current hierarchy is:
 8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — `atlib-sales-tools` / `atlib-corporate-site` の既存フォーム、管理画面、API、DB、認証、通知資産の再利用方針と移行境界
 9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 1 Case / Application / Survey のCodex実装指示、受入条件、Golden Tests、Stop Conditions
 10. `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — Survey v2の正式質問文、選択肢、型、必須区分、stable question code、意味境界
+11. `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — READY FOR CODEX** — Slice 2 Diagnosis Preparation / AI-01 の永続化、AI責任境界、Human Gate、状態遷移、Golden Tests
 
 ### AI / developer entry point
 
-11. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
+12. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
 
 ### FACTACT Product and Core
 
-12. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
-13. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
-14. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
-15. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
-16. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
+13. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
+14. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
+15. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
+16. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
+17. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
 
 ### UX and implementation handoff
 
-17. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
-18. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
-19. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
-20. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
-21. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
+18. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
+19. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
+20. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
+21. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
+22. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
 
 ## Superseded / legacy service-model material
 
@@ -101,7 +102,7 @@ Do not mechanically copy or rename legacy concepts. Extract only still-valid det
 
 Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
 
-For the free IT management diagnosis implementation, use `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` in addition to `22` and `23`; the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset. Slice 1 was implemented from `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md`. Survey v2の質問定義は `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` を正本とする。
+For the free IT management diagnosis implementation, use `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` in addition to `22` and `23`; the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset. Slice 1 was implemented from `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md`. Survey v2の質問定義は `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` を正本とする。Slice 2は `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` を実行指示とする。
 
 ## Documentation ownership by concern
 
@@ -117,6 +118,7 @@ For the free IT management diagnosis implementation, use `24-free-it-management-
 | 無料診断 existing-resource reuse map | `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` |
 | 無料診断 Slice 1 Codex implementation handoff | `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` |
 | 無料診断 Survey v2 Question Set | `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` |
+| 無料診断 Slice 2 Codex implementation handoff | `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` |
 | FACTACT product identity / philosophy | `00-product-vision.md` |
 | Core requirements / scope | `01-core-prd.md` |
 | Domain objects / invariants | `02-domain-model.md` |
@@ -137,7 +139,7 @@ When documents disagree, do not silently choose whichever is easiest to implemen
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
 2. `17-it-management-kaizen-business-service-canonical-v1.md` for Business / Service design;
-3. `18`–`26` for the current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
+3. `18`–`27` for the current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
 4. `00-product-vision.md` / FACTACT Core Fact First principles for Product/Core design;
 5. Core PRD and Domain Model invariants;
 6. current UX specifications;
@@ -166,7 +168,7 @@ Do not use **情シスKAIZEN** as the current top-level business/service archite
 
 ## VS Code / AI handoff
 
-For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis design/implementation, read `18`–`26`; `25` is the completed Slice 1 handoff and `26` is the current Survey v2 question definition. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
+For business-sensitive FACTACT development, read `17` before interpreting service-model assumptions. For free-diagnosis design/implementation, read `18`–`27`; `25` is the completed Slice 1 handoff, `26` is the current Survey v2 question definition, and `27` is the active Slice 2 implementation handoff. For FACTACT implementation work, also read `99`, `15`, `16`, and the relevant Core/UX documents.
 
 Do not replace Fact First semantics with generic ticket/CRUD patterns, and do not infer current business hierarchy from legacy 情シスKAIZEN or NEMESIA documents.
 
@@ -174,6 +176,6 @@ Do not replace Fact First semantics with generic ticket/CRUD patterns, and do no
 
 Business Lane priority is service productization first: free IT management diagnosis, 60-minute diagnosis, IT経営KAIZEN 設計Assessment, post-Assessment execution routes, and the FACTACT requirements that support them.
 
-**Slice 1 — Case / Application / Survey is completed.** The next Development Lane slice is **Slice 2 — Diagnosis Preparation / AI-01 Pre-Diagnosis Organizer**. Continue from `22`–`26` and preserve the Human / AI / System responsibility boundary, UNKNOWN semantics, and the Survey v2 definition.
+**Slice 1 — Case / Application / Survey is completed.** The active Development Lane implementation target is **Slice 2 — Diagnosis Preparation / AI-01 Pre-Diagnosis Organizer** according to `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md`.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
