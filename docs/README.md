@@ -44,26 +44,27 @@ The repository, not chat history, is the source of truth. When a material Busine
 13. `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
 14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
 15. `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+16. `32-free-it-management-diagnosis-production-readiness-gate-v1.md` — **IMPLEMENTATION / VALIDATION HANDOFF — READY FOR CODEX**
 
 ### AI / developer entry point
 
-16. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
+17. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
 
 ### FACTACT Product and Core
 
-17. `00-product-vision.md` — **CANONICAL**
-18. `01-core-prd.md` — **CANONICAL**
-19. `02-domain-model.md` — **CANONICAL**
-20. `03-operational-context.md` — **CANONICAL**
-21. `04-progressive-onboarding.md` — **CANONICAL**
+18. `00-product-vision.md` — **CANONICAL**
+19. `01-core-prd.md` — **CANONICAL**
+20. `02-domain-model.md` — **CANONICAL**
+21. `03-operational-context.md` — **CANONICAL**
+22. `04-progressive-onboarding.md` — **CANONICAL**
 
 ### UX and implementation handoff
 
-22. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT**
-23. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION**
-24. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
-25. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
-26. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+23. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT**
+24. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION**
+25. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
+26. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
+27. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
 
 ## Superseded / legacy material
 
@@ -84,6 +85,7 @@ For free IT management diagnosis implementation, the primary implementation/reus
 - Slice 4 implementation/completion: `29`
 - Slice 5 implementation/completion: `30`
 - Slice 6 implementation/completion: `31`
+- Production Readiness / Pilot Readiness Gate: `32`
 
 ## Decision precedence
 
@@ -91,7 +93,7 @@ When documents disagree, do not silently choose whichever is easiest to implemen
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
 2. `17` for Business / Service design;
-3. `18`–`31` for current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
+3. `18`–`32` for current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
 4. `00-product-vision.md` / FACTACT Core Fact First principles;
 5. Core PRD and Domain Model invariants;
 6. current UX specifications;
@@ -126,18 +128,8 @@ Do not introduce `NEMESIA` as a public product name. Do not use **情シスKAIZE
 - Slice 5 completed at `a30f100a913781d0c2e4a2816b6f7364523bc2fd`
 - Slice 6 completed at `2c81a0b1ad354ced710884a36998c32497dd9237`
 
-The active Development Lane target is now **Production Readiness / Pilot Readiness**, not another feature Slice.
+The active Development Lane target is **Production Readiness / Pilot Readiness Gate** according to `32-free-it-management-diagnosis-production-readiness-gate-v1.md`, not another feature Slice.
 
-Priority validation areas:
-
-1. production migration / rollback rehearsal;
-2. production environment and secrets/config validation;
-3. real Anthropic AI connectivity for AI-01 through AI-04 and failure behavior;
-4. real Google Workspace authentication / authorization;
-5. PostgreSQL multi-connection and AI worker lease/concurrency behavior;
-6. security/privacy and customer-data handling review;
-7. observability, alerts, audit inspection, backup/restore and operational runbook;
-8. realistic pilot-customer E2E from WEB/SALES entry through Assessment handoff / close;
-9. explicit go/no-go criteria before general customer use.
+The Gate must produce Evidence for migration/rollback, production configuration and secrets, real AI-01–04, real Google Workspace auth, PostgreSQL concurrency/worker behavior, security/privacy, observability/runbook, backup/restore, and WEB/SALES_VISIT pilot E2E, followed by an explicit Go / Conditional Go / No-Go recommendation.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
