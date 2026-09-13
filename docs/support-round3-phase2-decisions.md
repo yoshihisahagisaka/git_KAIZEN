@@ -129,17 +129,6 @@ The fact that a Work Target is confirmed does not by itself authorize all Action
 
 ---
 
-## Pending Product Owner decisions
-
-Decision 3 is accepted below. Decisions 4–7 remain pending:
-
-- Decision 4 — Due / Follow-up semantics
-- Decision 5 — Team boundary
-- Decision 6 — Escalation recording contract
-- Decision 7 — Knowledge approval authority
-
----
-
 ## Decision 3 — Work Close conditions
 
 **Status: ACCEPTED — 2026-09-12**
@@ -148,12 +137,9 @@ Decision 3 is accepted below. Decisions 4–7 remain pending:
 
 **Work Closeは、現在の対話やActionの終了ではなく、Workが担うOutcomeに対する継続責任の終了を意味する。**
 
-対応記録とWork Closeは別操作とする。未解決のNext Action、Waiting、必須Verification、
-未完の責任があるWorkはCloseしない。
+対応記録とWork Closeは別操作とする。未解決のNext Action、Waiting、必須Verification、未完の責任があるWorkはCloseしない。
 
-CloseはResolvedを意味しない。対象外、撤回、正式な責任移管など、未解決でも責任が
-終了したことをHumanが根拠付きで判断できればClose可能とする。これは残った責任を
-黙って捨てる例外ではない。継続義務が終了・移管した根拠を明示し、未完の責任を残さない。
+CloseはResolvedを意味しない。対象外、撤回、正式な責任移管など、未解決でも責任が終了したことをHumanが根拠付きで判断できればClose可能とする。これは残った責任を黙って捨てる例外ではない。継続義務が終了・移管した根拠を明示し、未完の責任を残さない。
 
 Close時には以下を保持する:
 
@@ -163,9 +149,7 @@ Close時には以下を保持する:
 - 決定時刻
 - 必要なDecision / Rule provenance
 
-時間経過や返信なしだけを理由に自動Closeしない。Ruleに基づく場合でも根拠を明示する。
-別Workの生成は元Workの自動Closeを意味しない。
-FACTACTはClose条件の充足を検査するが、Humanの明示決定なしにWorkをCloseしない。
+時間経過や返信なしだけを理由に自動Closeしない。Ruleに基づく場合でも根拠を明示する。別Workの生成は元Workの自動Closeを意味しない。FACTACTはClose条件の充足を検査するが、Humanの明示決定なしにWorkをCloseしない。
 
 ### Product consequences
 
@@ -186,8 +170,70 @@ FACTACTはClose条件の充足を検査するが、Humanの明示決定なしに
 - 対応記録と明示Close commandを分離し、Close時点の未完義務とAuthorityを検査する。
 - Outcome、終了理由、Actor、Time、Decision / Ruleの参照と必要なsnapshotの保存形を設計する。
 - 同時Action追加・Waiting変更・Closeの競合でも、未完義務を見落とさない整合性を設計する。
-- 未完Next Action / Waiting / 必須VerificationがあるCloseの拒否、根拠付きの未解決Close、
-  時間経過・返信なし・別Work作成で自動Closeしないこと、Human決定・出典・retry安全性をテストする。
+- 未完Next Action / Waiting / 必須VerificationがあるCloseの拒否、根拠付きの未解決Close、時間経過・返信なし・別Work作成で自動Closeしないこと、Human決定・出典・retry安全性をテストする。
 
-This acceptance records Product semantics only. Phase 2 migration / Application /
-API / UI implementation remains unstarted and requires implementation approval.
+---
+
+## Decision 4 — Due / Follow-up semantics
+
+**Status: ACCEPTED — 2026-09-14**
+
+### Decision
+
+DueとFollow-upは異なる時間概念として扱う。
+
+**Due**は、Workまたは責任あるActionについて、約束・Rule・業務上の必要性等から「いつまでに満たすべきか」を示す時間境界である。
+
+**Follow-up**は、継続中のWorkについてHumanが次に確認・判断・再開すべき時点であり、相手方の期限を意味しない。Follow-upは、Waiting中も継続するこちら側の責任を時間軸で管理するために使う。
+
+WaitingでもOwnerと継続責任は維持される。Waiting時にFollow-upが`UNKNOWN` / not setであることは許容するが、その状態はNeeds-follow-up Projectionの根拠になり得る。
+
+Due、Follow-up、Verification timingを同一概念として扱わない。Work全体のDueと、責任あるActionのDueが同時に存在し得るBusiness semanticsを認める。ただし具体的な保存形はPhase 2 Implementation Designで既存CoreとのFitを確認し、新Core Objectを前提としない。
+
+Overdue / Needs-follow-up / Stale等を新しいWork StatusまたはCore Objectとして保存しない。現在のFactから説明可能なView / Projectionとして導出する。
+
+Due / Follow-upの根拠が存在しない場合、FACTACTは期限を捏造しない。SLA、Contract、Rule、Human Decision、顧客との約束等のSource / provenanceを保持可能にする。
+
+DueまたはFollow-upを超過しても、自動Close、自動Transfer、自動Escalationその他のReality Changeを行わない。FACTACTは超過や要確認状態を提示し、Human Decisionを支援する。
+
+Due / Follow-upの変更は、Actor、Time、変更前後の値、および必要なSource / provenanceを追跡可能にする。Human-readable HistoryとTechnical Auditの階層は既存UX原則に従う。
+
+これらのsemanticsはSUPPORT専用ではなく、Assessment後のACT、Vendor Work、Management Decision後の実行、Change Verification等でも再利用可能な共通意味として扱う。
+
+### Product consequences
+
+- `Due`と`Follow-up`を単一の「期限」フィールドとしてUX上も意味上も混同しない。
+- Waitingは責任停止ではなく、Owner / Next Action / Follow-upを使って継続責任を見える化する。
+- Follow-up未設定のWaitingを禁止して事実を捏造するのではなく、必要に応じてNeeds-follow-up Viewへ出す。
+- Due超過とFollow-up到来を区別して表示する。どちらもWork lifecycle statusそのものではない。
+- Follow-up到来だけで催促・Close・Transfer・Escalation等を自動実行しない。
+- Verification date / targetはFollow-upとは別責任・別意味として扱う。
+
+### Architecture constraints
+
+- `Overdue`, `NeedsFollowUp`, `StaleWork`, `FollowUp`等を新Core Objectとして追加しない。
+- Needs-follow-upはOpen、Owner、Next Action、Waiting、Due、Follow-up等の現在Factから導出するProjectionとする。
+- 時刻の経過から導出できる状態をHumanに再入力させない。
+- Due / Follow-upのSourceと変更履歴を失わない。
+- Work-level DueとAction/responsibility-level Dueのpersisted representationはImplementation Designで既存Work / Action / Relation / Decision / Rule等とのFitを確認して決める。
+
+### Required implementation follow-up — not implemented yet
+
+- Work-level Due / Follow-upとAction/responsibility-level Dueの保存境界を設計する。
+- Waiting / Owner / Next Action / Due / Follow-upのApplication invariantと更新commandを設計する。
+- Needs-follow-up / Overdue projectionの説明可能な導出条件を定義する。
+- SLA / Contract / Rule / Human Decision / customer commitment等のprovenance参照方法を設計する。
+- Follow-up変更履歴とHuman-readable History / Technical Auditの表示境界を設計する。
+- Due超過、Follow-up到来、Waiting + no follow-up、Dueなし、Ruleなし、変更履歴、no-auto-actionをテストする。
+
+This acceptance records Product semantics only. Phase 2 migration / Application / API / UI implementation remains unstarted and requires implementation approval.
+
+---
+
+## Pending Product Owner decisions
+
+Decisions 1–4 are accepted. Decisions 5–7 remain pending:
+
+- Decision 5 — Team boundary
+- Decision 6 — Escalation recording contract
+- Decision 7 — Knowledge approval authority
