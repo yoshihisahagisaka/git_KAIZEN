@@ -1,4 +1,4 @@
-# IT経営KAIZEN 継続支援 Product Spec v1
+# IT経営KAIZEN 継続支援 Product Spec v1.1
 
 Status: **WORKING CANONICAL — BUSINESS / PRODUCTIZATION**
 
@@ -10,11 +10,89 @@ Status: **WORKING CANONICAL — BUSINESS / PRODUCTIZATION**
 
 > **ITの仕事を引き受けるだけではない。仕事からFACTをつくり、そのFACTから会社のITを継続的に良くする。**
 
-IT経営KAIZEN 継続支援は、顧客と合意したIT WorkをatLIBが継続運用し、そのWorkをFACTACTで運用することで、FACT / Evidence / Relation / Current Stateを形成し、管理、Reporting、KAIZEN、CHANGE確認、NEW FACTへつなげるサービスである。
+IT経営KAIZEN 継続支援は、Assessmentで経営者 / 経営責任者と形成したFuture、現在地のFACT / UNKNOWN、Decision、および1年後に実現したいCHANGEを起点に、顧客と合意したIT Workを継続運用するサービスである。
 
-> **受託Work → FACTACTで運用 → FACT / Current State形成 → 管理 → KAIZEN Option → Human Decision → ACT → CHANGE確認 → NEW FACT**
+そのWorkをFACTACTで運用することで、FACT / Evidence / Relation / Current Stateを形成し、KPI確認、KAIZEN、Decision、ACT、CHANGE確認、NEW FACT、次年度KGIへつなげる。
 
-## 2. 3つのWork領域
+> **Assessment → 1年後のKGI → Daily Work → FACT → KPI → KAIZEN → Human Decision → ACT → CHANGE → NEW FACT → Annual Review → NEXT KGI**
+
+したがって本サービスは、単にIT Workを代行するBPOを商品価値の中心としない。
+
+> **Assessmentで経営と決めたCHANGEを、日々のIT Workから実現し、その結果をFACTで確認し続ける継続的IT経営KAIZENサービスである。**
+
+## 2. Assessmentから継続支援への年間KAIZEN Cycle — CANONICAL DIRECTION
+
+### 2.1 Assessmentで1年後のKGIを形成する
+
+Assessmentでは、Future、Evidenceに基づくFACT / UNKNOWN、Gap、KAIZEN Optionを確認し、Humanが何を変えるかをDecisionする。
+
+そのDecisionから、**1年後に実現したいCHANGEをKGIとして設定する**。
+
+KGIは根拠のない未来予測や成果保証値ではない。
+
+> **現在のFACT + 採用するKAIZEN + 運用設計 + FACTACTでの継続運用を前提に、1年後に目指すCHANGEをHumanが決める。**
+
+### 2.2 KPIはKGIにつながる日常WorkのFACTから設定する
+
+全顧客へ同じ固定KAIZEN KPIを一律適用しない。
+
+Assessmentで設定したKGIに対して、進捗とCHANGEを確認できるFACTをKPIとして選ぶ。KPIは可能な限り、FACTACTで日常Workを運用する結果として自然に形成・集計できるものを利用する。
+
+例：Work Time、Human Action、Waiting、発生回数、再発 / Repeat、手作業工程、業務停止時間、Employee Waiting等。
+
+独自の人工的なKAIZEN Scoreを作ることを目的としない。
+
+> **KGI = 1年後に実現したいCHANGE**
+>
+> **KPI = そのCHANGEへ向かっているかを、日々のWorkから確認するFACT**
+
+### 2.3 6 LensesをKAIZENの共通視点として使う
+
+KPIを点数化するためではなく、FACTから次のKAIZENを考える共通視点として、IT経営KAIZENの6 Lensesを用いる。
+
+> **なくす・自動化する・標準化する・任せる・残す・整える**
+
+6 LensesはAssessmentだけの分析手法ではなく、継続支援中のKAIZEN Option形成にも共通して利用する。
+
+> **FACT → 6 Lenses → KAIZEN Option → Human Decision → ACT → CHANGE → NEW FACT**
+
+### 2.4 Monthly / Quarterly / Annual
+
+- **Monthly**：KPIと日常運用FACTを確認し、必要なKAIZEN Option、Decision Required、実施済みACT / CHANGEをReviewする。
+- **Quarterly**：複数月のFACTからTrendを確認し、KGIへの進捗、継続Gap、Risk / Impact、次QuarterのKAIZENをReviewする。
+- **Annual**：Assessmentまたは前年Baselineで設定したKGIに対し、本当に会社がどう変わったかをFACTで確認する。その時点のNEW FACTを次年度Baselineとし、Humanが次の1年のKGIをDecisionする。
+
+> **Assessmentで現在地と1年後を決める。MonthlyでFACTを確認する。Quarterlyで軌道をReviewする。AnnualでCHANGEを確認し、次の1年を決める。**
+
+2年目以降は毎年ゼロから情報収集をやり直すことを前提としない。FACTACTの日常運用から蓄積されたNEW FACTを次年度のBaselineとして再利用する。
+
+> **KAIZENするために、KAIZENのための仕事を増やさない。**
+
+## 3. FACTACTとの責任境界 — CANONICAL DIRECTION
+
+Business Laneは、継続支援の商品仕様を実現するためにFACTACT CoreのKAIZEN仕様を独自に再定義しない。
+
+> **FACTACT Product Laneが設計するCore / Design Principlesを、Business LaneがService仕様・顧客価値・Reportへ翻訳する。**
+
+Business要件が生じた場合は、まず既存CoreのWork / Fact / Evidence / Relation / Knowledge / Decision / Action / Change / Authority等と、View / Query / Aggregation / Difference / Projection / Rule / Alert / AI支援等で実現できるかを確認する。
+
+> **UXは業務に合わせて具体化する。Coreは抽象度を維持する。**
+
+Business Laneだけで新しいCore Object、特殊なKAIZEN Workflow、独自Score等を決定しない。既存設計で表現できないことが確認された場合のみ、FIT / GAP / CONFLICT / UNKNOWNとしてProduct Laneへ返す。
+
+### 初動SLOの例
+
+初動SLOはCoreをHelp Desk専用に変更するのではなく、受付時刻等の既存FACTとService Policyを使い、Timer / Alert / View等のService UXとして実現する方向とする。
+
+### KAIZEN Reportの例
+
+KAIZEN Reportのために専用のKAIZEN ScoreをCoreへ追加するのではなく、FACTACTの日常Workから蓄積されたFACT / Difference / Trend / Change等を利用する。
+
+> **FACTACT集計 → AIによる所感・注目点・確認事項・KAIZEN候補の作成支援 → Human Review → 顧客Report**
+
+AIはFACTのない改善を創作せず、FACT / UNKNOWN / Observation / Hypothesis / Proposalを混同しない。
+
+## 4. 3つのWork領域
 
 ### A. Service Desk
 主なTrigger：User。
@@ -41,7 +119,7 @@ Monitoring、Alert Triage、Incident、Patch、Backup、Security、Server / Clou
 
 Zabbix等の既存Systemを無理にFACTACTへ置換せず、Connectionを通じてWork / Evidence / Current Stateへ接続することを基本とする。
 
-## 3. 共通商品構造
+## 5. 共通商品構造
 
 3領域を別々の固定Planとして販売することを基本としない。上位商品は「IT経営KAIZEN 継続支援」であり、Assessment等で形成されたFACTとDecisionに基づき、顧客ごとのAccepted Work Scopeを決める。
 
@@ -51,7 +129,7 @@ Zabbix等の既存Systemを無理にFACTACTへ置換せず、Connectionを通じ
 
 atLIBが継続運用Actorとして適切でないScopeを無理に受注しない。
 
-## 4. Scope / Responsibility — INITIAL DIRECTION
+## 6. Scope / Responsibility — INITIAL DIRECTION
 
 責任境界は次の4観点で整理する。
 
@@ -62,7 +140,7 @@ atLIBが継続運用Actorとして適切でないScopeを無理に受注しな�
 
 この4分類の詳細な契約表現は後続Reviewで確定する。
 
-## 5. Authority — DECIDED DIRECTION
+## 7. Authority — DECIDED DIRECTION
 
 Authorityは原則として次の3段階で扱う。
 
@@ -79,7 +157,7 @@ Authorityは原則として次の3段階で扱う。
 
 顧客ごとにゼロからAuthorityを設計するのではなく、標準Templateと差分確認を基本とする。具体的なTemplate / UI / 実装は未確定。
 
-## 6. Service Capacity — DECIDED PRINCIPLE / PROVISIONAL SIZING
+## 8. Service Capacity — DECIDED PRINCIPLE / PROVISIONAL SIZING
 
 人月・時間貸しとして顧客へ販売しない。
 
@@ -97,7 +175,23 @@ Service Deskの月100件程度はStandard Capacity検討上の基準値候補で
 
 Capacity超過時は即従量課金・自動値上げとせず、FACT確認 → KAIZEN Option → Human Decision → ACT → CHANGE確認を先に行う。構造的に必要Capacityが大きい場合にScope / Capacity / PriceをReviewする。
 
-## 7. Urgent / Priority — INITIAL OPERATING STANDARD
+## 9. Service Quality / Initial Action SLO — PROVISIONAL
+
+初動品質はKAIZEN成果とは分け、atLIBのService Qualityとして管理する。
+
+初回対応SLOの定義は、FACTACTの自動受付ではなく、**atLIB担当者が問い合わせ内容を人間として確認し、利用者へ最初の返信 / 必要な初動を開始するまで**とする。
+
+現時点の仮基準：
+
+- 質問・相談：**2営業時間以内**
+- 業務停止・即時性の高いRequest：**1営業時間以内**
+- 重大Incident：**30分以内**
+
+これらは現時点では契約SLAではなく、**初動SLOの仮基準**である。運用FACTを蓄積し、Service Capacity、同時発生、達成状況等をReviewして調整する。
+
+自動受付のみを初動達成とは扱わない。重大Incident等では「解決」ではなく、人間による状況確認と必要な初動 / Escalation開始を対象とする。
+
+## 10. Urgent / Priority — INITIAL OPERATING STANDARD
 
 Urgentは利用者が単に「急ぎ」と申告したことだけで決定しない。業務影響を主な判断材料とする。
 
@@ -121,18 +215,20 @@ Security疑いの申告を確認済みSecurity Incident FACTへ自動昇格さ�
 
 SLO / Capacity等の運用基準にも同じ考え方を適用する。
 
-## 8. Reporting / KAIZEN
+## 11. Reporting / KAIZEN
 
-Service DeskではMonthly / Quarterly / Annualを分ける。
+Reportingは「何件処理したか」だけを報告するBPO Reportにしない。
 
-> **Monthlyで運用を管理する。Quarterlyで傾向と経営DecisionをReviewする。Annualで会社が本当にどう変わったかを確認する。**
+> **何を実施したかではなく、日々のWorkから何が良くなったかをFACTで確認する。**
 
-共通Pattern候補：
+共通Pattern：
 > **Work → FACT → AI OFF集計 → AI所感 / Suggest → Human Review → Report → Decision / KAIZEN → ACT → CHANGE → NEW FACT**
 
 AIはKAIZEN Optionを提示できるが、実行DecisionはHumanが行う。KAIZEN Actorは顧客 / 既存Vendor / 他社 / atLIB等から選択される。
 
-## 9. 標準外Workの扱い — INITIAL DIRECTION
+KAIZENを評価するために全顧客共通の一次解決率等を主要指標として固定しない。一般的なHelp Desk KPIは必要に応じてOperational FACT / 補助指標として利用できるが、IT経営KAIZENの中心はAssessmentで設定したKGIと、それにつながるKPI / CHANGEである。
+
+## 12. 標準外Workの扱い — INITIAL DIRECTION
 
 細かなOptionを大量に作らない。標準月額外は大きく次の3種類で整理する方向とする。
 
@@ -142,7 +238,7 @@ AIはKAIZEN Optionを提示できるが、実行DecisionはHumanが行う。KAIZ
 
 Remote Firstを基本とする。高度技術作業や自動化開発を月額Serviceへ無制限に内包しない。
 
-## 10. Pricing Principle — DECIDED DIRECTION / PRICE HYPOTHESIS
+## 13. Pricing Principle — DECIDED DIRECTION / PRICE HYPOTHESIS
 
 顧客向けPricingと内部原価管理を分離する。
 
@@ -166,7 +262,7 @@ Remote Firstを基本とする。高度技術作業や自動化開発を月額Se
 
 旧¥498k/月を固定商品価格として復活させたものではない。価格はWork Catalog、Scope、Capacity、Human Work、共通負荷、採算性、Scale性を確認して確定する。
 
-## 11. 労働集約型への回帰を防ぐDesign Test
+## 14. 労働集約型への回帰を防ぐDesign Test
 
 継続支援は、従来の常駐支援をRemote化しただけの商品にしてはならない。
 
@@ -178,11 +274,12 @@ Review時には最低限、次を確認する。
 4. FACTACT / Standardization / Knowledge / ConnectionによるLeverageが存在するか。
 5. atLIBがWorkを抱え続けることではなく、会社のCHANGEを価値としているか。
 6. atLIBへの発注をAssessment / KAIZENの成功条件にしていないか。
+7. Assessmentで経営とDecisionしたKGI / CHANGEが、日常WorkとReportから切断されていないか。
 
-## 12. Productization Reviewで未確定の事項
+## 15. Productization Reviewで未確定の事項
 
 - Service Desk標準有人対応時間
-- SLO具体値
+- SLO仮基準 2時間 / 1時間 / 30分の実運用妥当性
 - Urgent詳細判定 / 例外
 - Capacity Review期間 / Threshold
 - Scale / 月額価格
@@ -191,18 +288,22 @@ Review時には最低限、次を確認する。
 - Additional Service / Onsiteの価格
 - Receive / Resolve / Coordinate / Executeの契約表現
 - Authority Onboarding Template
+- KGI / KPIの顧客向け表現とReport Template
 - 3領域共通Reporting仕様
 - FACTACT現行実装とのFIT / GAP / CONFLICT / UNKNOWN
 
 これらは、実績FACTがないものを確定値として扱わず、必要に応じてHYPOTHESIS / PROPOSALとして検証する。
 
-## 13. 商品説明の中心候補
+## 16. 商品説明の中心候補
 
 経営向け：
-> **日々のIT運用を、経営判断とKAIZENにつなげる。**
+> **Assessmentで決めた1年後のCHANGEを、日々のIT運用から実現する。**
 
 現場向け：
 > **仕事をすると、会社のITが整理されていく。**
+
+KAIZEN：
+> **仕事をするたびにFACTがたまる。FACTがたまるほど仕事が良くなる。良くなったこともFACTで示す。**
 
 共通：
 > **仕事からFACTをつくる。FACTからKAIZENを見つける。決めて動かすのは、人。**
