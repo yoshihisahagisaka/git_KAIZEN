@@ -26,24 +26,24 @@ The repository, not chat history, is the source of truth. When a material Busine
 
 ### Business / Service design
 
-1. `17-it-management-kaizen-business-service-canonical-v1.md` — **CANONICAL** — IT経営KAIZEN事業・サービス設計、FACTACTとの関係、無料診断、Assessment、実行ルート
-2. `18-it-management-diagnosis-assessment-boundary-sales-story-v1.md` — **CANONICAL** — 無料診断と設計Assessmentの価値境界、Evidence、営業ストーリー
-3. `19-free-it-management-diagnosis-channel-flows-v1.md` — **CANONICAL** — Web / 営業訪問の診断導線、Same Method / Different Entry
-4. `20-it-management-kaizen-factact-consistency-principles-v1.md` — **CANONICAL** — IT経営KAIZENとFACTACTの整合原則、Fact/Hypothesis/Decision責任境界
-5. `21-free-it-management-diagnosis-operating-model-v1.md` — **CANONICAL** — 無料診断のHuman / AI / System運用、Evidence境界、Assessment引継ぎ
+1. `17-it-management-kaizen-business-service-canonical-v1.md` — **CANONICAL**
+2. `18-it-management-diagnosis-assessment-boundary-sales-story-v1.md` — **CANONICAL**
+3. `19-free-it-management-diagnosis-channel-flows-v1.md` — **CANONICAL**
+4. `20-it-management-kaizen-factact-consistency-principles-v1.md` — **CANONICAL**
+5. `21-free-it-management-diagnosis-operating-model-v1.md` — **CANONICAL**
 
 ### Free IT management diagnosis development
 
-6. `22-free-it-management-diagnosis-development-canonical-v1.md` — **CANONICAL DEVELOPMENT / MVP DESIGN** — 画面、データ、状態遷移、AI責任境界、Human Review、Evidence境界、Assessment Handoff、MVPスコープ
-7. `23-free-it-management-diagnosis-implementation-spec-v1.md` — **CANONICAL IMPLEMENTATION SPECIFICATION** — ERD、Commands/API、AI Contract、UI、State Guards、Acceptance Tests
-8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — 既存フォーム、管理画面、API、DB、認証、通知資産の再利用方針
-9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 1 Case / Application / Survey
-10. `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE** — Survey v2正式Question Set
-11. `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 2 Diagnosis Preparation / AI-01
-12. `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 3 60min Diagnosis Workspace / SourceRecord / AI-02
-13. `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 4 Post-Diagnosis Structuring / DiagnosisInsight / Human Review
-14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 5 Report Draft / Grounding / Approval / Feedback
-15. `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — READY FOR CODEX** — Slice 6 Assessment Lifecycle / Deterministic Handoff / Close Guards
+6. `22-free-it-management-diagnosis-development-canonical-v1.md` — **CANONICAL DEVELOPMENT / MVP DESIGN**
+7. `23-free-it-management-diagnosis-implementation-spec-v1.md` — **CANONICAL IMPLEMENTATION SPECIFICATION**
+8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+10. `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+11. `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+12. `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+13. `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+15. `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
 
 ### AI / developer entry point
 
@@ -51,16 +51,16 @@ The repository, not chat history, is the source of truth. When a material Busine
 
 ### FACTACT Product and Core
 
-17. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
-18. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
-19. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
-20. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
-21. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
+17. `00-product-vision.md` — **CANONICAL**
+18. `01-core-prd.md` — **CANONICAL**
+19. `02-domain-model.md` — **CANONICAL**
+20. `03-operational-context.md` — **CANONICAL**
+21. `04-progressive-onboarding.md` — **CANONICAL**
 
 ### UX and implementation handoff
 
-22. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
-23. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
+22. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT**
+23. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION**
 24. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
 25. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
 26. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
@@ -69,7 +69,7 @@ The repository, not chat history, is the source of truth. When a material Busine
 
 `11-josys-kaizen-service-model-v1.md` is **SUPERSEDED AS BUSINESS HIERARCHY / REFERENCE ONLY**. Useful operational detail may be reused only after reconciliation with `17`; do not reintroduce 情シスKAIZEN as the center of the business architecture.
 
-Legacy NEMESIA documents (`05_NEMESIA_V1_機能要件.md`, `06_NEMESIA_V1_画面一覧・画面機能要件.md`, `07_NEMESIA_V1_画面ワイヤーフレーム_API_状態遷移仕様.md`) are **LEGACY / REFERENCE — RECONCILIATION REQUIRED**. `NEMESIA` is not a current public product name.
+Legacy NEMESIA documents are **LEGACY / REFERENCE — RECONCILIATION REQUIRED**. `NEMESIA` is not a current public product name.
 
 ## Repository role
 
@@ -83,33 +83,7 @@ For free IT management diagnosis implementation, the primary implementation/reus
 - Slice 3 implementation/completion: `28`
 - Slice 4 implementation/completion: `29`
 - Slice 5 implementation/completion: `30`
-- Active Slice 6 implementation handoff: `31`
-
-## Documentation ownership by concern
-
-| Concern | Canonical location |
-|---|---|
-| IT経営KAIZEN business / service model | `17-it-management-kaizen-business-service-canonical-v1.md` |
-| 無料診断 / Assessment boundary and sales story | `18-it-management-diagnosis-assessment-boundary-sales-story-v1.md` |
-| 無料診断 channel flows | `19-free-it-management-diagnosis-channel-flows-v1.md` |
-| IT経営KAIZEN / FACTACT consistency | `20-it-management-kaizen-factact-consistency-principles-v1.md` |
-| 無料診断 Human / AI / System operating model | `21-free-it-management-diagnosis-operating-model-v1.md` |
-| 無料診断 Development / MVP design | `22-free-it-management-diagnosis-development-canonical-v1.md` |
-| 無料診断 implementation specification | `23-free-it-management-diagnosis-implementation-spec-v1.md` |
-| Existing-resource reuse | `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` |
-| Slice 1 handoff | `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` |
-| Survey v2 Question Set | `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` |
-| Slice 2 handoff | `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` |
-| Slice 3 handoff | `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` |
-| Slice 4 handoff | `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` |
-| Slice 5 handoff | `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` |
-| Slice 6 handoff | `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` |
-| FACTACT product identity | `00-product-vision.md` |
-| Core requirements | `01-core-prd.md` |
-| Domain objects / invariants | `02-domain-model.md` |
-| Operational Context | `03-operational-context.md` |
-| Progressive onboarding | `04-progressive-onboarding.md` |
-| Architecture decisions | `docs/adr/` when introduced |
+- Slice 6 implementation/completion: `31`
 
 ## Decision precedence
 
@@ -142,26 +116,28 @@ For free IT management diagnosis UI / customer-facing output:
 
 Do not introduce `NEMESIA` as a public product name. Do not use **情シスKAIZEN** as the current top-level business/service architecture.
 
-## VS Code / AI handoff
+## Free diagnosis MVP milestone
 
-For business-sensitive FACTACT development, read `17` first. For free-diagnosis implementation, read `18`–`31`; `25`, `27`, `28`, `29`, `30` are completed handoffs, `26` is the current Survey v2 definition, and `31` is the active Slice 6 handoff.
+**無料 IT経営診断 MVP Vertical Slices 1–6 are completed end-to-end.**
 
-Do not replace Fact First semantics with generic ticket/CRUD patterns, and do not infer current business hierarchy from legacy 情シスKAIZEN or NEMESIA documents.
+- Slice 2 completed at `atlib-sales-tools/main` `00500a14311901a9afa47db76bb16ea77a78093d`
+- Slice 3 completed at `4132f6ad6b5f50cf7622dd6cc2cc44af6a9efe37`
+- Slice 4 completed at `632e9cd49f8208ec831a0299f650d444d120dd03`
+- Slice 5 completed at `a30f100a913781d0c2e4a2816b6f7364523bc2fd`
+- Slice 6 completed at `2c81a0b1ad354ced710884a36998c32497dd9237`
 
-## Immediate direction
+The active Development Lane target is now **Production Readiness / Pilot Readiness**, not another feature Slice.
 
-Business Lane priority is service productization first: free IT management diagnosis, 60-minute diagnosis, IT経営KAIZEN 設計Assessment, post-Assessment execution routes, and FACTACT requirements that support them.
+Priority validation areas:
 
-**Slice 1 — Case / Application / Survey is completed.**
-
-**Slice 2 — Diagnosis Preparation / AI-01 Pre-Diagnosis Organizer is completed at `atlib-sales-tools/main` commit `00500a14311901a9afa47db76bb16ea77a78093d`.**
-
-**Slice 3 — 60min Diagnosis Workspace / SourceRecord / AI-02 Interview Assistant is completed at `atlib-sales-tools/main` commit `4132f6ad6b5f50cf7622dd6cc2cc44af6a9efe37`.**
-
-**Slice 4 — Post-Diagnosis Structuring / DiagnosisInsight / Human Review is completed at `atlib-sales-tools/main` commit `632e9cd49f8208ec831a0299f650d444d120dd03`.**
-
-**Slice 5 — Report Draft / Report Grounding / Approval / Feedback is completed at `atlib-sales-tools/main` commit `a30f100a913781d0c2e4a2816b6f7364523bc2fd`.**
-
-The active Development Lane implementation target is **Slice 6 — Assessment Lifecycle / Deterministic Handoff / Close Guards / Audit Completion** according to `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md`.
+1. production migration / rollback rehearsal;
+2. production environment and secrets/config validation;
+3. real Anthropic AI connectivity for AI-01 through AI-04 and failure behavior;
+4. real Google Workspace authentication / authorization;
+5. PostgreSQL multi-connection and AI worker lease/concurrency behavior;
+6. security/privacy and customer-data handling review;
+7. observability, alerts, audit inspection, backup/restore and operational runbook;
+8. realistic pilot-customer E2E from WEB/SALES entry through Assessment handoff / close;
+9. explicit go/no-go criteria before general customer use.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
