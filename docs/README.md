@@ -42,27 +42,28 @@ The repository, not chat history, is the source of truth. When a material Busine
 11. `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 2 Diagnosis Preparation / AI-01
 12. `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 3 60min Diagnosis Workspace / SourceRecord / AI-02
 13. `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 4 Post-Diagnosis Structuring / DiagnosisInsight / Human Review
-14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — READY FOR CODEX** — Slice 5 Report Draft / Grounding / Approval / Feedback
+14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED** — Slice 5 Report Draft / Grounding / Approval / Feedback
+15. `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — READY FOR CODEX** — Slice 6 Assessment Lifecycle / Deterministic Handoff / Close Guards
 
 ### AI / developer entry point
 
-15. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
+16. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
 
 ### FACTACT Product and Core
 
-16. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
-17. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
-18. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
-19. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
-20. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
+17. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
+18. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
+19. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
+20. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
+21. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
 
 ### UX and implementation handoff
 
-21. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
-22. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
-23. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
-24. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
-25. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+22. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
+23. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
+24. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
+25. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
+26. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
 
 ## Superseded / legacy material
 
@@ -81,7 +82,8 @@ For free IT management diagnosis implementation, the primary implementation/reus
 - Slice 2 implementation/completion: `27`
 - Slice 3 implementation/completion: `28`
 - Slice 4 implementation/completion: `29`
-- Active Slice 5 implementation handoff: `30`
+- Slice 5 implementation/completion: `30`
+- Active Slice 6 implementation handoff: `31`
 
 ## Documentation ownership by concern
 
@@ -101,6 +103,7 @@ For free IT management diagnosis implementation, the primary implementation/reus
 | Slice 3 handoff | `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` |
 | Slice 4 handoff | `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` |
 | Slice 5 handoff | `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` |
+| Slice 6 handoff | `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` |
 | FACTACT product identity | `00-product-vision.md` |
 | Core requirements | `01-core-prd.md` |
 | Domain objects / invariants | `02-domain-model.md` |
@@ -114,7 +117,7 @@ When documents disagree, do not silently choose whichever is easiest to implemen
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
 2. `17` for Business / Service design;
-3. `18`–`30` for current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
+3. `18`–`31` for current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
 4. `00-product-vision.md` / FACTACT Core Fact First principles;
 5. Core PRD and Domain Model invariants;
 6. current UX specifications;
@@ -141,7 +144,7 @@ Do not introduce `NEMESIA` as a public product name. Do not use **情シスKAIZE
 
 ## VS Code / AI handoff
 
-For business-sensitive FACTACT development, read `17` first. For free-diagnosis implementation, read `18`–`30`; `25`, `27`, `28`, `29` are completed handoffs, `26` is the current Survey v2 definition, and `30` is the active Slice 5 handoff.
+For business-sensitive FACTACT development, read `17` first. For free-diagnosis implementation, read `18`–`31`; `25`, `27`, `28`, `29`, `30` are completed handoffs, `26` is the current Survey v2 definition, and `31` is the active Slice 6 handoff.
 
 Do not replace Fact First semantics with generic ticket/CRUD patterns, and do not infer current business hierarchy from legacy 情シスKAIZEN or NEMESIA documents.
 
@@ -157,6 +160,8 @@ Business Lane priority is service productization first: free IT management diagn
 
 **Slice 4 — Post-Diagnosis Structuring / DiagnosisInsight / Human Review is completed at `atlib-sales-tools/main` commit `632e9cd49f8208ec831a0299f650d444d120dd03`.**
 
-The active Development Lane implementation target is **Slice 5 — Report Draft / Report Grounding / Approval / Feedback** according to `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md`.
+**Slice 5 — Report Draft / Report Grounding / Approval / Feedback is completed at `atlib-sales-tools/main` commit `a30f100a913781d0c2e4a2816b6f7364523bc2fd`.**
+
+The active Development Lane implementation target is **Slice 6 — Assessment Lifecycle / Deterministic Handoff / Close Guards / Audit Completion** according to `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md`.
 
 FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.
