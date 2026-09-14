@@ -226,14 +226,73 @@ Due / Follow-upの変更は、Actor、Time、変更前後の値、および必�
 - Follow-up変更履歴とHuman-readable History / Technical Auditの表示境界を設計する。
 - Due超過、Follow-up到来、Waiting + no follow-up、Dueなし、Ruleなし、変更履歴、no-auto-actionをテストする。
 
+---
+
+## Decision 5 — Team boundary
+
+**Status: ACCEPTED — 2026-09-14**
+
+### Decision
+
+Active Workの継続責任は、明示されたHuman Ownerが持つ。TeamまたはOperational groupはOwnerの代替ではない。
+
+Teamは、Workへの参照・協働・Action・引継ぎ等に関係するOperational / Authority boundaryとして扱う。ただしTeam membershipだけで特定ActionのAuthorityを与えない。具体的Actionの可否は、引き続きRule / Authority / Context / Current Factsに基づいて評価する。
+
+Authorized Humanは、他者がOwnerであるWorkにActionできる。そのActionだけを理由にOwnerを変更しない。**Action Actor != Work Owner**を維持する。
+
+Ownerの正式なTransferは明示操作として記録し、少なくとも以下を保持する。
+
+- previous Owner
+- new Owner
+- transferを実行・承認したActor
+- Time
+- 必要なreason / Source / provenance
+
+Owner履歴は上書きして消さない。
+
+Teamが設定されていても、Active WorkのOwner不在を通常状態として扱わない。Owner不在は責任上のGapとしてView / Projectionで検出可能にする。Work生成直後等に技術的な遷移状態が必要かはImplementation Designで扱い、Product semanticsとしての明示Owner原則を弱めない。
+
+My Work / Team Work / Needs-follow-up等は、別Workや別Core Objectではなく、同じWorkに対するView / Projectionとする。One Fact, Multiple Viewsを維持する。
+
+TeamをHR上の部署と同一概念に固定しない。Service Desk、Security Operations、Infrastructure、IT Management等のBusiness上のOperational groupとHR組織が一致する場合も一致しない場合もある。既存Organization / Person / Relation / Authority / Service ContextとのMappingおよび保存形はImplementation Designで確認する。
+
+一つのWorkに複数のTeam / Operational groupが関与し得る。ただし複数groupの関与によってHuman Ownerの継続責任を曖昧にしてはならない。
+
+Team間の協力、Team変更、他TeamによるAction、Owner Transferを自動的にEscalationとはみなさない。Escalation semanticsはDecision 6で別途定義する。
+
+### Product consequences
+
+- `Team = Owner`または「Teamの誰かが対応する」という責任モデルにしない。
+- Team ViewからAuthorized Humanが他OwnerのWorkを支援できるが、支援ActionでOwnerは自動変更されない。
+- 正式な責任移管と単なるHelp / CollaborationをUX上も区別する。
+- Team WorkはWork種別ではなくProjectionであり、同一WorkがMy / Team / Needs-follow-up等の複数Viewへ同時に現れ得る。
+- 外部VendorがActionを実施する場合でも、企業側のWork Ownerが自動的に消えるわけではない。
+
+### Architecture constraints
+
+- `TeamWork`等の新Core Objectを追加しない。
+- TeamをHR department専用概念として固定しない。
+- Team membershipから高権限ActionのAuthorityを自動推論しない。
+- Owner Transferはappend-preservingな履歴とprovenanceを保持する。
+- 複数Team / Operational groupの具体的なpersisted representationは、既存Organization / Person / Relation / Authority / Service ContextとのFitをImplementation Designで確認して決める。
+- Team scope / collaboration relationとEscalation recordを同一概念にしない。
+
+### Required implementation follow-up — not implemented yet
+
+- Team / Operational groupを既存Coreで表現するMappingとtenant / service boundaryを設計する。
+- My / Team Viewのprojection条件とRLS / Application authorizationの責任分界を設計する。
+- 他Owner Workへのauthorized ActionとOwner Transfer commandを分離する。
+- Owner Transferの履歴、reason / provenance、競合時の整合性を設計する。
+- 複数Team関与時の表示と責任の見せ方を設計する。
+- Owner不在、他OwnerへのAction、formal transfer、unauthorized action、複数Team、Team membershipだけではprivileged Action不可、One Fact Multiple Viewsをテストする。
+
 This acceptance records Product semantics only. Phase 2 migration / Application / API / UI implementation remains unstarted and requires implementation approval.
 
 ---
 
 ## Pending Product Owner decisions
 
-Decisions 1–4 are accepted. Decisions 5–7 remain pending:
+Decisions 1–5 are accepted. Decisions 6–7 remain pending:
 
-- Decision 5 — Team boundary
 - Decision 6 — Escalation recording contract
 - Decision 7 — Knowledge approval authority
