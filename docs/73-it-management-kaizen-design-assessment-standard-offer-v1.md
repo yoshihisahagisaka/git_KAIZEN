@@ -1,526 +1,265 @@
-# IT経営KAIZEN — 設計Assessment Standard Offer v1
+# IT経営KAIZEN — 設計Assessment Standard Offer v2
 
 Status: BUSINESS / STANDARD OFFER — PROPOSAL FOR VALIDATION
 Date: 2026-09-14
 Price: ¥1,200,000（税別） — DECIDED
+Method Canonical: `docs/74-it-management-kaizen-design-decision-investment-method-v1.md`
 
 ## 0. Purpose
 
-IT経営KAIZENのRoute Cで提供する「設計Assessment」を、営業・コンサル担当が再現可能な標準商品として定義する。
-
-Assessmentの目的は、無料診断で見つかった可能性を理由にatLIBのサービスを売ることではない。
+Route Cの「設計Assessment」を再現可能な標準商品として定義する。Assessmentは無料診断で見つかった可能性を理由にatLIBのサービスを売る工程ではない。
 
 > **可能性を、経営判断できるFACTへ変える。**
 
-Customer Arrival：
+さらにFACTから会社を良くする複数のACT Optionsと投資の道筋を設計し、経営者が比較して次のACTをHuman Decisionできる状態をつくる。
 
-> **経営者が、事実をもとにIT経営の次の一手を決められる。**
+> **Customer Arrival：経営者が、FACTをもとに複数のACT Optionsと優先順位を比較し、次に実行するACTをDecisionできる。**
 
 ---
 
-# 1. Position in Customer Journey
+## 1. Position in Customer Journey
 
 ```text
-FUTURE
-→ 無料IT経営診断
-→ Human Review
-→ Management Feedback
-→ NEXT DECISION
-   ├ A Direct ACT
-   ├ B Focused Confirmation
-   ├ C Design Assessment
-   └ D Stop / Hold
+FUTURE → 無料IT経営診断 → Human Review → Management Feedback → NEXT DECISION
+  ├ A Direct ACT
+  ├ B Focused Confirmation
+  ├ C Design Assessment
+  └ D Stop / Hold
 ```
 
-AssessmentはRoute Cの場合のみ提案する。
-
-Route C condition：
-
-> Materialな経営Decisionを行うために、現在のEvidenceが不足している。
-
-Assessmentを売ること自体をKPI / Goalにしない。
+AssessmentはRoute Cの場合のみ提案する。条件は、Materialな経営Decisionを行うために現在のEvidenceが不足していること。Assessment受注自体をGoalにしない。
 
 ---
 
-# 2. What Customer Buys
+## 2. What Customer Buys
 
 Customerが購入するのは調査工数や報告書ではない。
 
-Customer Value：
+> **FUTUREとFACTから会社を良くする選択肢を設計し、経営者が「どのACTを実行するか」を判断できる状態。**
 
-> **ITについて「何を変えるべきか」を、推測ではなく事実で判断できる状態。**
-
-Assessmentは以下を提供する。
-
-1. FUTUREのDecision基準化
-2. 現在地のEvidence確認
-3. FACT / UNKNOWNの明確化
-4. Material GAPの特定
-5. ROOT CAUSE HypothesisのEvidence確認
-6. KAIZEN OPTIONの比較
-7. Management Decision Material
-8. Decision Session
-9. ACTへのHandoff
+Assessmentは、FUTURE / Management PriorityのDecision基準化、Evidence確認、FACT / UNKNOWN明確化、Material GAP特定、ROOT CAUSEのEvidence確認、3 Domains × 6 LensesによるACT Options設計、Management Priority別Scenario比較、Multi-year KAIZEN Roadmap、Decision Session、ACT / Actor AllocationへのHandoffを提供する。
 
 ---
 
-# 3. Assessment Boundary
+## 3. Boundary
 
-Assessmentは以下ではない。
+Assessmentは、網羅的IT監査、法定監査、IPO監査意見、ISMS認証審査、脆弱性診断、Penetration Test、製品選定だけの調査、atLIB Managed Service導入診断、IT部門の採点大会ではない。
 
-- 網羅的IT監査
-- 法定監査
-- IPO監査意見
-- ISMS認証審査
-- 脆弱性診断
-- Penetration Test
-- 製品選定だけを目的とした調査
-- atLIB Managed Service導入診断
-- IT部門の採点大会
-
-必要に応じて専門家 / Vendor / 別サービスによる確認をRecommendationする。
+また、**3 Domains × 6 Lensesの18項目を全て採点するチェックリストでも、全IT改善を一括実行するための販売診断でもない。**
 
 ---
 
-# 4. Assessment Start Condition
+## 4. Start Condition
 
-開始前に最低限以下をHuman Decisionとして確認する。
+開始前に、Material Decision、FUTURE / FUTURE UNKNOWN、Management Priority / UNKNOWN、Why Assessment、Scope、Decision Owner、Customer Contactを確認する。
 
-- Material Decision：何を決めたいのか
-- FUTURE：何を実現したいのか、または何がまだUNKNOWNか
-- Why Assessment：なぜ追加Evidenceが必要なのか
-- Scope：今回どこまで確認するのか
-- Decision Owner：最終判断者
-- Customer Contact：Evidence提供 / Interview調整担当
-
-FUTUREが完全に確定していなくてもAssessment開始は可能だが、その場合FUTURE clarificationをScopeへ含める。
+FUTURE / Management Priorityが完全に確定していなくても開始可能だが、その場合clarificationをScopeへ含める。
 
 ---
 
-# 5. Standard Assessment Domains
+## 5. Design Space
 
-全案件で同じチェックリストを機械的に実施しない。
+3 Domains：**技術・運用・管理**。
 
-Material Decisionに必要な範囲を、以下の3軸から選択する。
+6 Lenses：**なくす・自動化する・標準化する・任せる・残す・整える**。
 
-## 技術
+> **3 Domains × 6 Lensesは18項目の網羅チェックではなく、ACT Optionsを設計するDesign Spaceである。**
 
-例：
-- Identity / Account
-- Device
-- Cloud / SaaS
-- Network
-- Endpoint / Security
-- Data / File
-- Backup / Recovery
-- Infrastructure
-- Integration / Automation
+> **FUTUREが何を優先するかを決め、3 Domains × 6 LensesがどうKAIZENするかを設計する。**
 
-## 運用
-
-例：
-- Joiner / Mover / Leaver
-- Helpdesk / Request
-- Account operations
-- Device lifecycle
-- Patch / update
-- Incident / escalation
-- Vendor coordination
-- Knowledge / procedure
-- Asset / license operation
-- recurring manual work
-
-## 管理
-
-例：
-- IT responsibility / authority
-- Decision process
-- IT policy / rules
-- investment / budget
-- risk management
-- vendor governance
-- security governance
-- evidence / auditability
-- KPI / management reporting
-- business continuity
-
-6 LensesをKAIZEN Option形成に使用する。
-
-> **なくす・自動化する・標準化する・任せる・残す・整える**
+技術にはIdentity / Device / Cloud / SaaS / Network / Security / Data / Infrastructure / Integration等、運用にはJML / Helpdesk / Device Lifecycle / Update / Incident / Vendor / Knowledge / Asset / Recurring Work等、管理にはResponsibility / Authority / Decision / Policy / Investment / Risk / Governance / Evidence / KPI / Continuity等を含み得る。対象はMaterial Decisionに必要な範囲を選ぶ。
 
 ---
 
-# 6. Evidence Model
+## 6. Evidence Model
 
-Assessmentは質問票の回答だけでFACTを確定しない。
+質問票回答だけでFACTを確定しない。System configuration、screenshots、account / device / asset、SaaS / contract / license、policy / procedure、tickets、logs、organization、vendor scope、cost、management materials、interview、workflow observation等からEvidenceを確認する。
 
-Evidence candidate：
-
-- system configuration / screenshots
-- account / device / asset lists
-- SaaS / contract / license lists
-- policy / rule / procedure
-- tickets / request records
-- logs / reports
-- organization / responsibility documents
-- vendor contracts / service scope
-- invoices / cost data
-- management materials
-- interview evidence
-- actual workflow observation
-- sample transactions / cases
-
-Evidence availability itselfもAssessment Resultとなり得る。
-
-Evidenceが確認できなければUNKNOWNとして残す。
+Evidenceが確認できなければUNKNOWNとして残す。Evidence availability自体もAssessment Resultとなり得る。
 
 ---
 
-# 7. Standard Delivery Process
+## 7. Standard Delivery Process — PROPOSAL FOR PILOT VALIDATION
 
-標準工程は以下を基本形とする。
+### Phase 0 — Scope & Decision Setup
+FUTURE / Priority / Material Decision / Scope / Evidence Request / Interview対象を確認。Output：Assessment Charter。
 
-## Phase 0 — Scope & Decision Setup
+### Phase 1 — Evidence Collection
+Documents / system / management / operator / approved vendor / workflow Evidenceを確認。Output：Evidence Register / UNKNOWN Register。
 
-- Management Feedback Context確認
-- Material Decision確認
-- FUTURE / FUTURE UNKNOWN確認
-- Assessment Scope決定
-- Evidence Request確定
-- Interview対象確定
+### Phase 2 — FACT Structuring
+FACT / UNKNOWN / Observation / Contradiction / Missing Evidenceを整理。Output：Current State FACT Map。
 
-Output：Assessment Charter
+### Phase 3 — GAP / ROOT CAUSE Analysis
+`FUTURE vs Current FACT → GAP → ROOT CAUSE Hypothesis → Evidence Confirmation`。Output：Material GAP / Root Cause Analysis。
 
-## Phase 1 — Evidence Collection
+### Phase 4 — ACT Option Design
+Material GAP / ROOT CAUSEに対し、3 Domains × 6 Lensesから複数のACT Optionsを設計する。atLIB提供可能範囲に限定しない。Output：ACT Option Portfolio。
 
-- documents / records / system evidence collection
-- management interview
-- operator interview
-- vendor interview where necessary and approved
-- current workflow confirmation
+### Phase 5 — Scenario & Multi-year Roadmap Design
+必要に応じ、Management Priorityを変えた場合のKAIZEN Scenarioを比較する。例として社員工数削減、IPO / Trust / Governance、人を増やさない成長等があるが、固定Scenarioではない。
 
-Output：Evidence Register / UNKNOWN Register
+FUTUREへの道筋としてYear 1 Priority ACTs、Year 2 / 3 Candidate ACTsを配置する。Year 2以降は固定Commitmentではなく、CHANGE / NEW FACTで再Decisionする。Output：Scenario Comparison / Multi-year KAIZEN Roadmap。
 
-## Phase 2 — FACT Structuring
+### Phase 6 — Management Decision Session
+FUTURE、FACT / UNKNOWN、GAP、ROOT CAUSE、ACT Options、Scenario、Priority、Dependency、Risk、Evidenceで支えられる範囲のInvestment / Effort、Roadmapを提示する。
 
-Evidenceをもとに：
+> **HumanがDecisionする主対象は、何を優先し、どのACTを実行するか。**
 
-- FACT
-- UNKNOWN
-- Observation
-- contradiction
-- missing Evidence
-
-を整理する。
-
-Output：Current State FACT Map
-
-## Phase 3 — GAP / ROOT CAUSE Analysis
-
-```text
-FUTURE
-vs
-Current FACT
-→ GAP
-→ ROOT CAUSE Hypothesis
-→ Evidence Confirmation
-```
-
-Output：Material GAP / Root Cause Analysis
-
-## Phase 4 — KAIZEN Option Design
-
-各Material GAPに対して、6 Lensesおよび技術×運用×管理からOptionを設計する。
-
-OptionはatLIB提供可能範囲に限定しない。
-
-Output：KAIZEN Option Portfolio
-
-## Phase 5 — Management Decision Session
-
-経営者 / Decision Ownerへ：
-
-- FUTURE
-- FACT / UNKNOWN
-- GAP
-- ROOT CAUSE
-- KAIZEN OPTION
-- priority / dependency / risk / indicative effort or cost where supportable
-
-を提示する。
-
-HumanがDecisionする。
-
-Output：Decision Record / ACT Handoff
+Stop / Hold / Additional Evidenceも正当なDecision。Output：Management Decision Record / ACT Handoff。
 
 ---
 
-# 8. Standard Customer Deliverables
+## 8. Standard Customer Deliverables — PROPOSAL
 
-標準成果物を以下の7点とするPROPOSAL。
+1. **Executive Decision Summary** — FUTURE、Priority、重要FACT、Material GAP、Decision Point。
+2. **FACT / UNKNOWN Map** — 確認できたこと / 未確認事項。
+3. **Evidence Register** — EvidenceとSource / Provenance。
+4. **Material GAP & Root Cause Analysis** — FUTUREとのGAPとEvidenceに基づく原因整理。
+5. **ACT Option Portfolio & Scenario Comparison** — 3 Domains × 6 Lensesで設計したACT OptionsとPriority別比較。
+6. **Multi-year KAIZEN Roadmap** — Year 1 Priority ACTsとYear 2以降Candidate ACTs。NEW FACTで更新する。
+7. **Management Decision Record & ACT Handoff** — 選択ACT、残UNKNOWN、Actor候補、Next Action、Verification Requirement。
 
-### 1. Executive Decision Summary
-経営者向け。FUTURE、重要FACT、Material GAP、次のDecisionを簡潔に整理。
-
-### 2. FACT / UNKNOWN Map
-何が確認でき、何がまだ分からないか。
-
-### 3. Evidence Register
-主要判断を支えるEvidenceとSource / Provenance。
-
-### 4. Material GAP & Root Cause Analysis
-FUTUREとのGAPとEvidenceに基づくRoot Cause整理。
-
-### 5. KAIZEN Option Portfolio
-何を変えるかの選択肢。6 Lenses / 技術×運用×管理を利用。
-
-### 6. Prioritized Decision Roadmap
-何を、どの順番でDecision / ACTするか。
-
-### 7. Management Decision Record & ACT Handoff
-経営者が決めた内容、残UNKNOWN、Actor候補、Next Action。
-
-成果物のページ数をCustomer Valueとして販売しない。
+成果物ページ数をCustomer Valueとして販売しない。
 
 ---
 
-# 9. Decision Option Format
+## 9. ACT Option Format — PROPOSAL
 
-各KAIZEN Optionは最低限以下のBusiness Meaningを持つ。
+各Optionは原則、What、Why、Domain、Lens、Supporting FACT、Remaining UNKNOWN、Expected CHANGE、Risk / Dependency、Actor Candidates、Decision Neededを持つ。Evidenceで支えられる場合のみindicative cost / lead time / priorityを加える。
 
-- What：何を変えるか
-- Why：どのFUTURE / GAPに効くか
-- Supporting FACT
-- Remaining UNKNOWN
-- Expected Change
-- Risk / Dependency
-- Actor Candidates
-- Decision Needed
-
-可能な場合：
-- indicative cost
-- indicative lead time
-- priority
-
-根拠がないROI / 効果額を生成しない。
+Expected CHANGEは保証成果ではなく、ACT後にVerificationする対象。根拠のないROI / 効果額を生成しない。
 
 ---
 
-# 10. Actor Neutrality
+## 10. Decision & Actor Neutrality
 
-Assessmentは「atLIBへ何を発注するか」を決める工程ではない。
+> **「やるか、やらないか」を迫るのではなく、「会社を良くするために、どれをやるか」を一緒に決める。**
 
-順序：
+必要に応じて、`Management Decision 1：何を優先するか → ACT Options / Scenario Comparison → Management Decision 2：どのACTを実行するか → Actor Allocation` とする。
 
-```text
-何を変えるか
-→ Human Decision
-→ 誰が担うか
-```
-
-Actor candidate：
-
-- Customer
-- Existing Vendor
-- Other Vendor
-- atLIB
-- Combination
+ActorはCustomer / Existing Vendor / Other Vendor / atLIB / Combinationから選択可能。
 
 > **atLIBに発注することがゴールではない。会社が良くなることがゴールである。**
 
 ---
 
-# 11. Standard Commercial Model
+## 11. Commercial Model
 
-DECIDED：
+DECIDED：**標準価格 ¥1,200,000（税別）**。
 
-> **標準価格 ¥1,200,000（税別）**
+価格は工数積算だけで説明しない。Value basisは、Decision Quality、推測によるRisk低減、Evidenceに基づくPriority、複数Option / Scenario比較、段階投資設計、共通認識、FACT / Decision Context継続利用。
 
-価格は工数積算だけで説明しない。
-
-Value basis：
-
-- IT投資前のDecision Quality向上
-- 組織 / Vendor / IT施策を推測で決めるRisk低減
-- Evidenceに基づく優先順位
-- ACT前の共通認識形成
-- FACT / Decision Contextの継続利用
-
-Scopeが標準範囲を大幅に超える場合は別途見積とする。
-
-何をもって「標準範囲を超えるか」のCommercial BoundaryはPilotで検証し、別途Decisionする。
+標準Scope CeilingはPilot Evidence後にDecisionする。
 
 ---
 
-# 12. Duration / Effort — NOT YET DECIDED
+## 12. Duration / Effort — UNKNOWN
 
-現時点では標準期間、Interview回数、訪問回数、担当人数をDECISIONしない。
-
-理由：
-- 実Pilot Evidenceがない
-- Assessment Scope variabilityが未検証
-- ¥1.2mでのDelivery Economicsを実測していない
-
-Pilotでは以下を計測する。
-
-- consultant preparation time
-- evidence review time
-- interview time
-- analysis time
-- Human Review time
-- report preparation time
-- Decision Session time
-- rework time
-- customer coordination time
-
-Pilot後にStandard Delivery CapacityをDecisionする。
+標準期間、Interview回数、訪問回数、担当人数、標準Consultant Capacity、Gross Marginは未決定。PilotでPreparation / Evidence Review / Interview / Analysis / Human Review / Option & Roadmap Preparation / Decision Session / Rework / Coordinationを計測する。
 
 ---
 
-# 13. Customer Responsibilities — PROPOSAL
+## 13. Customer Responsibilities — PROPOSAL
 
-Customerには原則以下を依頼する。
-
-- Decision Ownerの参加
-- Evidence提供
-- Interview対象者の調整
-- System / Vendor情報への必要なアクセス調整
-- Customer Correction
-- Decision Sessionへの参加
-
-Evidenceを提供できないこと自体を失敗としない。UNKNOWNとしてDecision Contextへ残す。
+Decision Owner参加、Evidence提供、Interview調整、必要なSystem / Vendor情報アクセス調整、Customer Correction、Decision Session参加を原則依頼する。Evidence不足は失敗ではなくUNKNOWNとして残す。
 
 ---
 
-# 14. Assessment Completion Definition
+## 14. Completion Definition
 
-Assessmentの完了条件は「報告書を納品した」ではない。
+報告書納品やatLIB後続受注をCompletionとしない。
 
-Business completion：
+> **Decision Ownerが、FUTURE / Management Priority、FACT / UNKNOWN、GAP / ROOT CAUSE、ACT Options、Scenario / Roadmapを理解し、次に実行するACTをHuman Decisionできる状態になったこと。**
 
-> **Decision Ownerが、確認されたFACT / UNKNOWN / GAP / Optionを理解し、次に何をDecision / ACTするかをHuman Decisionできる状態になったこと。**
-
-Possible completion states：
-
-- ACT decided
-- additional Evidence confirmation decided
-- decision deferred with reason
-- no change decided
-
-「atLIB受注」がCompletion Conditionではない。
+Completion stateはACT decided、Priority clarification、Additional Evidence、Deferred with reason、Stop / Holdを含む。
 
 ---
 
-# 15. Assessment → FACTACT Continuity
-
-Business Requirement：
-
-Assessmentで形成したTrusted Contextを、その後の実行で捨てない。
+## 15. Assessment → FACTACT Continuity
 
 ```text
 Assessment
-→ Human Decision
+→ Human Decision：ACT
+→ Actor Allocation
 → ACT
 → CHANGE
 → Verification
 → NEW FACT
-→ NEXT KAIZEN
+→ Roadmap Review
+→ NEXT KAIZEN / NEXT ACT Decision
 ```
 
-継続対象：
-
-- FUTURE
-- FACT / Evidence
-- UNKNOWN
-- GAP
-- Root Cause
-- Decision
-- ACT
-- Expected Change
-- Verification requirement
-
-実装方式はDevelopment / Product Laneで判断する。
+継続対象はFUTURE、Management Priority、FACT / Evidence、UNKNOWN、GAP、Root Cause、ACT Options、Scenario、Decision、ACT、Expected CHANGE、Verification Requirement、Actual CHANGE / NEW FACT。実装方式はDevelopment / Product Laneで判断する。
 
 ---
 
-# 16. S社 Assessment Hypothetical Scope — NOT DECIDED
+## 16. Multi-year / Staged Investment Principle
 
-S社がRoute CをHuman Decisionした場合に考えられるAssessment Scope候補。
+> **FUTUREは数年単位、ACTは段階的に。**
 
-HYPOTHESIS / PROPOSAL：
+> **一度に全部を売らない。FUTUREへの道筋を示し、NEW FACTを確認しながら次の投資をDecisionする。**
 
-- FUTURE / IPOを踏まえたIT Management Capability
-- IT responsibility / authority
-- current IT operation scope
-- resident contractor scope
-- knowledge / continuity
-- IT asset / SaaS / account landscape
-- security / control Evidence
-- vendor / contract landscape
-- new section manager role
-- recurring work / management work balance
+`Year 1 ACT → CHANGE → NEW FACT → Roadmap Review → Year 2 ACT Decision`。
 
-これは現時点でS社Assessment Scopeではない。
-
-Management Feedback → NEXT DECISIONの結果によりScopeを決定する。
+Roadmapは方向とCandidate ACTを示すが、未来のACTをEvidenceなしに固定しない。
 
 ---
 
-# 17. Sales Explanation
+## 17. S社 Assessment Hypothetical Scope — NOT DECIDED
 
-短い説明：
+S社がRoute CをHuman Decisionした場合、FUTURE / IPOを踏まえたIT Management Capability、Responsibility / Authority、IT Operation、Resident Contractor Scope、Knowledge / Continuity、Asset / SaaS / Account、Security / Control Evidence、Vendor / Contract、New Section Manager Role、Recurring Work / Management Work Balance等が候補になり得る。
 
-> **無料診断では、改善の可能性と次に確認すべきことを整理します。設計Assessmentでは、実際の資料・運用・システム・関係者への確認を通じて、その可能性を経営判断できるFACTへ変えます。そのうえで、何を変えるかを経営者と決めます。**
+現時点ではS社Assessment Scopeではない。Management Feedback → NEXT DECISION後に決定する。
+
+---
+
+## 18. Sales Explanation
+
+> **無料診断では、改善の可能性と次に確認すべきことを整理します。設計Assessmentでは、実際のEvidenceから現在地をFACTで確認し、会社のFUTUREに向けた複数のACT Optionsと段階的な投資の道筋を設計します。そのうえで、経営者が「やるか、やらないか」ではなく「どれをやるか」を判断できる状態をつくります。**
 
 Route C transition：
 
-> **ここから先は、可能性のまま投資や体制を決めず、Evidenceを確認して現在地と次の一手を確定する必要があります。そのための工程が設計Assessmentです。**
+> **ここから先は、可能性のまま投資や体制を決めず、Evidenceを確認して現在地をFACTにする必要があります。そのFACTから選択肢と優先順位を設計し、次に実行するACTをDecisionするための工程が設計Assessmentです。**
 
 ---
 
-# 18. Validation Questions for First Pilots
+## 19. Validation Questions for First Pilots
 
-Pilotで検証する。
+Pilotでは、¥1.2mのDecision Value理解、7成果物、Evidence Request負荷、FUTURE / Priorityの有効性、3 Domains / 6 LensesのDesign Spaceとしての有効性、Scenario Comparison、`どれをやるか` Decision、Multi-year Roadmap / Staged Investment、NEW FACTによるRoadmap更新、Actor Neutrality、Delivery Economics、ACT Handoff、Route Boundaryを検証する。
 
-1. Customerは¥1.2mの価値を「調査」ではなくDecision Valueとして理解するか
-2. 7成果物は多すぎない / 少なすぎないか
-3. Evidence Requestの顧客負荷は許容可能か
-4. FUTURE起点がAssessment中も機能するか
-5. 技術×運用×管理でMaterial GAPを十分に捉えられるか
-6. 6 LensesがKAIZEN Option設計に有効か
-7. Actor NeutralityがCustomer Trustに寄与するか
-8. Standard Delivery Economicsは成立するか
-9. Assessment ContextをACTへ再入力なくHandoffできるか
-10. Assessmentを実施しないRouteとのBoundaryが明確か
+成約率向上、失注率低下、LTV向上等は現時点でFACTとして扱わない。
 
 ---
 
-# 19. Status Summary
+## 20. Status Summary
 
-DECIDED / Existing Canonical：
+### DECIDED / Existing Canonical
 - Assessment standard price = ¥1.2m pre-tax
-- possibility → FACT → Management Decision
-- FUTURE-first
-- FACT / UNKNOWN separation
-- Human Decision
+- FUTURE-first / FACT-UNKNOWN separation
+- Design = 3 Domains × 6 Lenses → ACT Options
+- 3 × 6 is Design Space, not 18-item checklist
+- FUTURE / Management Priority determines priority
+- Human Decision selects ACT; CHANGE is verified result
+- `やるか` ではなく `どれをやるか`
 - Actor Neutrality
+- Multi-year FUTURE / Roadmap + staged ACT investment
+- NEW FACTによる次ACT再Decision
 - Assessment → ACT / FACTACT continuity direction
 
-PROPOSAL FOR PILOT VALIDATION：
-- 5-phase delivery process
+### PROPOSAL FOR PILOT VALIDATION
+- 7-phase delivery process（Phase 0–6）
 - 7 standard deliverables
 - customer responsibilities
-- option format
+- ACT Option format
+- Scenario Comparison detail
+- Multi-year Roadmap presentation detail
 - completion definition detail
 
-UNKNOWN / TO BE DECIDED AFTER EVIDENCE：
-- standard calendar duration
-- interview count
-- onsite count
-- standard consultant capacity / staffing
+### UNKNOWN / TO BE DECIDED AFTER EVIDENCE
+- standard calendar duration / interview / onsite count
+- consultant capacity / staffing
 - exact scope ceiling at ¥1.2m
 - gross margin / delivery economics
-
-FACT FIRST：
-
-> **実績のない工数・期間・効果を標準値として決めない。Pilotで測り、Decisionする。**
+- Scenario ComparisonのDecision支援効果
+- staged investmentのCommercial outcomeへの影響
