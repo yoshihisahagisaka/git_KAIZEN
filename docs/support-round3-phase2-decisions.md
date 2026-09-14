@@ -1,8 +1,9 @@
 # SUPPORT Human Review Round 3 — Phase 2 Product Decisions
 
-Status: IN PROGRESS  
+Status: PRODUCT DECISIONS COMPLETE — IMPLEMENTATION DESIGN PENDING  
 Branch: `review/factact-join-slice`  
 Started: 2026-09-12  
+Product decisions completed: 2026-09-14  
 Depends on: `support-round3-core-fit-gap.md`, `17-factact-ux-translation-layer.md`, `18-operator-work-context-v1.md`
 
 ## Purpose
@@ -349,12 +350,82 @@ Due / Follow-up超過だけを理由にEscalationを自動実行しない。Rule
 - Human-readable HistoryとTechnical Auditでの表示境界を設計する。
 - collaboration only、formal transfer、waiting、due overdue、explicit escalation、escalation result without Work Close、no-auto-escalationをテストする。
 
-This acceptance records Product semantics only. Phase 2 migration / Application / API / UI implementation remains unstarted and requires implementation approval.
+---
+
+## Decision 7 — Knowledge approval authority
+
+**Status: ACCEPTED — 2026-09-14**
+
+### Decision
+
+Workから得られた情報は、そのままKnowledgeとして扱わない。Evidence、Observation、Action、Decision等としてWork Recordに保持し、再利用価値がある内容をHuman Reviewの対象としてKnowledge Candidateにする。
+
+**Work Record != Knowledge. Knowledge Candidate != Approved Knowledge. Approved Knowledge != Rule.**
+
+Knowledge Candidateは、少なくとも以下を追跡可能にする。
+
+- source Work
+- source Evidence / Observation / Action / Decision等
+- candidate content
+- proposed scope
+- proposing ActorまたはAI provenance
+- Time
+
+Candidateの出典は必ず追跡可能にし、どのWork / Evidence / Decision等から生まれたかを失わない。
+
+AIはKnowledge Candidateの提案、要約、類似Knowledgeとの比較、scope候補提示、古いKnowledgeの再確認提案、contradicting Evidenceの検出、更新候補提示等を支援できる。ただしAI自身がKnowledgeをApprove / Publishしたり、適用scopeを拡大したり、Ruleへ昇格したりしてはならない。
+
+Knowledgeの承認は、そのKnowledgeのscopeに対してAuthorityを持つHumanが行う。Team membershipだけをKnowledge approval Authorityとはみなさない。適用範囲が広くなるほど、そのscopeに対応するAuthority評価を必要とする。
+
+承認時には、source provenance、適用scope、および必要なreliability / review contextを追跡可能にする。FACTACTはHuman確認なしにKnowledge scopeを一般化しない。
+
+Customer / Tenant固有Knowledgeをcross-tenant generic Knowledgeへ自動昇格しない。tenant boundaryを越える再利用には、明示的なHuman Review / Authorityと情報分離が必要であり、必要に応じて顧客固有情報を除去した別Candidateとして扱う。
+
+Approved KnowledgeとRuleは別概念とする。KnowledgeからRuleへの昇格には、Rule scopeに対応する別のHuman Decision / Authorityを必要とする。AIまたはKnowledge approvalだけを根拠にRuleを自動生成・自動有効化しない。
+
+新しいEvidenceによってKnowledgeが古くなった、矛盾した、またはより良いKnowledgeに置き換わった場合でも、過去Knowledgeを上書き・削除してprovenanceを失わない。review / supersession historyを追跡可能にする。具体的なstatus enumはImplementation Designで既存Knowledge modelとのFitを確認して決める。
+
+このsemanticsはSUPPORTのFAQ / 手順だけでなく、Assessment、KAIZEN ACT、Management Decision、Change Verificationから得られるLearningにも適用する。Decision → Action → Change → Verificationで得られた経験を、Human Reviewを通じて組織Knowledgeへ接続できるようにする。
+
+### Product consequences
+
+- SUPPORT対応記録を保存しただけでKnowledge Baseへ自動公開しない。
+- HumanはCandidateのsource、適用scope、根拠を確認してApproveできる。
+- AI提案であることとHuman承認済みであることをUX上区別する。
+- Customer-specific Knowledgeとgeneric Knowledgeを混同しない。
+- Knowledge承認とRule制定を同じボタン・同じAuthorityとして扱わない。
+- 古いKnowledgeを単純削除せず、現在有効なKnowledgeと過去の根拠を追跡可能にする。
+
+### Architecture constraints
+
+- `Knowledge Type`等の新Core ObjectをこのDecisionから追加しない。
+- Candidate / Approved / superseded等のpersisted representationは既存Knowledge / Evidence / Review / Decision / Authority / provenance modelとのFitをImplementation Designで検証する。
+- Knowledge approval AuthorityはApplication authorizationとRLS / tenant boundaryの双方で保護する。
+- cross-tenant再利用で元TenantのEvidenceや機密情報を漏洩させない。
+- AIはauthoritative Knowledge stateを直接変更せず、Domain APIとHuman Decision / Authority境界を通す。
+- KnowledgeからRuleへの昇格は別Decision / Authorityとして扱い、Knowledge approvalから自動推論しない。
+
+### Required implementation follow-up — not implemented yet
+
+- Knowledge Candidateの最小persisted representationとsource provenanceを設計する。
+- Candidate → Human Review → Approved KnowledgeのApplication command / invariantを設計する。
+- approval Authorityとscope評価を設計する。
+- tenant / customer-specific / generic scope境界とcross-tenant sanitization / review flowを設計する。
+- supersession / re-review / contradictionの履歴モデルを設計する。
+- AI proposal provenanceとHuman approval historyを分離して表示する。
+- Knowledge → Ruleの別Decision / Authority boundaryを設計する。
+- no-auto-publish、unauthorized approval拒否、scope escalation、cross-tenant isolation、supersession history、AI cannot approve、Knowledge approval does not create Ruleをテストする。
+
+This acceptance records Product semantics only. Phase 2 migration / Application / API / UI implementation remains unstarted. Decisions 1–7 are now complete; the next step is cross-decision Phase 2 Implementation Design and architecture fit validation before implementation approval.
 
 ---
 
-## Pending Product Owner decisions
+## Product Owner decision gate status
 
-Decisions 1–6 are accepted. Decision 7 remains pending:
+**Decisions 1–7: ALL ACCEPTED.**
 
-- Decision 7 — Knowledge approval authority
+Phase 1 Product Owner decision gates are closed. No migration / Application / API / UI implementation is authorized by this document alone.
+
+Next gate:
+
+**Phase 2 Implementation Design → Core Fit Validation → Implementation Approval**
