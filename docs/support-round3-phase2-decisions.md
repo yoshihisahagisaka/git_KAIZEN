@@ -286,13 +286,75 @@ Team間の協力、Team変更、他TeamによるAction、Owner Transferを自動
 - 複数Team関与時の表示と責任の見せ方を設計する。
 - Owner不在、他OwnerへのAction、formal transfer、unauthorized action、複数Team、Team membershipだけではprivileged Action不可、One Fact Multiple Viewsをテストする。
 
+---
+
+## Decision 6 — Escalation recording contract
+
+**Status: ACCEPTED — 2026-09-14**
+
+### Decision
+
+Escalationとは、通常のWork進行だけでは必要なDecision、Authority、ExpertiseまたはManagement Attentionを得られないため、それを明示的に要求したというFactである。
+
+EscalationはWaiting、Collaboration、Team変更、Owner Transfer、Due超過、Follow-up超過、Related Work作成とは別概念とする。誰に渡したかだけではEscalationを意味せず、通常境界を越えた判断・権限・専門性・Attentionを明示的に要求したかを意味の中心とする。
+
+EscalationしてもWork Ownerの継続責任は自動的に移転しない。責任移管が必要な場合はDecision 5のOwner Transferを別途明示する。
+
+Escalationでは、少なくとも以下を追跡可能にする。
+
+- reason
+- requested Decision / Authority / Expertise / Management Attention
+- escalation target
+- Actor
+- Time
+- Current Owner
+- 必要なEvidence / Context / Source / provenance
+
+Escalation targetをHumanだけに固定しない。Person、Operational group、Authority boundary、Management、external party等をBusiness上表現可能にする。ただし新しい`EscalationTarget` Core Objectを前提とせず、既存CoreとのMappingをImplementation Designで確認する。
+
+固定的なL1 → L2 → L3 workflowをFACTACT Coreに持たせない。Serviceや企業ごとの運用差を、Coreの固定階層へ変換しない。
+
+Escalationから得られたDecision、Rule clarification、Authority grant / denial、Evidence、Recommendation、Action等を既存Core conceptsとして関連付け、元のEscalation要求とのprovenanceを保持する。`Escalation Result`という新Core Objectを前提としない。
+
+Escalationの完了・回答取得はWork Closeを意味しない。Escalationの結果として後続Action / Change / Verificationが残る場合、Workの継続責任はDecision 3に従って維持する。
+
+Due / Follow-up超過だけを理由にEscalationを自動実行しない。RuleにEscalation条件が存在する場合も根拠を明示し、現PhaseではHumanの明示操作を基本とする。将来Automationを許可する場合はAuthority / Rule境界を別途設計する。
+
+`ESCALATED`をWork lifecycle Statusまたは新Core Objectとして保存しない。「Escalation中」等の表示が必要な場合は、現在のFact / ContextからView / Projectionとして導出する。
+
+このsemanticsはSUPPORTだけでなく、Assessment、KAIZEN ACT、Vendor Work、Security / Authority Decision、Management Connectionにも利用可能な共通意味とする。
+
+### Product consequences
+
+- EscalationとHelp / Collaboration / Transfer / WaitingをUX上も混同しない。
+- 「上に投げた」だけでOwner責任が消えない。
+- Escalation時には「何を求めているか」をHumanが理解できる形で表示する。
+- Escalation先の回答を、そのままWork resolvedやCloseと推論しない。
+- Operational ContextからManagement Decisionが必要になった場合にも同じsemanticsを再利用できる。
+
+### Architecture constraints
+
+- `Escalation`, `EscalationTarget`, `EscalationResult`を新Core Objectとして追加することをこのDecisionでは認めない。
+- Escalationのpersisted representationは既存Decision / Evidence / Relation / Activity / Authority / Work等とのFitをImplementation Designで検証する。
+- Escalation provenanceと結果側のDecision / Rule / Authority / Evidence / Actionの接続を失わない。
+- Team / Owner / Escalationの意味を分離し、Team変更やOwner TransferからEscalationを自動推論しない。
+- Due / Follow-up / Escalationをそれぞれ独立したsemanticsとして維持する。
+
+### Required implementation follow-up — not implemented yet
+
+- Escalation要求を既存Coreで永続化する最小表現を設計する。
+- escalation targetのPerson / group / Authority / external party mappingを設計する。
+- requested Decision / Authority / Expertise / Attentionの表現境界を設計する。
+- Escalation要求と結果のDecision / Rule / Evidence / Actionとのprovenance relationを設計する。
+- Human-readable HistoryとTechnical Auditでの表示境界を設計する。
+- collaboration only、formal transfer、waiting、due overdue、explicit escalation、escalation result without Work Close、no-auto-escalationをテストする。
+
 This acceptance records Product semantics only. Phase 2 migration / Application / API / UI implementation remains unstarted and requires implementation approval.
 
 ---
 
 ## Pending Product Owner decisions
 
-Decisions 1–5 are accepted. Decisions 6–7 remain pending:
+Decisions 1–6 are accepted. Decision 7 remains pending:
 
-- Decision 6 — Escalation recording contract
 - Decision 7 — Knowledge approval authority
