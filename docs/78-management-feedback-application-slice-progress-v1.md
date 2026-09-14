@@ -83,14 +83,21 @@ Implemented in current feature branch:
 - Report ApprovalにWHY connection readiness gateを追加。
 - synthetic MF-B Golden Test追加。
 - existing Report regression fixtureをHuman Reviewed Observation / Evidenceでgrounding。
+- Handoff regressionを固定件数依存から、その時点のHuman Approved Insight / OPEN confirmation集合との完全一致検証へ変更。
 
 No FACT promotion. No FACTACT Core change. No migration added for MF-B。
 
-Validation is currently running; completion evidenceはFull CI green後に追記する。
+Current implementation head after regression fix:
+- `f782ffbb7188f018898a8151b1caed4519823074`
+
+Validation:
+- GitHub Actions Controlled Pilot Closure run #81
+- Run ID `34838643070`
+- Status: IN PROGRESS at this record update.
 
 ## 4. MF-C — Human NEXT DECISION / Route Outcome
 
-Status: **NEXT**
+Status: **IMPLEMENTATION CONTRACT FROZEN — NEXT CODE SLICE**
 
 Business Contract routes:
 - A — Direct ACT
@@ -98,21 +105,93 @@ Business Contract routes:
 - C — Design Assessment
 - D — Stop / Hold
 
-Implementation intent:
-- Human-only Decision command。
-- AIはcandidate route suggestionまで。commit不可。
-- A/B/DでAssessment lifecycleを自動開始しない。
-- CのみHuman Decision後にAssessment proposal / handoff pathへ進行可能。
-- atLIBをActorとして自動選択しない。
-- route変更はsilent overwriteせず履歴 / auditを保持。
-- Business labelをFACTACT Coreへ追加しない。
+### 4.1 Application model
 
-詳細schema / APIはMF-B validation完了後、既存Audit / lifecycleで成立するかを先にFit確認して決める。
+A/B/C/DのBusiness labelをFACTACT Coreへ追加しない。Diagnosis Application側にgeneric `Management Feedback Outcome` を持ち、Customer-facing translationでA/B/C/Dを表示する。
+
+Minimum persisted Meaning:
+- diagnosis_case_id
+- feedback_report_id
+- selected_route: `DIRECT_ACT | FOCUSED_CONFIRMATION | DESIGN_ASSESSMENT | STOP_HOLD`
+- material_decision
+- rationale: optional
+- next_action
+- customer_restatement: optional but Pilotでは取得対象
+- decided_by Human
+- decided_at
+- immutable decision-time context snapshot
+- context hash
+- audit command
+
+### 4.2 Human authority
+
+- Decision commandはSTAFF / authorized Human only。
+- AIはroute candidateを別Proposalとして示せても、Decision rowを作成しない。
+- Assessmentを自動選択しない。
+- atLIBをActorとして自動選択しない。
+- silent overwriteは禁止。修正は新Decision version / supersessionとして履歴を保持する。
+
+### 4.3 Route behavior
+
+- A: Direct ACT candidate handoff。Assessment lifecycleを自動開始しない。
+- B: Focused Confirmation candidate handoff。Assessment lifecycleを自動開始しない。
+- C: Design AssessmentをHumanが選んだことを記録する。ただしこのcommand自体はAssessment proposal / acceptanceを自動commitしない。
+- D: Stop / Hold。Assessment lifecycleを自動開始しない。
+
+既存Assessment lifecycleは当面別Human commandとして維持し、MF-FでRoute Cとの整合を閉じる。
+
+### 4.4 Decision-time snapshot
+
+MF-CとMF-Dは分離実装できるが、Decision保存時に最低限のimmutable snapshotを同時に記録する。snapshotにはCustomer-facing 5-page全文ではなく、Decision provenanceに必要な参照 / Meaningを保持する。
+
+Minimum snapshot Meaning:
+- current Future / Future UNKNOWN
+- Human Approved Observation / UNKNOWN
+- material GAP candidate refs
+- unresolved Hypothesis refs
+- Evidence Needed / OPEN confirmation refs
+- approved feedback report id / version / content hash
+- selected route
+- material decision
+- next action
+- customer restatement if captured
+- Human actor / time
+
+Raw SurveyResponse / Transcript / AI raw outputをsnapshotへ複製しない。
+
+### 4.5 API / failure rules
+
+Planned admin command:
+`POST /api/admin/it-management-diagnosis/cases/:id/feedback/decision`
+
+Preconditions:
+- Case = `FEEDBACK_PENDING`
+- Feedback started
+- delivered / bound Report exists
+- Human actor
+- optimistic case version match
+
+Failure:
+- stale version: 409
+- feedback not started / wrong lifecycle: 409
+- invalid route / fields: 422
+- customer token / AI actor: reject
+- audit failure: transaction rollback
+
+Completion gateはMF-C Golden Testと既存Feedback regressionを通した後に有効化判断する。既存Caseをsilent backfillして架空Decisionを作らない。
+
+### 4.6 Data change classification
+
+MF-CはDiagnosis Application object追加であり、FACTACT Core changeではない。
+
+Expected additive migration: **Yes**.
+Expected architecture reset: **No**.
+Business Decision Required: **No** for the above contract, unless implementation requires changing Business routes / authority / Assessment boundary.
 
 ## 5. MF-D / E / F Remaining
 
 ### MF-D Decision-time Context Snapshot
-Decision時点のFuture / Known Context / UNKNOWN / GAP / unresolved Hypothesis / Evidence Needed / selected Route / Customer Restatement等をimmutableに追跡する。
+MF-Cでminimum immutable snapshotを先行保持し、MF-DではCustomer Correction後のre-decision / supersession、snapshot completeness、Pilot Evidence queryを完成させる。
 
 ### MF-E Pilot Instrumentation
 AI Suggestion、Human Correction、Customer Correction、Human Approval、selected Route、Customer Restatement、Follow-up、manual re-entry、Feedback preparation time、Human Review timeを最小データで記録 / deriveする。
