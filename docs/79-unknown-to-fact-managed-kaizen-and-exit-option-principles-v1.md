@@ -1,59 +1,119 @@
-# IT経営KAIZEN — UNKNOWNから始める実行支援・運用選択原則 v1
+# IT経営KAIZEN — FACTACT既存原則のAssessment・実行支援へのBusiness適用 v1
 
-Status: **CANONICAL — BUSINESS / EXECUTION & CONTINUITY PRINCIPLES**
+Status: **CANONICAL — BUSINESS / APPLICATION & INTERPRETATION**
 Date: 2026-09-15
-Related: `docs/74-it-management-kaizen-design-decision-investment-method-v1.md`, `docs/77-it-management-kaizen-customer-language-and-assessment-deliverable-principles-v1.md`, `docs/78-design-assessment-word-report-and-executive-slides-delivery-standard-v1.md`
 
-## 1. Core Decision
+## 0. Provenance / Positioning
 
-IT経営KAIZENでは、すべてのUNKNOWNを解消してからでなければ改善を開始できない、とは考えない。
+この文書は、2026-09-15に新しいFACTACT思想を発明・追加するものではない。
 
-> **分からないことを、分かったことにしない。**
->
-> **分からないことが残っていても、今あるFACTで判断できるACTは開始する。**
->
-> **運用そのものから新しいFACTをつくり、仕組み化・効率化を進め、次のACTをDecisionする。**
+FACTACTでは設計当初から、少なくとも以下の原則が定義されている。
 
-UNKNOWNは調査不足を隠すための言葉ではない。現時点で確認できていないことを明示し、いつ・どのようにFACTへ変えるかを管理する対象である。
+Source: `docs/11-josys-kaizen-service-model-v1.md`
+
+- **Unknown is allowed**
+- Missing information must remain explicit as UNKNOWN / Information Gap until evidence supports a value
+- UNKNOWN can remain explicit and does not block safe unrelated Work
+- Work / operationからLearningを生む
+- Continuous Operational KAIZENにより `UNKNOWN → known`、`UNVERIFIED → VERIFIED` を進める
+- `FACT → ACT → CHANGE → NEW FACT → KNOWLEDGE → RULE → STANDARDIZE → DELEGATE → AUTOMATE → NEXT ACT`
+- Work Generatedだけでなく、Work Avoided / Human Work / Automated Work / Created Timeを評価する
+- 不要なWorkをなくし、安定したWorkを標準化・自動化する
+
+したがって、
+
+> **UNKNOWNを許容し、運用からFACTを増やし、仕事を減らし、標準化・自動化していく**
+
+という考え方は新規Business Decisionではなく、FACTACTの既存設計原則である。
+
+本書で2026-09-15にBusinessとして整理・確定したのは、その既存原則を **IT経営KAIZENのAssessment → 実行支援 → 将来の運用形態選択** にどう適用し、顧客成果物でどう表現するか、というApplication / Interpretationである。
+
+Related Business Canonical:
+- `docs/74-it-management-kaizen-design-decision-investment-method-v1.md`
+- `docs/77-it-management-kaizen-customer-language-and-assessment-deliverable-principles-v1.md`
+- `docs/78-design-assessment-word-report-and-executive-slides-delivery-standard-v1.md`
 
 ---
 
-## 2. UNKNOWN Classification
+## 1. Existing FACTACT Principle Applied to IT経営KAIZEN
 
-UNKNOWNを一括して「要調査」としない。少なくとも以下の観点で扱う。
+> **分からないことを、分かったことにしない。**
+>
+> **分からないことが残っていても、今あるFACTで安全に判断できるACTは止めない。**
+>
+> **運用そのものから新しいFACTをつくり、KAIZENを進める。**
+
+UNKNOWNは「Assessment失敗」や「調査不足」を意味しない。
+
+ただし、Decision、安全性、Authority、Compliance、重大Risk等の判断に必要なUNKNOWNまで無視してACTすることも意味しない。
+
+---
+
+## 2. Business Application — UNKNOWNの扱い
+
+Assessment成果物ではUNKNOWNを一括して「未確認事項一覧」として提示し、すべて追加調査が必要であるかのように見せない。
+
+Customer-facingには、UNKNOWNごとに少なくとも以下を整理する。
 
 ### A. 今のDecision前に確認が必要
-確認しないとACT選択、安全性、権限、重大Risk等を判断できないもの。
+これが分からないとACT選択、安全性、権限、重大Risk等を判断できない。
 
 → ACT前に確認する。
 
-### B. ACTしながらFACT化できる
-開始自体を止める必要はなく、日々の運用から確認できるもの。
+### B. ACT / 運用の中でFACT化できる
+開始自体を止める必要はなく、日々の仕事から確認できる。
 
-→ 運用を開始し、仕事の結果からFACTを蓄積する。
+→ 安全に開始可能なACTを実行し、運用からFACTを蓄積する。
 
 ### C. 次のDecisionまでに確認すればよい
-今回のACTには影響しないが、次の投資・拡張・移行判断で必要になるもの。
+今回のACTには影響しないが、次の投資・拡張・移行判断に必要。
 
 → 次回Decision TimingまでにFACT化する。
 
 ### D. 現時点では確認不要
-現在のDecisionに影響せず、確認Costに合理性がないもの。
+現在のDecisionに影響せず、確認Costに合理性がない。
 
 → 無理に調査しない。必要になった時点で再評価する。
 
+この分類は、既存FACTACTのUNKNOWN原則をAssessment成果物へ翻訳したBusiness Applicationである。
+
 ---
 
-## 3. Managed KAIZEN Flow
+## 3. Assessment Reportへの反映
 
-atLIBが実行支援を担う場合、UNKNOWNが残った状態からでも、安全に開始可能な範囲を定義して運用を開始できる。
+Assessment Reportでは、従来の単純な「未確認事項一覧」という見せ方を避ける。
+
+推奨Customer-facing heading：
+
+> **現時点で分かっていないことと、その扱い**
+
+説明原則：
+
+> 本Assessmentでは、すべての情報を明らかにすることを目的としていません。経営判断に必要な事実を確認し、現時点で分からないことは、無理に推測せず「まだ分かっていないこと」として残します。
+>
+> 分からないことの中には、改善を始める前に確認すべきものもあれば、実行しながら確認できるもの、次の投資判断までに確認すればよいものもあります。
+>
+> **分からないことが残っていること自体は、改善を開始できないことを意味しません。**
+
+推奨表項目：
+
+| 現時点で分かっていないこと | 今の判断への影響 | いつ確認するか | どうFACTにするか |
+|---|---|---|---|
+
+AssessmentはActor Neutralityを維持し、この原則を「atLIBへ委託すべき理由」として使用しない。
+
+---
+
+## 4. Existing FACTACT HELIX → Managed KAIZEN
+
+FACTACT既存原則をBusiness Journeyとして表現すると、以下となる。
 
 ```text
-現時点で確認できたFACT / UNKNOWN
+確認できたFACT / 明示されたUNKNOWN
 ↓
-今あるFACTで実行できるACTをDecision
+今あるFACTで安全に実行できるACTをHumanがDecision
 ↓
-運用開始
+運用 / ACT
 ↓
 仕事の結果からFACTを蓄積
 ↓
@@ -63,24 +123,26 @@ atLIBが実行支援を担う場合、UNKNOWNが残った状態からでも、�
 ↓
 任せる / 自動化する
 ↓
-実際に起きたCHANGEを確認
+CHANGEを確認
 ↓
 NEW FACT
 ↓
-次のACT / Operating ModelをDecision
+NEXT ACTをDecision
 ```
+
+これは新しいHELIXではなく、既存FACTACT HELIXのCustomer / Business Journeyへの翻訳である。
 
 > **仕事からFACTをつくる。FACTからKAIZENを見つける。KAIZENによって次の仕事を減らす。**
 
 ---
 
-## 4. End State Is Not Permanent Outsourcing
+## 5. Business Decision — 将来の運用形態を固定しない
 
-atLIBへの継続委託そのものをGoalにしない。
+今回Businessとして明確化した点は、Assessment後の実行支援のEnd Stateを「atLIBへの永久委託」に置かないことである。
 
-改善によって業務が整理され、標準化・仕組み化され、顧客自身でも運用可能な状態になれば、その時点のFACTと経営判断に基づき次の運用形態を選択できるようにする。
+運用を通じて業務が整理され、標準化・仕組み化されれば、その時点のFACTと経営判断に基づき、将来の運用形態を選択できる状態を目指す。
 
-Candidate Operating Models：
+Candidate Operating Models:
 
 - 顧客による内製運用
 - SaaSへの移行
@@ -89,44 +151,40 @@ Candidate Operating Models：
 - 既存ベンダー / 他社への移管
 - 複数Actorの組合せ
 
-SaaS移行が必ず可能になるとは断定しない。適切なSaaSの存在、業務適合性、Cost、Risk、移行条件等をその時点で確認してDecisionする。
-
 > **atLIBに依存してもらうことではなく、会社が自分たちに合った運用方法を選べる状態をつくる。**
 
-これはActor Neutralityと整合する。
+SaaS移行が必ず可能になるとは断定しない。適切なSaaSの存在、業務適合性、Cost、Risk、移行条件等を、その時点のFACTとして確認してDecisionする。
 
 ---
 
-## 5. Assessment Report Boundary
+## 6. Assessmentと実行支援資料のBoundary
 
-Assessment Reportには、以下のMethod / Decision Principleを含める。
+### Assessment Reportに入れるもの
 
+- UNKNOWNを無理に埋めない
 - UNKNOWNが残ること自体は改善開始不能を意味しない
-- UNKNOWNごとに「今確認する / 実行しながら確認する / 次のDecisionまでに確認する / 現時点では確認しない」を整理する
-- 今あるFACTで判断できるACTは開始できる
+- UNKNOWNごとに、いつ・どうFACT化するかを整理する
+- 今あるFACTで安全に判断できるACTは開始できる
 - 将来の運用形態をAssessment時点で固定しない
-- 内製、SaaS、自動化、継続委託、他社移管等を将来選択できる
 
-ただしAssessment Reportの中で、これを「atLIBへ運用委託すべき理由」として表現しない。
+### Assessment Reportに入れすぎないもの
 
-AssessmentはActor Neutralityを維持し、**何を実行するかを決めるための成果物**である。
+- atLIBへ委託することを前提とした運用説明
+- atLIB固有の継続支援Capabilityの営業説明
+- 「他社ではできない」等の未検証比較
 
----
+### 別Customer-facing Materialで説明するもの
 
-## 6. Separate Execution Support Material
-
-atLIBがどのように実行支援するかは、Assessment Reportとは別のCustomer-facing Materialで説明する。
-
-Working title：
+Working title:
 
 > **IT経営KAIZEN 実行支援の考え方**
 
-この資料では以下を説明する。
+この資料では、atLIBが実行Actorとして選択された場合に、既存FACTACT原則をどのように運用へ適用するかを説明する。
 
 ```text
 分からない・属人化・手作業が残る状態
 ↓
-分かっているFACTから運用開始
+分かっているFACTから安全に開始
 ↓
 実運用からFACTを蓄積
 ↓
@@ -142,8 +200,6 @@ Working title：
   └ 組合せ
 ```
 
-この資料はAssessmentの中立的なDecision Supportと、atLIBの実行支援Capabilityを混同しないために分離する。
-
 ---
 
 ## 7. Actor Transfer Boundary
@@ -151,32 +207,28 @@ Working title：
 atLIBがAssessment後の実行Actorに選ばれた場合：
 
 - Assessmentで確認したFACT / UNKNOWN / Decision Contextを引き継ぐ
-- 運用中に得られる情報をNEW FACTとして継続蓄積する
+- 運用中に得られる情報をNEW FACTとして蓄積する
 - UNKNOWNを無理に推測して埋めない
-- 実運用から標準化・自動化・仕組み化のCandidateを発見する
+- 実運用からWork Avoided、標準化、自動化、仕組み化のCandidateを発見する
 
 他のActorへ引き継ぐ場合：
 
 - Assessmentで確認したFACT / UNKNOWN / Decision BasisをHandoffできる形で残す
-- 追加調査が必要かどうかは、選択されたActor、契約、ACT、Technology等に依存する
+- 追加調査が必要かは、選択されたActor、契約、ACT、Technology等に依存する
 
 「他社に依頼すると必ず再調査が必要」とは現時点でFACTではないため、Customer-facing Claimとして使用しない。
 
 ---
 
-## 8. Business Meaning
-
-IT経営KAIZENの継続支援は、顧客の現在の仕事をそのまま永久に代行することを目的としない。
-
-> **一度運用を担う場合でも、その運用からFACTをつくり、仕事そのものを減らし、仕組みに変えていく。**
-
-これにより、将来Customerが運用主体を自由に選択できる状態を目指す。
+## 8. Corporate Philosophyとの接続
 
 Corporate Philosophy：
 
 > **ITで、企業に自由を。人々に未来をつくる。**
 
-この「自由」には、特定の人、特定の運用、特定のProviderへ必要以上に依存せず、自社に合ったIT運用を選択できる状態も含み得る。
+特定の人、特定の運用、特定のProviderへ必要以上に依存せず、自社に合ったIT運用を選択できる状態をつくることは、この企業理念と整合する。
+
+ただし、この解釈を企業理念そのものの公式文言へ追加・改変しない。
 
 ---
 
@@ -192,4 +244,4 @@ Corporate Philosophy：
 - 他社へ移管すると必ず再調査が必要
 - atLIBの継続支援が常に最適である
 
-Decisionに必要なUNKNOWNは先に確認する。安全性、Authority、Compliance、重大Risk等を無視して「まず始める」ことはしない。
+本書は、既存FACTACT原則をBusinessへ適用する文書であり、Product Core Principleを再定義する文書ではない。
