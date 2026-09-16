@@ -4,12 +4,25 @@ Status: **CANONICAL — BUSINESS / CONTINUOUS SUPPORT**
 Date: 2026-09-16
 
 Related:
+- `docs/11-josys-kaizen-service-model-v1.md`
 - `docs/74-it-management-kaizen-design-decision-investment-method-v1.md`
 - `docs/79-unknown-to-fact-managed-kaizen-and-exit-option-principles-v1.md`
 - `docs/80-it-management-kaizen-execution-actor-choice-and-management-observability-principles-v1.md`
 - `docs/81-design-assessment-pricing-governance-and-internal-sales-language-v1.md`
 - `docs/83-assessment-scope-commercial-adjustment-rules-v1.md`
 - `docs/84-assessment-scope-recommendation-human-decision-business-requirements-v1.md`
+
+---
+
+## 0. FACTACT Provenance — DECIDED
+
+継続KAIZEN支援の商品設計にあたり、FACTACT Coreを新規に再設計することを前提としない。
+
+FACTACTは初期設計から、Fact-first、One Fact / Multiple Views、Work → Action → Change → Verify → Commit → New Fact → Learn → KAIZEN、Continuous Operational KAIZEN、HELIX等の考え方を持っている。
+
+したがって、月次・四半期・年次の継続KAIZEN支援は、これらの既存FACTACT思想・構造をIT経営KAIZENのBusiness Application / Management Outputとして利用するものと位置付ける。
+
+Business Laneでは、FACTACT Coreへ安易に新しいCore Object / Core Flowを追加しない。商品要件について既存FACTACT設計とのFitを必要に応じてCanonicalで確認し、既存設計で表現できないBusiness Requirementが確認された場合のみ、Product / Development LaneへGAP / CONFLICTとして渡す。
 
 ---
 
@@ -25,6 +38,20 @@ IT経営KAIZENの実行商品は、契約上は分けるが顧客体験は一つ
 
 継続KAIZEN支援は、運用支援をatLIBへ委託することを前提としない。顧客自身・既存ベンダー・他ベンダーが運用している場合でも成立する。
 
+### Service Name — DECIDED
+
+正式名称：
+
+> **IT経営KAIZEN 継続KAIZEN支援**
+
+通常呼称：
+
+> **継続KAIZEN支援**
+
+意味上は「IT経営KAIZENというサービス体系における継続KAIZEN支援サービス」として扱う。
+
+旧検討名の `IT経営KAIZEN Advisory` を別商品として並立させない。これまでAdvisoryとして想定していた、運用Actorが顧客社員等へ移った後も経営視点でKAIZENを継続する役割は、継続KAIZEN支援へ包含する。
+
 ---
 
 ## 2. Continuous KAIZEN Support Definition — DECIDED
@@ -37,6 +64,24 @@ Assessmentとの役割分担：
 - 継続KAIZEN支援：実行後に何が変わったかを確認し、新しく分かったことから改善計画を更新して、次に実行することを決め続ける。
 
 継続KAIZEN支援は「月○時間のITコンサル」を販売するサービスではない。
+
+### Actor Neutrality and Continuity — DECIDED
+
+継続KAIZEN支援の価値は、運用作業そのものではなく、会社のITを継続的に観測し、経営に必要な形へ整理し、次の改善判断へつなぐ機能にある。
+
+したがって、運用Actorが以下のいずれであっても継続KAIZEN支援は成立する。
+
+- atLIB
+- 顧客社員
+- 既存ベンダー
+- 他ベンダー
+- 複数Actorの組み合わせ
+
+atLIBから顧客社員等へ運用を移管した場合も、継続KAIZEN支援は別商品へ切り替えるのではなく、同一の商品として継続可能とする。
+
+運用Actorの変更のみを理由として、継続KAIZEN支援の基本的な商品価値・標準Scope・価格体系を変更しない。実際の価格は、継続KAIZEN支援自体のScopeおよび今後定義するCommercial Rulesに基づいて決定する。
+
+> **運用する人が変わっても、会社を良くし続ける機能は残る。**
 
 ---
 
@@ -82,6 +127,10 @@ Assessmentとの役割分担：
 重要な変化がない場合、無理に改善案を作らない。「重要な変化が確認されなかった」ことも確認結果として扱う。
 
 月次の目的は、FACT / CHANGE / NEW FACTを止めずに蓄積し、次の経営判断に必要な材料を作ることである。
+
+月次レポートを、atLIB担当者が毎月ゼロからWord / PowerPoint等で手作業作成することを商品設計上の前提としない。既存FACTACTに蓄積されたDecision、ACT進捗、CHANGE、NEW FACT等をManagement Outputへ組み立て、Humanが内容を確認・承認して発行する方向を目標とする。
+
+これは新しいFACTACT Core原則ではなく、既存のFact-first / One Fact Multiple Views / Continuous Operational KAIZEN等を継続KAIZEN支援へ適用するBusiness / Delivery Designである。具体的な生成方式・自動化範囲・UI等は本Business Canonicalでは確定しない。
 
 ---
 
@@ -178,6 +227,8 @@ atLIBが運用支援も担当する場合、運用は単なる作業処理だけ
 
 ただし、atLIBが運用支援を担当していない顧客でも、利用可能な情報を基に継続KAIZEN支援は成立する。
 
+運用支援から顧客社員等へ運用Actorを移管した後も、継続KAIZEN支援は同一商品として継続できる。運用支援の終了を、継続KAIZEN支援の終了条件としない。
+
 ---
 
 ## 10. Customer-facing Language — DECIDED
@@ -201,7 +252,9 @@ atLIBが運用支援も担当する場合、運用は単なる作業処理だけ
 - FUTUREをatLIBやAIが勝手に変更しない。
 - 継続KAIZEN支援を運用支援契約の付属物にしない。
 - atLIBを実行Actorとして固定しない。
+- 運用Actorの変更だけを理由に別商品へ切り替えない。
 - 大きな実行ACTを月額内へ無制限に包含しない。
+- FACTACT Coreの既存原則で表現可能なBusiness Requirementについて、Business LaneからCore変更を前提にしない。
 
 ---
 
