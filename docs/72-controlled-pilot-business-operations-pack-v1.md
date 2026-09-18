@@ -3,6 +3,8 @@
 Status: BUSINESS / PILOT OPERATIONS — PROPOSAL FOR VALIDATION
 Date: 2026-09-14
 
+> **Decision Update（2026-09-18）**：本書のうち §1 Operating Roles — Pilot Minimum（Role Model）のみ、Human DecisionによりControlled Pilotの運用Role Modelとして**DECIDED**に昇格した。実名Ownerの割当はこのDecisionに含まれない（別途対応、下記§11参照）。Human Review Sheet・45-minute facilitation・Decision Record・Pilot Observation等、本書のその他の内容は引き続き**PROPOSAL FOR VALIDATION**のままであり、今回のDecisionでは変更していない。
+
 ## 0. Purpose
 
 Controlled Customer PilotのTechnical GO / CONDITIONAL GOが出た時点で、Business側が実顧客対応を開始できるよう、Management Feedback運用に必要なHuman Review Sheet、当日進行、Decision Record、Pilot Observationを定義する。
@@ -15,7 +17,9 @@ Controlled Customer PilotのTechnical GO / CONDITIONAL GOが出た時点で、Bu
 
 # 1. Operating Roles — Pilot Minimum
 
-Pilot開始前に実名Ownerを割り当てる。以下はRole定義であり、人名は未決定。
+Status: **DECIDED（Human Decision 2026-09-18） — Controlled Pilot運用Role Model**
+
+Pilot開始前に実名Ownerを割り当てる。以下のRole構成・Guardrailは採用済み（DECIDED）。人名（実名Owner）は未決定のまま。
 
 ## Diagnosis Owner
 - 診断Case全体のBusiness Owner
@@ -416,8 +420,10 @@ Reused DECISION:
 - Assessment ¥1.2m pre-tax
 - Business Decision completed ≠ Production Ready
 
+DECIDED（Human Decision 2026-09-18）:
+- §1 Operating Roles — Pilot Minimumの Role Model。採用したRole: Diagnosis Owner／Human Reviewer／Management Feedback Facilitator／Customer Follow-up Owner／Technical Incident Escalation／Privacy / Security Escalation。あわせて「一人が複数Roleを兼務可能。ただし責任の所在を曖昧にしない」というGuardrailも採用。実名Owner割当はこのDecisionに含まれない
+
 PROPOSAL FOR PILOT VALIDATION:
-- Role model
 - Human Review checklist
 - 45-minute facilitation sheet
 - Decision Record format
