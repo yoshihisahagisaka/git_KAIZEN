@@ -31,6 +31,7 @@ The repository, not chat history, is the source of truth. When a material Busine
 3. `19-free-it-management-diagnosis-channel-flows-v1.md` — **CANONICAL**
 4. `20-it-management-kaizen-factact-consistency-principles-v1.md` — **CANONICAL**
 5. `21-free-it-management-diagnosis-operating-model-v1.md` — **CANONICAL**
+6. `91-customer-fit-check-pre-sales-qualification-canonical-v1.md` — **CANONICAL** — 営業が無料診断を提案する前の顧客適合性チェック（Business Decision）。実装は`atlib-sales-tools`。
 
 ### Free IT management diagnosis development
 
