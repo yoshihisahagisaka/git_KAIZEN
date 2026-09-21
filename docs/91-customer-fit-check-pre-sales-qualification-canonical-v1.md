@@ -96,3 +96,27 @@ Human Decision（A/B/C/D）は、いかなる自動採点・スコアリング�
 - 新規CRM・営業戦略支援システムの新規構築
 - ロールベースの権限管理
 - 新規リポジトリ・新規GCP基盤
+
+
+---
+
+## 8. Business Acceptance — PASS (2026-09-21)
+
+Customer Fit Check V1は、Temporary Stagingでの実環境確認を完了し、**Business Acceptance: PASS** とする。
+
+確認済みFACT:
+
+- Google Workspace OAuthによるstagingログイン: PASS
+- `017_customer_fit_checks.sql` の実Cloud SQL migration: PASS
+- Customer Fit新規作成・保存: PASS
+- 一覧表示: PASS
+- 詳細画面での再表示: PASS
+- 「情報源・確認状況」および7項目の永続化: PASS
+- Human Decisionの変更・保存・再表示: PASS
+- Runtime DB roleへのCustomer Fit用最小DML authority付与後の実アプリ保存: PASS
+- 保存成功時の「保存しました。」表示: PASS
+- 画面下部からの「一覧へ戻る」導線: PASS
+
+Runtime Authorityはschema migrationとは分離して実行し、`sales_tools_runtime` にCustomer Fitで必要なDML権限のみを付与した。table ownership、schema authority、migration authorityは付与していない。
+
+本PASSはCustomer Fit Check V1のBusiness Acceptanceを閉じるものであり、Productionへの展開承認や、無料診断 / 設計Assessment / FACTACTとの自動連携を意味しない。§6および§7の境界は変更しない。
