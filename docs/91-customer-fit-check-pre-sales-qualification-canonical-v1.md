@@ -152,3 +152,25 @@ AI Suggestsを追加する前に、構造化済み回答を仕組みで整理し
 - A / B / C / Dの最終判断は引き続き人が行う。
 
 狙いは「ExcelをWeb化した記録画面」から、**短時間で確認し、見落としを減らし、人が判断しやすい画面**へ改善することである。
+
+
+## 10. UX Simplification Business Acceptance — PASS (2026-09-23)
+
+§9で決定したCustomer Fit CheckのUX簡素化について、Temporary Stagingで実環境確認を完了し、**Business Acceptance: PASS** とする。
+
+確認済みFACT:
+
+- UX simplification source commit: `4b1dde5`
+- staging runtime revision: `sales-tools-staging-00022-vhh`
+- staging traffic: 100%
+- Customer Fit詳細画面表示: PASS
+- 入力: PASS
+- 保存: PASS
+- 一覧表示: PASS
+- UX簡素化版で主要営業導線が成立することを実ブラウザで確認: PASS
+
+今回の再確認では、GitHub上のintegration branchを `4b1dde5` へ更新した後、ローカルworktreeが `0331751` のまま同期されず、旧ソースからCloud Buildが実行されていたことを確認した。ローカルworktreeを `4b1dde5` へfast-forwardした後、同一sourceから再build / deployし、上記PASSを確認した。
+
+この事象はCustomer Fitの機能不具合ではなく、**remote branch更新後のlocal source synchronization漏れ**である。今後はCloud Build前に、build対象worktreeのHEADが意図したsource commitと一致していることを確認する。
+
+本PASSは§9のUX Simplification DecisionのBusiness Acceptanceを閉じるものであり、Production promotion、無料診断 / 設計Assessment / FACTACTとの自動連携を承認するものではない。
