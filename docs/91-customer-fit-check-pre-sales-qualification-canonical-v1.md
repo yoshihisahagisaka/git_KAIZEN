@@ -120,3 +120,35 @@ Customer Fit Check V1は、Temporary Stagingでの実環境確認を完了し、
 Runtime Authorityはschema migrationとは分離して実行し、`sales_tools_runtime` にCustomer Fitで必要なDML権限のみを付与した。table ownership、schema authority、migration authorityは付与していない。
 
 本PASSはCustomer Fit Check V1のBusiness Acceptanceを閉じるものであり、Productionへの展開承認や、無料診断 / 設計Assessment / FACTACTとの自動連携を意味しない。§6および§7の境界は変更しない。
+
+
+## 9. UX Simplification Decision — 2026-09-22
+
+### Purpose reconfirmed
+
+Customer Fit Checkの目的は、顧客情報を詳細に蓄積することや営業案件を管理することではない。
+
+> IT経営KAIZEN 無料診断を提案する相手として適しているかを、営業担当者が短時間で確認し、Human Decisionするための事前適合性チェック。
+
+Customer Fit CheckをCRM、タスク管理、営業案件管理へ拡張しない。
+
+### Input principle
+
+入力UXは **選択中心、自由記述は例外** とする。
+
+- 7項目は YES / NO / UNKNOWN の選択を中心とする。
+- 各項目にFACT / UNKNOWN / 営業仮説の自由記述を常設しない。
+- 全体FACT / UNKNOWN / 営業仮説 / 次に確認することの常設自由記述も、Customer Fit Checkの主目的には不要とする。
+- 自由記述は「情報源・確認状況」と「判断メモ（任意）」を基本とする。
+- 既存データに保存済みの旧自由記述情報は、UX簡素化によって破棄しない。
+
+### Mechanical decision support before AI
+
+AI Suggestsを追加する前に、構造化済み回答を仕組みで整理してHuman Decisionを支援する。
+
+- YES / NO / UNKNOWN の件数を表示する。
+- NO / UNKNOWNの項目を判断前に一覧表示する。
+- 自動採点・自動適合判定は行わない。
+- A / B / C / Dの最終判断は引き続き人が行う。
+
+狙いは「ExcelをWeb化した記録画面」から、**短時間で確認し、見落としを減らし、人が判断しやすい画面**へ改善することである。
