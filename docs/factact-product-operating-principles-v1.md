@@ -252,6 +252,44 @@ Network:
 
 SUPPORT Phase 2 Implementation Contractにおける単一のeffective confirmed targetは、この個別Sliceの対象Context Roleに限定された制約として扱い、FACTACT全体のCore invariantへ一般化しない。
 
+## 15. Work Is Not Inquiry-Specific
+
+FACTACTのWorkは問い合わせ対応に限定しない。調査、棚卸、管理表精査、Knowledge / FAQ / Procedure整備、点検、Review、Change等、人が実際に進める仕事を同じWork semanticsで扱う。
+
+情報を検索・閲覧しただけではWorkを作らない。Management / Registry / Knowledge viewは別の実行エンジンではなく、そこで実際の作業を開始する場合は通常のWork semanticsを利用する。
+
+## 16. Non-Linear Work and Active Work Anchor
+
+仕事は固定された一本道ではない。
+
+> Search ↔ Inspect ↔ Hear ↔ Act ↔ Search ↔ Verify
+
+はHuman activity patternであり、Core state machineやmandatory wizardではない。
+
+Work SpaceとExplore Spaceは概念上分離するが、Exploreへ移動しても現在のWorkを見失わせない。
+
+> Work persists across navigation.
+
+Human向けには「調べる場所と仕事を進める場所は分ける。ただし、仕事は見失わない。」を原則とする。Active Work Anchorは新Core Objectではなく、まずApplication / Navigation concernとして扱う。
+
+## 17. Explore First, Persist Deliberately
+
+> Explore First, Persist Deliberately.
+
+Humanは必要な情報を自由に検索・参照できる。検索・閲覧しただけではBusiness Fact、Work Context、Registry変更を作らない。実際の仕事で意味を持ったEntity / Context / Action / Observation等だけを明示的に記録する。
+
+> Looked at != Work Context
+
+> Clicked != Selected as Work Context
+
+## 18. Search Is Navigation, Not Decision
+
+> Search is a navigation capability, not a decision engine.
+
+Searchは必要な情報への到達時間を短くし、Humanへ候補と判断材料を提示する。原因、正解、Work Contextを自動確定せず、Registry更新、自動Close、Authorityを越えた判断を行わない。
+
+詳細なSearch / Explore / Work Navigation契約は`factact-search-explore-product-contract-v1.md`を参照する。
+
 ## SUPPORT Phase 2 Slice 1 Direction
 
 Status: **DIRECTION CONFIRMED — DETAILED DATA CONTRACT PENDING**
