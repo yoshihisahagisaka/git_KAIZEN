@@ -14,8 +14,9 @@ import { commandBoundary } from './auth/command-boundary.js';
 import { joinRoutes, type JoinServices } from './join-routes.js';
 import { DomainError } from '../../../../packages/domain/src/join.js';
 import { ZodError } from 'zod';
+import { exploreRoutes, type ExploreServices } from './explore-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -32,6 +33,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use(createAuthRouter(config, store, provider));
   if (join) app.use('/api',joinRoutes(join));
   if (support) app.use('/api',supportRoutes(support));
+  if (explore) app.use('/api',exploreRoutes(explore));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
