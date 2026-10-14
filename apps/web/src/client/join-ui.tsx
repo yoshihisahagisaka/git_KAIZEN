@@ -5,6 +5,7 @@ import type { HomeView, JoinWorkspaceView, PersonContextView, WorkDetailView } f
 import type { Audit, Device, Work } from '../../../../packages/domain/src/join.js';
 import type { Operator } from '../../../../packages/domain/src/operator.js';
 import { demoGuidance } from './join-guidance.js';
+import { ExploreUI } from './explore-ui.js';
 
 function useData<T>(url:string,revision:number) {
   const [value,setValue]=useState<T|null>(null),[error,setError]=useState('');
@@ -109,5 +110,5 @@ export function JoinUI({csrf,operator}:{csrf:string;operator:Operator}) {
   useEffect(()=>{const change=()=>{setRoute(location.hash.slice(1)||'/');setError('');};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
   async function run(fn:()=>Promise<void>) {if(busy)return;setBusy(true);setError('');try{await fn();setRevision(n=>n+1);}catch(e){setError(e instanceof Error?e.message:'処理を完了できませんでした。');}finally{setBusy(false);}}
   const props={csrf,operator,revision,run,busy},[,kind,id]=route.split('/');
-  return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{kind==='support'?<SupportUI key={route} {...props} {...(id?{id}:{})}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='work'&&id?<WorkPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:<Home key={route} {...props} view={kind||'home'}/>}</div></div>;
+  return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ'],['explore','探す']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{kind==='explore'?<ExploreUI key={route}/>:kind==='support'?<SupportUI key={route} {...props} {...(id?{id}:{})}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='work'&&id?<WorkPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:<Home key={route} {...props} view={kind||'home'}/>}</div></div>;
 }

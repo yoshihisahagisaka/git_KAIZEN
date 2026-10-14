@@ -12,6 +12,8 @@ import { PgIdentityStore } from '../../apps/web/src/server/persistence/identity-
 import { PgJoinUnitOfWork } from '../../apps/web/src/server/persistence/join-repository.js';
 import { JoinCommands } from '../../packages/application/src/join-commands.js';
 import { JoinQueries } from '../../packages/application/src/join-queries.js';
+import { PgExploreSearchUnitOfWork } from '../../apps/web/src/server/persistence/explore-repository.js';
+import { ExploreQueries } from '../../packages/application/src/explore-queries.js';
 import { createApp } from '../../apps/web/src/server/app.js';
 import type { Config } from '../../apps/web/src/server/config.js';
 
@@ -24,7 +26,7 @@ test.beforeAll(async()=>{
   // Production main.ts always uses the Google provider; no bypass flag or test route is shipped.
   const provider={authorizationUrl:(login:{state:string})=>`${origin}/auth/callback?code=test-code&state=${login.state}`,
     verifyCallback:async(url:URL,login:{state:string})=>{if(url.searchParams.get('code')!=='test-code'||url.searchParams.get('state')!==login.state)throw new Error('Invalid test callback');return{issuer:'https://seed.example.invalid',subject:'development-operator'};}};
-  const app=createApp(config,new PgIdentityStore(db.runtime),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},{commands:new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(new PgSupportUnitOfWork(db.runtime))});
+  const app=createApp(config,new PgIdentityStore(db.runtime),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},{commands:new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(new PgSupportUnitOfWork(db.runtime))},{queries:new ExploreQueries(new PgExploreSearchUnitOfWork(db.runtime))});
   server=await new Promise<Server>(ok=>{const s=app.listen(port,'127.0.0.1',()=>ok(s));});
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((ok,fail)=>server.close(e=>e?fail(e):ok()));await db?.close();});
@@ -148,4 +150,16 @@ test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
  await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.getByRole('button',{name:'問い合わせ対応を完了',exact:true}).click();
  await expect(page.getByText('調査完了・追加対応不要',{exact:true})).toBeVisible();
+});
+
+test('unsaved SUPPORT input warns before navigating to Explore',async({page})=>{
+ await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ await page.getByLabel('確認した内容と根拠').fill('保存前の確認内容');
+ const url=page.url();
+ page.once('dialog',dialog=>dialog.dismiss());
+ await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
+ expect(page.url()).toBe(url);await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
+ page.once('dialog',dialog=>dialog.accept());
+ await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'情報を探す',exact:true})).toBeVisible();
 });
