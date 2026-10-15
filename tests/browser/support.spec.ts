@@ -166,3 +166,10 @@ test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a
  page.once('dialog',dialog=>dialog.accept());await page.evaluate(id=>{location.hash=`/support/${id}`;},eventB.id);await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ',exact:true})).toBeVisible();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('');
  expect(eventA).not.toBe(eventB.id);
 });
+
+test('SUPPORT work opens Explore with an editable query without searching automatically',async({page})=>{
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const source=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'VPN検索用'});const sourceWork=(await commands.evaluate(actor,source.id,'REQUIRED','検索用')).work!;const decision=await commands.recordResolution(actor,sourceWork.id,{mode:'GUIDANCE_ONLY',diagnosticEvidence:'VPN',rationale:'検索用',actionSummary:'VPN案内'});await commands.saveKnowledge(actor,sourceWork.id,'VPN 関連情報','検索用のナレッジ候補');
+ await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();await page.getByLabel('確認した内容と根拠').fill('保存しない入力');await page.getByRole('link',{name:'関連情報を探す',exact:true}).click();
+ const query=page.getByLabel('検索語');await expect(query).toHaveValue('VPN');await expect(page.getByRole('heading',{name:'検索結果'})).toHaveCount(0);await query.fill('VPN');await page.getByRole('button',{name:'検索',exact:true}).click();await expect(page.getByText('仕事',{exact:true})).toBeVisible();await expect(page.getByText('ナレッジ候補',{exact:true})).toBeVisible();expect(decision).toBeTruthy();
+ await page.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存しない入力');
+});

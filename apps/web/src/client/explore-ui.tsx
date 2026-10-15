@@ -17,8 +17,8 @@ function detailLink(result: ExploreSearchResult) {
   return null;
 }
 
-export function ExploreUI() {
-  const [text,setText]=useState('');
+export function ExploreUI({initialQuery=''}:{initialQuery?:string}) {
+  const [text,setText]=useState(initialQuery);
   const [category,setCategory]=useState<ExploreSearchType | 'ALL'>('ALL');
   const [results,setResults]=useState<ExploreSearchResult[] | null>(null);
   const [loading,setLoading]=useState(false);
@@ -41,7 +41,7 @@ export function ExploreUI() {
 
   return <section className="explore-page" aria-labelledby="explore-heading">
     <p className="eyebrow">調べる</p><h1 id="explore-heading">情報を探す</h1>
-    <p>必要な情報を探して確認できます。検索しただけでは、仕事・管理情報・ナレッジ候補は変更されません。</p>
+    <p>必要な情報を探して確認できます。検索しただけでは、仕事・管理情報・ナレッジ候補は変更されません。</p>{initialQuery&&<p className="notice">作業から検索語の候補を入れました。内容を確認・編集してから検索してください。</p>}
     <form className="explore-search" onSubmit={event=>{event.preventDefault();void search();}}>
       <label htmlFor="explore-query">検索語</label>
       <div className="explore-search-row"><input id="explore-query" name="query" value={text} onChange={event=>setText(event.target.value)} maxLength={201} autoFocus placeholder="例: 氏名、資産番号、サービス名" />

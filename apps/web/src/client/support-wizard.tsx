@@ -16,7 +16,7 @@ export function SupportDetail(props:Props&{id:string}){
  if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;
  const allowed=props.operator.roles.some(r=>v.executeRoles.includes(r))&&props.operator.roles.some(r=>r==='ADMIN'||r==='OPERATOR');
  const latest=v.records.filter(x=>x.kind!=='DRAFT').at(-1);
- return <><a href="#/support">問い合わせ一覧へ</a><h1>{v.person.displayName}さんからの問い合わせ</h1><p>受付: {time(v.event.createdAt)}</p>
+ return <><a href="#/support">問い合わせ一覧へ</a><h1>{v.person.displayName}さんからの問い合わせ</h1><p>受付: {time(v.event.createdAt)}</p><p><a className="secondary" href="#/explore?q=VPN">関連情報を探す</a></p>
  <div className="workspace support-workspace"><section aria-label="今の対応">
  {!v.evaluation&&<section className="next-action"><h2>次にやること</h2><p>問い合わせの確認・対応を始めます。あなたの担当として記録します。</p><button disabled={props.busy||!allowed} onClick={()=>void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'REQUIRED'});})}>対応を開始</button><details><summary>対応せずに受付を閉じる</summary><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'NOT_APPLICABLE',reason:f.get('reason')});});}}><label>対応しない理由<textarea name="reason" required maxLength={4000}/></label><button disabled={props.busy||!allowed}>理由を残して受付を閉じる</button></form></details></section>}
  {v.evaluation&&!v.work&&<article><h2>対応は作成していません</h2><p>{v.evaluation.basisSummary}</p></article>}

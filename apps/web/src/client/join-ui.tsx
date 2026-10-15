@@ -81,7 +81,7 @@ function WorkPage({id,csrf,operator,revision,run,busy,onActiveTitle}:Controls&{i
   const created=v.timeline.find(e=>e.eventType==='WORK_CREATED'&&e.metadataJson.workId===id);
   const selfTake=created?.sequence!==undefined && whyMe?.sequence!==undefined && Number(whyMe.sequence)===Number(created.sequence)+1 && whyMe?.actorOperatorId===v.work.workOwnerOperatorId && whyMe?.metadataJson.ownerId===v.work.workOwnerOperatorId && v.timeline.some(e=>e.eventType==='WORK_CREATED'&&e.metadataJson.workId===id&&e.actorOperatorId===v.work.workOwnerOperatorId);
   return <Layout title={`${v.recipient.displayName}さんのPC準備`} context={<><PersonFacts personId={v.recipient.id} revision={revision}/><h3>対象者の状況</h3><p>所属・勤務形態: 未確認</p><p>追加設定・VPN利用要否: 未確認</p><p>未確認の項目は、このPCの反映だけでは確認済みになりません。</p></>} timeline={v.timeline} main={<>
-    <a href={`#/join/${v.work.sourceEventId}`}>入社対応へ戻る</a>
+    <a href={`#/join/${v.work.sourceEventId}`}>入社対応へ戻る</a><p><a className="secondary" href="#/explore?q=PC%E6%BA%96%E5%82%99">関連情報を探す</a></p>
     <section className="ownership" aria-label="担当と依頼元"><p className="badge">{v.work.workOwnerOperatorId===operator.id?'あなたの担当です':'他の担当者が責任を持つ対応です'}</p><p>この対応の担当: {v.ownerName}</p><p>現在操作している人: {operator.displayName}</p><p>操作を行っても、この対応の担当は自動では変わりません。</p><p>依頼元: {v.recipient.displayName}さんの入社対応</p><p>担当になった理由: {selfTake?'必要な準備を確認した担当者として登録されています。':'未確認'}</p><p>期限: 未設定</p>
       {!closed&&v.work.workOwnerOperatorId!==operator.id&&<button className="secondary" disabled={busy || !operator.roles.some(r=>r==='ADMIN'||r==='OPERATOR')} onClick={()=>void run(async()=>{await api(`/api/work/${id}/take-ownership`,csrf,{});})}>この対応の担当を引き受ける</button>}
     </section>
@@ -108,7 +108,7 @@ function PersonPage({id,revision}:Controls&{id:string}) {
 }
 type ActiveWork={kind:'support'|'work';id:string;title:string};
 function workRoute(work:ActiveWork){return work.kind==='support'?`/support/${work.id}`:`/work/${work.id}`;}
-function routeWork(route:string):Pick<ActiveWork,'kind'|'id'>|null {const [,kind,id]=route.split('/');return id&&(kind==='support'||kind==='work')?{kind,id}:null;}
+function routeWork(route:string):Pick<ActiveWork,'kind'|'id'>|null {const [,kind,id]=(route.split('?')[0]??'/').split('/');return id&&(kind==='support'||kind==='work')?{kind,id}:null;}
 
 export function JoinUI({csrf,operator}:{csrf:string;operator:Operator}) {
   const initialRoute=location.hash.slice(1)||'/';
@@ -130,9 +130,9 @@ export function JoinUI({csrf,operator}:{csrf:string;operator:Operator}) {
     setRoute(next);setError('');
   };window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[active,activeDirty]);
   async function run(fn:()=>Promise<void>) {if(busy)return;setBusy(true);setError('');try{await fn();setRevision(n=>n+1);}catch(e){setError(e instanceof Error?e.message:'処理を完了できませんでした。');}finally{setBusy(false);}}
-  const props={csrf,operator,revision,run,busy},[,kind,id]=route.split('/');
+  const props={csrf,operator,revision,run,busy},routePath=route.split('?')[0]??'/',[,kind,id]=routePath.split('/'),exploreQuery=new URLSearchParams(route.split('?')[1]??'').get('q')??'';
   const isActiveRoute=!!active&&route===workRoute(active);
   const activeView=active?.kind==='support'?<SupportUI key={`support-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle} onDirtyChange={updateDirty}/>:active?<WorkPage key={`work-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle}/>:null;
-  const otherView=kind==='explore'?<ExploreUI key={route}/>:kind==='support'&&id?null:kind==='support'?<SupportUI key={route} {...props}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:kind==='work'&&id?null:<Home key={route} {...props} view={kind||'home'}/>;
+  const otherView=kind==='explore'?<ExploreUI key={route} initialQuery={exploreQuery}/>:kind==='support'&&id?null:kind==='support'?<SupportUI key={route} {...props}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:kind==='work'&&id?null:<Home key={route} {...props} view={kind||'home'}/>;
   return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ'],['explore','探す']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{active&&<div hidden={!isActiveRoute} aria-hidden={!isActiveRoute}>{activeView}</div>}{active&&kind==='explore'&&<aside className="active-work-anchor" aria-label="現在の作業"><p className="eyebrow">作業中</p><strong>{active.title}</strong><p>{active.kind==='support'?'問い合わせ対応':'PC準備'}</p><a href={`#${workRoute(active)}`}>作業に戻る</a></aside>}{!isActiveRoute&&otherView}</div></div>;
 }
