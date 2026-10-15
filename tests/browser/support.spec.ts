@@ -152,14 +152,17 @@ test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
  await expect(page.getByText('調査完了・追加対応不要',{exact:true})).toBeVisible();
 });
 
-test('unsaved SUPPORT input warns before navigating to Explore',async({page})=>{
- await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
- await page.getByLabel('確認した内容と根拠').fill('保存前の確認内容');
- const url=page.url();
- page.once('dialog',dialog=>dialog.dismiss());
- await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
- expect(page.url()).toBe(url);await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
- page.once('dialog',dialog=>dialog.accept());
+test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a different Work',async({page})=>{
+ await login(page);const eventA=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ await page.getByLabel('確認した内容と根拠').fill('保存前の確認内容');await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
  await expect(page.getByRole('heading',{name:'情報を探す',exact:true})).toBeVisible();
+ const anchor=page.getByRole('complementary',{name:'現在の作業'});await expect(anchor).toContainText('田中 一郎さんからの問い合わせ');await expect(anchor).toContainText('問い合わせ対応');
+ await page.getByLabel('検索語').fill('PC-0073');await page.getByRole('button',{name:'検索',exact:true}).click();await page.getByLabel('検索語').fill('田中');await page.getByRole('button',{name:'検索',exact:true}).click();
+ await anchor.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByRole('heading',{name:'実際に行ったことを記録する',exact:true})).toBeVisible();await page.getByRole('button',{name:'戻る',exact:true}).click();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
+ await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();await page.goBack();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');await page.goForward();await expect(anchor.getByRole('link',{name:'作業に戻る',exact:true})).toBeVisible();
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const eventB=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'別の問い合わせ'});await commands.evaluate(actor,eventB.id,'REQUIRED','別の確認が必要');
+ page.once('dialog',dialog=>dialog.dismiss());await page.evaluate(id=>{location.hash=`/support/${id}`;},eventB.id);await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
+ page.once('dialog',dialog=>dialog.accept());await page.evaluate(id=>{location.hash=`/support/${id}`;},eventB.id);await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ',exact:true})).toBeVisible();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('');
+ expect(eventA).not.toBe(eventB.id);
 });

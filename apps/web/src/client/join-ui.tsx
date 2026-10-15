@@ -1,6 +1,6 @@
 import {api} from './api.js';
 import { SupportUI, SupportTasks } from './support-ui.js';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { HomeView, JoinWorkspaceView, PersonContextView, WorkDetailView } from '../../../../packages/application/src/join-queries.js';
 import type { Audit, Device, Work } from '../../../../packages/domain/src/join.js';
 import type { Operator } from '../../../../packages/domain/src/operator.js';
@@ -65,9 +65,10 @@ function Guidance({v}:{v:WorkDetailView}) {
     <h3>今回の追加対応・未確認事項</h3><p>対象者固有の追加設定・VPN利用要否: 未確認</p><p>準備前に対象者とサービスの担当窓口へ、必要なアプリ・接続先・標準手順との差分を確認してください。判断がつかない場合は引き渡しの確認・反映を進めず、担当窓口に相談してください。</p>
   </section>;
 }
-function WorkPage({id,csrf,operator,revision,run,busy}:Controls&{id:string}) {
+function WorkPage({id,csrf,operator,revision,run,busy,onActiveTitle}:Controls&{id:string;onActiveTitle?:(title:string)=>void}) {
   const {value:v,error}=useData<WorkDetailView>(`/api/work/${id}`,revision),{value:devices,error:deviceError}=useData<Device[]>('/api/devices',revision);
   const [candidate,setCandidate]=useState(''),[replacement,setReplacement]=useState(false);
+  useEffect(()=>{if(v)onActiveTitle?.(`${v.recipient.displayName}さんのPC準備`);},[onActiveTitle,v]);
   if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;
   const active=v.changes.find(c=>c.status==='PROPOSED'||c.status==='VERIFIED');
   const canExecute=operator.roles.some(r=>v.authority.executeRoles.includes(r)) && operator.roles.some(r=>r==='ADMIN'||r==='OPERATOR');
@@ -105,10 +106,33 @@ function PersonPage({id,revision}:Controls&{id:string}) {
   if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;
   return <Layout title={`${v.person.displayName}さんの利用状況`} context={<PersonFacts personId={id} revision={revision}/>} timeline={v.timeline} main={<><h2>対応中のやること</h2>{!v.openWork.length&&<p>対応中のPC準備はありません。</p>}{v.openWork.map(w=><p key={w.id}><a href={`#/work/${w.id}`}>{workTitle(w)}</a></p>)}<h2>利用PCの履歴</h2>{!v.relationHistory.length&&<p>確認済みの履歴はまだありません。</p>}{v.relationHistory.map(r=><article key={r.id}><p>{r.status==='ACTIVE'?'現在の利用記録':'以前の利用記録'}: {date(r.effectiveFrom)} → {r.effectiveTo?date(r.effectiveTo):'現在'}</p><details><summary>確認根拠・監査詳細</summary><p>確認日時: {date(r.verifiedAt)}</p><p>Source Change: {r.sourceChangeId}</p></details></article>)}</>}/>;
 }
+type ActiveWork={kind:'support'|'work';id:string;title:string};
+function workRoute(work:ActiveWork){return work.kind==='support'?`/support/${work.id}`:`/work/${work.id}`;}
+function routeWork(route:string):Pick<ActiveWork,'kind'|'id'>|null {const [,kind,id]=route.split('/');return id&&(kind==='support'||kind==='work')?{kind,id}:null;}
+
 export function JoinUI({csrf,operator}:{csrf:string;operator:Operator}) {
-  const [route,setRoute]=useState(location.hash.slice(1)||'/'),[revision,setRevision]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{const change=()=>{setRoute(location.hash.slice(1)||'/');setError('');};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
+  const initialRoute=location.hash.slice(1)||'/';
+  const [route,setRoute]=useState(initialRoute),[revision,setRevision]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [active,setActive]=useState<ActiveWork|null>(()=>{const current=routeWork(initialRoute);return current?{...current,title:current.kind==='support'?'問い合わせ対応':'PC準備'}:null;});
+  const [activeDirty,setActiveDirty]=useState(false);
+  const updateTitle=useCallback((title:string)=>setActive(current=>current?{...current,title}:current),[]);
+  const updateDirty=useCallback((dirty:boolean)=>setActiveDirty(dirty),[]);
+  useEffect(()=>{const change=()=>{
+    const next=location.hash.slice(1)||'/';const nextWork=routeWork(next);
+    if(active&&nextWork&&!(nextWork.kind===active.kind&&nextWork.id===active.id)&&activeDirty){
+      if(!window.confirm('未保存の入力があります。下書き保存せずに別の作業へ移動しますか？')){location.hash=workRoute(active);return;}
+    }
+    if(active&&!nextWork&&next!=='/explore'&&activeDirty){
+      if(!window.confirm('未保存の入力があります。下書き保存せずに移動しますか？')){location.hash=workRoute(active);return;}
+      setActive(null);setActiveDirty(false);
+    }
+    if(nextWork&&(!active||nextWork.kind!==active.kind||nextWork.id!==active.id)){setActive({...nextWork,title:nextWork.kind==='support'?'問い合わせ対応':'PC準備'});setActiveDirty(false);}
+    setRoute(next);setError('');
+  };window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[active,activeDirty]);
   async function run(fn:()=>Promise<void>) {if(busy)return;setBusy(true);setError('');try{await fn();setRevision(n=>n+1);}catch(e){setError(e instanceof Error?e.message:'処理を完了できませんでした。');}finally{setBusy(false);}}
   const props={csrf,operator,revision,run,busy},[,kind,id]=route.split('/');
-  return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ'],['explore','探す']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{kind==='explore'?<ExploreUI key={route}/>:kind==='support'?<SupportUI key={route} {...props} {...(id?{id}:{})}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='work'&&id?<WorkPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:<Home key={route} {...props} view={kind||'home'}/>}</div></div>;
+  const isActiveRoute=!!active&&route===workRoute(active);
+  const activeView=active?.kind==='support'?<SupportUI key={`support-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle} onDirtyChange={updateDirty}/>:active?<WorkPage key={`work-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle}/>:null;
+  const otherView=kind==='explore'?<ExploreUI key={route}/>:kind==='support'&&id?null:kind==='support'?<SupportUI key={route} {...props}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:kind==='work'&&id?null:<Home key={route} {...props} view={kind||'home'}/>;
+  return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ'],['explore','探す']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{active&&<div hidden={!isActiveRoute} aria-hidden={!isActiveRoute}>{activeView}</div>}{active&&kind==='explore'&&<aside className="active-work-anchor" aria-label="現在の作業"><p className="eyebrow">作業中</p><strong>{active.title}</strong><p>{active.kind==='support'?'問い合わせ対応':'PC準備'}</p><a href={`#${workRoute(active)}`}>作業に戻る</a></aside>}{!isActiveRoute&&otherView}</div></div>;
 }

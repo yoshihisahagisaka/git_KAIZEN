@@ -112,6 +112,18 @@ test('document 15 + UX-GT-09,11–17: operator JOIN preparation through confirme
   expect((await db.admin.query('select count(*)::int as n from factact.requirement_evaluations where event_id=$1',[eventId])).rows[0].n).toBe(1);
 });
 
+test('Active Work Anchor keeps the selected JOIN device across Explore',async({page})=>{
+  await openPreparation(page);
+  await page.getByRole('button',{name:'PC-0073を準備対象にする',exact:true}).click();
+  await expect(page.getByText('準備対象: PC-0073（まだ利用PCではありません）')).toBeVisible();
+  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
+  const anchor=page.getByRole('complementary',{name:'現在の作業'});
+  await expect(anchor).toContainText('田中 一郎さんのPC準備');await expect(anchor).toContainText('PC準備');
+  await expect(page.getByLabel('検索語')).toBeFocused();
+  await anchor.getByRole('link',{name:'作業に戻る',exact:true}).click();
+  await expect(page.getByText('準備対象: PC-0073（まだ利用PCではありません）')).toBeVisible();
+});
+
 test('UX-GT-09–10 responsibility differs from the current executor; unknown assignment source is explicit',async({page})=>{
   const {workId}=await openPreparation(page);
   // Read-projection fixture only. No alternate authentication or command behavior.
