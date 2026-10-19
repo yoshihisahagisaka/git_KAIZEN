@@ -21,6 +21,7 @@ export function SupportDetail(props:Props&{id:string}){
  {!v.evaluation&&<section className="next-action"><h2>次にやること</h2><p>問い合わせの確認・対応を始めます。あなたの担当として記録します。</p><button disabled={props.busy||!allowed} onClick={()=>void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'REQUIRED'});})}>対応を開始</button><details><summary>対応せずに受付を閉じる</summary><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'NOT_APPLICABLE',reason:f.get('reason')});});}}><label>対応しない理由<textarea name="reason" required maxLength={4000}/></label><button disabled={props.busy||!allowed}>理由を残して受付を閉じる</button></form></details></section>}
  {v.evaluation&&!v.work&&<article><h2>対応は作成していません</h2><p>{v.evaluation.basisSummary}</p></article>}
  {v.work&&<><section className="ownership"><p className="badge">{v.work.workOwnerOperatorId===props.operator.id?'あなたの担当です':'他の担当者の対応です'}</p><p>担当: {v.owner?.displayName??'未確認'}</p><p>担当になった理由: 対応を開始した担当者として登録されています。</p></section>
+ {v.work.status!=='COMPLETED'&&<ContextDevicePanel {...props} view={v} allowed={allowed}/>}
  {v.work.status!=='COMPLETED'&&<Wizard key={v.work.id} {...props} view={v} allowed={allowed}/>}
  {v.decision&&<article><h2>対応の記録</h2>{latest?<Notes notes={latest.notes}/>:<><p>確認根拠: {v.evidence?.contentText}</p><p>実施内容: {v.action?.resultSummary}</p><p>今回の判断: {v.decision.rationale}</p></>}
  <p>管理情報の変更: ありません。利用PC・VPN設定を変更した記録ではありません。</p><p>本人の申告と担当者の確認は区別して記録しています。結果の記録だけでは、VPN利用資格や恒久的な解決を確定しません。</p>
@@ -35,6 +36,20 @@ export function SupportDetail(props:Props&{id:string}){
 }
 
 type EditorProps=Props&{view:SupportDetailView;allowed:boolean};
+function ContextDevicePanel({view:v,csrf,busy,run,allowed,candidateDeviceId,candidateDeviceLabel}:EditorProps){
+ const current=v.currentDeviceContext&&v.currentContextDevice?{context:v.currentDeviceContext,device:v.currentContextDevice}:null;
+ const [source,setSource]=useState<'OPERATOR'|'CALLER'|'OTHER'>('OPERATOR'),[reason,setReason]=useState('');
+ const revision=v.deviceContextHistory.at(-1)?.context.revision??0;
+ const save=(kind:'confirm'|'correct')=>void run(async()=>{if(!candidateDeviceId)return;await api(`/api/support-work/${v.work!.id}/context-device/${kind}`,csrf,{requestId:crypto.randomUUID(),expectedRevision:revision,deviceId:candidateDeviceId,confirmationSource:source,reason:kind==='correct'?reason:''});location.hash=`/support/${v.event.id}`;});
+ const end=()=>void run(async()=>{await api(`/api/support-work/${v.work!.id}/context-device/end`,csrf,{requestId:crypto.randomUUID(),expectedRevision:revision,reason});setReason('');});
+ return <section className="card" aria-label="今回の対応対象"><h2>今回の対応対象</h2>
+  {current?<><p><strong>{current.device.assetTag}</strong>{current.device.displayName&&<> — {current.device.displayName}</>}</p><p>今回の対応対象として記録済みです。Registryの利用PC情報や障害原因は変更・確定しません。</p></>:<p className="unknown">対象機器は未特定です。未特定のまま対応を続けられます。</p>}
+  <p><a className="secondary button" href={`#/explore?q=${encodeURIComponent(current?.device.assetTag??'')}`}>機器を探す</a></p>
+  {candidateDeviceId&&<section className="notice"><h3>選択した候補: {candidateDeviceLabel??'端末'}</h3><p>検索結果を見ただけでは記録されません。今回の対応対象として明示的に記録してください。</p><label>確認元<select value={source} onChange={e=>setSource(e.target.value as typeof source)}><option value="OPERATOR">担当者が確認</option><option value="CALLER">申告者が確認</option><option value="OTHER">その他</option></select></label>{current&&<label>対象を変更する理由<textarea value={reason} onChange={e=>setReason(e.target.value)} required maxLength={1000}/></label>}<button disabled={busy||!allowed||(!!current&&!reason.trim())} onClick={()=>save(current?'correct':'confirm')}>{current?'対象を変更して記録':'今回の対象として記録'}</button></section>}
+  {current&&<section><label>対象の記録を取り消す理由<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000}/></label><button className="secondary" disabled={busy||!allowed||!reason.trim()} onClick={end}>対象の記録を取り消す</button></section>}
+  <details><summary>対象の記録履歴を見る</summary>{!v.deviceContextHistory.length?<p>まだ対象機器は記録していません。</p>:<ol>{v.deviceContextHistory.map(({context:x,device,operator})=><li key={x.id}>{time(x.recordedAt)} — {x.kind==='CONFIRMED'?'対象として記録':x.kind==='CORRECTED'?'対象を訂正':'対象の記録を取り消し'}{device&&<>: {device.assetTag}</>} / {operator.displayName}{x.reason&&<>（理由: {x.reason}）</>}</li>)}</ol>}</details>
+ </section>;
+}
 function useUnsaved(dirty:boolean){useEffect(()=>{if(!dirty)return;const unload=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[dirty]);}
 function Wizard({view:v,csrf,busy,run,allowed,onDirtyChange}:EditorProps){
  const [n,setN]=useState<SupportNotes>(()=>v.records.at(-1)?.notes??(v.decision?{...blank,checks:v.evidence?.contentText??'',action:v.decision.mode==='NO_ACTION_REQUIRED'?'NO_ACTION_REQUIRED':'OTHER_GUIDANCE',actionDetails:v.action?.resultSummary??'',exceptionReason:v.decision.rationale}:{...blank}));const [step,setStep]=useState(0),[dirty,setDirty]=useState(false),[message,setMessage]=useState('');

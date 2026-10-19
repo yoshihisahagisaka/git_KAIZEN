@@ -2,6 +2,8 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit } from '../../domain/src/support.js';
 export interface SupportRepository {
+ deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
+ insertDeviceContext(context:import('../../domain/src/support.js').SupportDeviceContext):Promise<void>;
  records(workId:string):Promise<import('../../domain/src/support.js').SupportRecord[]>;
  insertRecord(record:import('../../domain/src/support.js').SupportRecord):Promise<void>;
  core:JoinRepository;

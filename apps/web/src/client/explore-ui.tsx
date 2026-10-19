@@ -17,7 +17,7 @@ function detailLink(result: ExploreSearchResult) {
   return null;
 }
 
-export function ExploreUI({initialQuery=''}:{initialQuery?:string}) {
+export function ExploreUI({initialQuery='',activeSupportEventId}:{initialQuery?:string;activeSupportEventId?:string|undefined}) {
   const [text,setText]=useState(initialQuery);
   const [category,setCategory]=useState<ExploreSearchType | 'ALL'>('ALL');
   const [results,setResults]=useState<ExploreSearchResult[] | null>(null);
@@ -55,6 +55,7 @@ export function ExploreUI({initialQuery=''}:{initialQuery?:string}) {
       return <article key={`${result.resultType}-${result.entityId}`} className="explore-result"><p className="badge">{labels[result.resultType]}</p>
         {link?<h3><a href={link}>{result.primaryLabel}</a></h3>:<h3>{result.primaryLabel}</h3>}
         {result.secondaryLabel&&<p>{result.secondaryLabel}</p>}
+        {activeSupportEventId&&result.resultType==='DEVICE'&&<p><a className="button" href={`#/support/${activeSupportEventId}?contextDevice=${encodeURIComponent(result.entityId)}&contextDeviceLabel=${encodeURIComponent(result.primaryLabel)}`}>この端末を今回の対象候補として作業へ戻る</a></p>}
         {result.resultType==='KNOWLEDGE_CANDIDATE'&&<p className="notice">ナレッジ候補です。承認済みの手順・ルールではありません。</p>}
       </article>;
     })}</div>}</section>}

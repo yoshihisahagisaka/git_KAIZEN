@@ -170,6 +170,18 @@ test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a
 test('SUPPORT work opens Explore with an editable query without searching automatically',async({page})=>{
  const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const source=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'VPN検索用'});const sourceWork=(await commands.evaluate(actor,source.id,'REQUIRED','検索用')).work!;const decision=await commands.recordResolution(actor,sourceWork.id,{mode:'GUIDANCE_ONLY',diagnosticEvidence:'VPN',rationale:'検索用',actionSummary:'VPN案内'});await commands.saveKnowledge(actor,sourceWork.id,'VPN 関連情報','検索用のナレッジ候補');
  await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();await page.getByLabel('確認した内容と根拠').fill('保存しない入力');await page.getByRole('link',{name:'関連情報を探す',exact:true}).click();
- const query=page.getByLabel('検索語');await expect(query).toHaveValue('VPN');await expect(page.getByRole('heading',{name:'検索結果'})).toHaveCount(0);await query.fill('VPN');await page.getByRole('button',{name:'検索',exact:true}).click();await expect(page.getByText('仕事',{exact:true})).toBeVisible();await expect(page.getByText('ナレッジ候補',{exact:true})).toBeVisible();expect(decision).toBeTruthy();
+ const query=page.getByLabel('検索語');await expect(query).toHaveValue('VPN');await expect(page.getByRole('heading',{name:'検索結果'})).toHaveCount(0);await query.fill('VPN');await page.getByRole('button',{name:'検索',exact:true}).click();const results=page.getByRole('region',{name:'検索結果'});await expect(results.getByText('仕事',{exact:true}).first()).toBeVisible();await expect(results.getByText('ナレッジ候補',{exact:true}).first()).toBeVisible();expect(decision).toBeTruthy();
  await page.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存しない入力');
+});
+
+test('SUPPORT Device Work Context requires an explicit Work-side confirmation and preserves Registry',async({page})=>{
+ await login(page);const eventId=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ const before=(await db.admin.query('select * from factact.relations')).rows;
+ await page.getByRole('link',{name:'機器を探す',exact:true}).click();await page.getByLabel('検索語').fill('PC-0073');await page.getByRole('button',{name:'検索',exact:true}).click();
+ await page.getByRole('link',{name:'この端末を今回の対象候補として作業へ戻る',exact:true}).click();
+ await expect(page.getByText('検索結果を見ただけでは記録されません。今回の対応対象として明示的に記録してください。')).toBeVisible();
+ await page.getByRole('button',{name:'今回の対象として記録',exact:true}).click();
+ await expect(page.getByRole('region',{name:'今回の対応対象'}).getByText('PC-0073',{exact:false})).toBeVisible();
+ expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);
+ expect((await db.admin.query('select count(*)::int as n from factact.support_work_device_contexts c join factact.work w on w.id=c.work_id where w.support_event_id=$1',[eventId])).rows[0].n).toBe(1);
 });

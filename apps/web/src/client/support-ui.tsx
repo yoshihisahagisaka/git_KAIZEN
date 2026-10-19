@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportListView,SupportDetailView} from '../../../../packages/application/src/support-queries.js';
 import {api} from './api.js';
-export type Props={csrf:string;operator:Operator;revision:number;busy:boolean;run:(fn:()=>Promise<void>)=>Promise<void>;id?:string;onActiveTitle?:(title:string)=>void;onDirtyChange?:(dirty:boolean)=>void};
+export type Props={csrf:string;operator:Operator;revision:number;busy:boolean;run:(fn:()=>Promise<void>)=>Promise<void>;id?:string;candidateDeviceId?:string|undefined;candidateDeviceLabel?:string|undefined;onActiveTitle?:(title:string)=>void;onDirtyChange?:(dirty:boolean)=>void};
 export function useRead<T>(url:string,revision:number){const [data,setData]=useState<T|null>(null),[error,setError]=useState('');useEffect(()=>{let active=true;api<T>(url).then(x=>{if(active){setData(x);setError('');}}).catch(()=>{if(active)setError('問い合わせ情報を取得できませんでした。再読み込みしてください。');});return()=>{active=false;};},[url,revision]);return{data,error};}
 export function SupportTasks({operator,revision}:{operator:Operator;revision:number}){const {data}=useRead<SupportListView>('/api/support',revision);return <>{data?.inquiries.filter(x=>x.work&&x.work.status!=='COMPLETED'&&x.work.workOwnerOperatorId===operator.id).map(x=><article key={x.event.id}><p>あなたの担当 / 問い合わせ</p><a href={`#/support/${x.event.id}`}>{x.person.displayName}さんのVPN接続の問い合わせ</a><p>次にやること: {x.work?.nextAction}</p></article>)}</>;}
 export const auditLabels:Record<string,string>={SUPPORT_RECEIVED:'本人からの問い合わせを受付',SUPPORT_EVALUATED:'対応の必要性と担当を確認',SUPPORT_GUIDANCE_RECORDED:'確認・判断・案内の実施を記録',SUPPORT_KNOWLEDGE_SAVED:'次の対応への参考知識を保存',SUPPORT_COMPLETED:'問い合わせ対応を完了'};

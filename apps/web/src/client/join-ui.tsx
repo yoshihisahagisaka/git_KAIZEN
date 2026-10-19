@@ -118,21 +118,21 @@ export function JoinUI({csrf,operator}:{csrf:string;operator:Operator}) {
   const updateTitle=useCallback((title:string)=>setActive(current=>current?{...current,title}:current),[]);
   const updateDirty=useCallback((dirty:boolean)=>setActiveDirty(dirty),[]);
   useEffect(()=>{const change=()=>{
-    const next=location.hash.slice(1)||'/';const nextWork=routeWork(next);
+    const next=location.hash.slice(1)||'/',nextPath=next.split('?')[0]??'/';const nextWork=routeWork(next);
     if(active&&nextWork&&!(nextWork.kind===active.kind&&nextWork.id===active.id)&&activeDirty){
       if(!window.confirm('未保存の入力があります。下書き保存せずに別の作業へ移動しますか？')){location.hash=workRoute(active);return;}
     }
-    if(active&&!nextWork&&next!=='/explore'&&activeDirty){
-      if(!window.confirm('未保存の入力があります。下書き保存せずに移動しますか？')){location.hash=workRoute(active);return;}
+    if(active&&!nextWork&&nextPath!=='/explore'){
+      if(activeDirty&&!window.confirm('未保存の入力があります。下書き保存せずに移動しますか？')){location.hash=workRoute(active);return;}
       setActive(null);setActiveDirty(false);
     }
     if(nextWork&&(!active||nextWork.kind!==active.kind||nextWork.id!==active.id)){setActive({...nextWork,title:nextWork.kind==='support'?'問い合わせ対応':'PC準備'});setActiveDirty(false);}
     setRoute(next);setError('');
   };window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[active,activeDirty]);
   async function run(fn:()=>Promise<void>) {if(busy)return;setBusy(true);setError('');try{await fn();setRevision(n=>n+1);}catch(e){setError(e instanceof Error?e.message:'処理を完了できませんでした。');}finally{setBusy(false);}}
-  const props={csrf,operator,revision,run,busy},routePath=route.split('?')[0]??'/',[,kind,id]=routePath.split('/'),exploreQuery=new URLSearchParams(route.split('?')[1]??'').get('q')??'';
-  const isActiveRoute=!!active&&route===workRoute(active);
-  const activeView=active?.kind==='support'?<SupportUI key={`support-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle} onDirtyChange={updateDirty}/>:active?<WorkPage key={`work-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle}/>:null;
-  const otherView=kind==='explore'?<ExploreUI key={route} initialQuery={exploreQuery}/>:kind==='support'&&id?null:kind==='support'?<SupportUI key={route} {...props}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:kind==='work'&&id?null:<Home key={route} {...props} view={kind||'home'}/>;
+  const props={csrf,operator,revision,run,busy},routePath=route.split('?')[0]??'/',[,kind,id]=routePath.split('/'),params=new URLSearchParams(route.split('?')[1]??''),exploreQuery=params.get('q')??'';
+  const isActiveRoute=!!active&&routePath===workRoute(active);
+  const activeView=active?.kind==='support'?<SupportUI key={`support-${active.id}`} {...props} id={active.id} candidateDeviceId={routePath===workRoute(active)?params.get('contextDevice')??undefined:undefined} candidateDeviceLabel={routePath===workRoute(active)?params.get('contextDeviceLabel')??undefined:undefined} onActiveTitle={updateTitle} onDirtyChange={updateDirty}/>:active?<WorkPage key={`work-${active.id}`} {...props} id={active.id} onActiveTitle={updateTitle}/>:null;
+  const otherView=kind==='explore'?<ExploreUI key={route} initialQuery={exploreQuery} activeSupportEventId={active?.kind==='support'?active.id:undefined}/>:kind==='support'&&id?null:kind==='support'?<SupportUI key={route} {...props}/>:kind==='join'&&id?<JoinPage key={route} {...props} id={id}/>:kind==='people'&&id?<PersonPage key={route} {...props} id={id}/>:kind==='work'&&id?null:<Home key={route} {...props} view={kind||'home'}/>;
   return <div className="app-shell"><nav aria-label="メインナビゲーション"><strong>FACTACT</strong><p>今わかることから、次の一歩へ。</p>{[['','ホーム'],['work','自分のやること'],['join','入社対応'],['people','対象者'],['support','問い合わせ'],['explore','探す']].map(([path,label])=><a key={path} href={`#/${path}`} aria-current={(kind??'')===path?'page':undefined}>{label}</a>)}</nav><div className="page-content">{error&&<p role="alert">{error}</p>}{busy&&<p role="status">処理しています…</p>}{active&&<div hidden={!isActiveRoute} aria-hidden={!isActiveRoute}>{activeView}</div>}{active&&kind==='explore'&&<aside className="active-work-anchor" aria-label="現在の作業"><p className="eyebrow">作業中</p><strong>{active.title}</strong><p>{active.kind==='support'?'問い合わせ対応':'PC準備'}</p><a href={`#${workRoute(active)}`}>作業に戻る</a></aside>}{!isActiveRoute&&otherView}</div></div>;
 }

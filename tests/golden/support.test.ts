@@ -126,3 +126,23 @@ it('Human Review E: Other and Unknown require explanation, not fabricated defaul
  const {w}=await work();
  for(const n of [{...notes,action:'OTHER_GUIDANCE' as const,actionDetails:'',exceptionReason:'標準外の確認が必要'},{...notes,result:'UNCONFIRMED' as const,resultSource:'UNKNOWN' as const,resultDetails:''}])await expect(s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:n})).rejects.toMatchObject({code:'EVIDENCE_REQUIRED'});
 });
+it('Context-01 explicit Device Context is append-only, separate from Registry and survives correction/end',async()=>{
+ const {e,w}=await work(),before=(await db.admin.query('select * from factact.relations')).rows;
+ const first=await s.confirmContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});
+ let v=await q.detail(a,e.id);expect(v.currentContextDevice?.assetTag).toBe('PC-0073');expect(v.deviceContextHistory).toHaveLength(1);expect(v.deviceContextHistory[0]?.context.id).toBe(first.id);
+ const other=randomUUID();await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,display_name,device_status) values($1,$2,'PC-0099','Context only','AVAILABLE')",[other,ids.tenant]);
+ await s.correctContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:1,deviceId:other,confirmationSource:'CALLER',reason:'最初の機器番号を聞き違えた'});
+ v=await q.detail(a,e.id);expect(v.currentContextDevice?.assetTag).toBe('PC-0099');expect(v.deviceContextHistory).toHaveLength(2);expect(v.deviceContextHistory[1]?.context.supersedesContextId).toBe(first.id);
+ await s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:2,reason:'対象機器を特定できない状態に戻した'});
+ v=await q.detail(a,e.id);expect(v.currentDeviceContext).toBeNull();expect(v.deviceContextHistory).toHaveLength(3);expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);
+});
+it('Context-01 guards idempotency, stale revisions, tenant boundary and completed Work',async()=>{
+ const {w}=await work(),input={requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR' as const};
+ const [x,y]=await Promise.all([s.confirmContextDevice(a,w.id,input),s.confirmContextDevice(a,w.id,input)]);expect(x.id).toBe(y.id);
+ await expect(s.confirmContextDevice(a,w.id,{...input,deviceId:randomUUID()})).rejects.toMatchObject({code:'RETRY_CONFLICT'});
+ await expect(s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:0,reason:'stale'})).rejects.toMatchObject({code:'STALE_REVISION'});
+ const tenant=randomUUID(),device=randomUUID();await db.admin.query("insert into factact.tenants(id,name,status) values($1,'Other','ACTIVE')",[tenant]);await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,display_name,device_status) values($1,$2,'OTHER-1','Other','AVAILABLE')",[device,tenant]);
+ await expect(s.correctContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:1,deviceId:device,confirmationSource:'OPERATOR',reason:'forge'})).rejects.toMatchObject({code:'NOT_FOUND'});
+ await s.recordWork(a,w.id,recordInput('COMPLETION'));await expect(s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:1,reason:'after completion'})).rejects.toMatchObject({code:'WORK_STATE_CONFLICT'});
+ await expect(withTenant(db.runtime,a.tenantId,c=>c.query('delete from factact.support_work_device_contexts where work_id=$1',[w.id]))).rejects.toMatchObject({code:'42501'});
+});

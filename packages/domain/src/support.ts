@@ -23,5 +23,12 @@ export interface SupportRecord {
  kind:'DRAFT'|'COMPLETION'|'CORRECTION';notes:SupportNotes;correctionReason:string;
  recordedByOperatorId:string;recordedAt:string;
 }
+// Deliberate Work Context, not a Registry fact and not diagnostic evidence of a cause.
+export interface SupportDeviceContext {
+ id:string;tenantId:string;workId:string;requestId:string;revision:number;
+ kind:'CONFIRMED'|'CORRECTED'|'ENDED';deviceId:string|null;
+ confirmationSource:'OPERATOR'|'CALLER'|'OTHER';evidenceId:string|null;reason:string;
+ supersedesContextId:string|null;recordedByOperatorId:string;recordedAt:string;
+}
 export const supportActionLabels:Record<SupportNotes['action'],string>={RESTART_GUIDANCE:'PC再起動を案内',CONNECTION_GUIDANCE:'接続手順を案内',OTHER_GUIDANCE:'その他の確認・案内',NO_ACTION_REQUIRED:'確認の結果、追加対応なし'};
 export const supportResultLabels:Record<SupportNotes['result'],string>={CONNECTED:'接続できた',NOT_CONNECTED:'接続できなかった',UNCONFIRMED:'結果は未確認'};
