@@ -1,6 +1,6 @@
 # IT経営KAIZEN 無料診断 — Naming v1
 
-Status: **CANONICAL — BUSINESS / SERVICE NAMING**  
+Status: **CANONICAL — BUSINESS / SERVICE NAMING**
 Date: 2026-09-17
 
 ## Decision

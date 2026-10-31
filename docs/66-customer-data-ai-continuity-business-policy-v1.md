@@ -1,6 +1,6 @@
 # IT経営KAIZEN Customer Data / AI / Consent / Continuity Business Policy v1
 
-Status: **CANONICAL — BUSINESS POLICY / DECISION**  
+Status: **CANONICAL — BUSINESS POLICY / DECISION**
 Date: 2026-09-13
 
 Scope: 無料IT経営診断を起点とするIT経営KAIZENのCustomer Data / AI / Transcript / Retention / Deletion / Backup / Consent方針。

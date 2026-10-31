@@ -409,4 +409,3 @@ Slice 1では以下をしない。
 - **Web First. Same Method. Different Entry.** — 公開フォームとstaff proxy inputを共通Case modelへ載せる
 - **KAIZENするために、KAIZENのための仕事を増やさない。** — 稼働済み基盤を再利用する
 - 無料診断を簡易Assessment化しない
-

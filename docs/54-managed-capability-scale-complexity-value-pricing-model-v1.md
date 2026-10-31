@@ -1,7 +1,7 @@
 # Managed Capability — Scale / Complexity / Human Work Structure / Value Pricing Model v1
 
-**Status:** BUSINESS HYPOTHESIS / COMMERCIAL DESIGN MODEL — NOT PRICE DECISION  
-**Date:** 2026-09-13  
+**Status:** BUSINESS HYPOTHESIS / COMMERCIAL DESIGN MODEL — NOT PRICE DECISION
+**Date:** 2026-09-13
 **Depends on:** docs/47, docs/48, docs/49, docs/50, docs/51, docs/52, docs/53
 
 ---
@@ -221,7 +221,7 @@ Equal time therefore does not imply equal:
 
 Do not conclude:
 
-`50 employees = X`  
+`50 employees = X`
 `300 employees = Y`
 
 A 300-person standardized cloud environment may be easier to operate than a 150-person multi-company legacy environment.

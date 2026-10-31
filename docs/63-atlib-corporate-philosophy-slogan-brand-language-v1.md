@@ -1,6 +1,6 @@
 # atLIB Corporate Philosophy / Slogan — Brand Language v1
 
-Status: **CANONICAL — CORPORATE BRAND LANGUAGE**  
+Status: **CANONICAL — CORPORATE BRAND LANGUAGE**
 Date: 2026-09-13
 
 ## 1. Corporate Philosophy — DECIDED

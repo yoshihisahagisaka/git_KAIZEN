@@ -66,6 +66,18 @@ The repository, not chat history, is the source of truth. When a material Busine
 26. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
 27. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
 
+### FACTACT current implementation checkpoints
+
+- `bootstrap.md` — local bootstrap and verification
+- `adr/0001-application-boundary.md` through `adr/0007-support-operator-records.md` — architecture decisions
+- `join-checkpoint.md` and `human-usable-join-checkpoint.md` — JOIN implementation checkpoints
+- `support-checkpoint.md` and `support-v2-checkpoint.md` — SUPPORT implementation checkpoints
+- `factact-product-operating-principles-v1.md` — Product operating principles
+- `factact-search-explore-product-contract-v1.md` — Search / Explore Product Contract
+- `support-round3-phase2-decisions.md` — SUPPORT Phase 2 Decisions 1–7
+- `support-round3-phase2-core-fit-validation.md` — Core Fit Validation
+- `support-round3-phase2-implementation-contract.md` — implementation contract
+
 ## Superseded / legacy material
 
 `11-josys-kaizen-service-model-v1.md` is **SUPERSEDED AS BUSINESS HIERARCHY / REFERENCE ONLY**. Useful operational detail may be reused only after reconciliation with `17`; do not reintroduce 情シスKAIZEN as the center of the business architecture.

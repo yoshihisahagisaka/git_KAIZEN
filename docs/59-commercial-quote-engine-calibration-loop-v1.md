@@ -1,6 +1,6 @@
 # Commercial Quote Engine & Calibration Loop v1
 
-Status: **BUSINESS MODEL / PROPOSAL — SYSTEMIZATION INPUT**  
+Status: **BUSINESS MODEL / PROPOSAL — SYSTEMIZATION INPUT**
 Date: 2026-09-13
 
 ## 1. Purpose

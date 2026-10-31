@@ -1,6 +1,6 @@
 # IT経営KAIZEN — 経営者対話から無料診断へつなぐ営業原則 v1
 
-Status: **CANONICAL — BUSINESS / SALES EXECUTION**  
+Status: **CANONICAL — BUSINESS / SALES EXECUTION**
 Date: 2026-09-16
 
 ## 1. Purpose

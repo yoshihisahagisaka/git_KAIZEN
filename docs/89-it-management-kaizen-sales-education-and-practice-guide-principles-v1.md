@@ -1,6 +1,6 @@
 # IT経営KAIZEN — 営業教育・実践ガイド設計原則 v1
 
-Status: **CANONICAL — BUSINESS / SALES ENABLEMENT**  
+Status: **CANONICAL — BUSINESS / SALES ENABLEMENT**
 Date: 2026-09-16
 
 ## 1. Purpose

@@ -1,6 +1,6 @@
 # 無料IT経営診断 — Business Launch Gate v1
 
-Status: **BUSINESS / LAUNCH GATE — DEVELOPMENT HANDOFF INPUT**  
+Status: **BUSINESS / LAUNCH GATE — DEVELOPMENT HANDOFF INPUT**
 Date: 2026-09-13
 
 ## 1. Purpose

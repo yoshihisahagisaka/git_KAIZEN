@@ -1,0 +1,75 @@
+import {SupportContext,SupportHistory,SupportAudit,DemoProcedure} from './support-context.js';
+import {useEffect,useRef,useState} from 'react';
+import {api} from './api.js';
+import {useRead,type Props} from './support-ui.js';
+import type {SupportDetailView} from '../../../../packages/application/src/support-queries.js';
+import {supportActionLabels,supportResultLabels,type SupportNotes,type SupportRecord} from '../../../../packages/domain/src/support.js';
+
+const blank:SupportNotes={checks:'',action:'RESTART_GUIDANCE',actionDetails:'',result:'UNCONFIRMED',resultSource:'UNKNOWN',resultDetails:'',exceptionReason:''};
+const sourceLabel={CALLER:'本人からの申告',OPERATOR:'担当者が直接確認',UNKNOWN:'未確認'};
+const time=(s:string)=>new Date(s).toLocaleString('ja-JP');
+export function Notes({notes:n}:{notes:SupportNotes}){return <dl className="support-summary"><dt>確認したこと</dt><dd>{n.checks||'未確認'}</dd><dt>行ったこと</dt><dd>{supportActionLabels[n.action]}{n.actionDetails&&<p>補足: {n.actionDetails}</p>}</dd><dt>どうなったか</dt><dd>{supportResultLabels[n.result]} / {sourceLabel[n.resultSource]}<p>{n.resultDetails}</p></dd>{n.exceptionReason&&<><dt>例外の理由</dt><dd>{n.exceptionReason}</dd></>}</dl>;}
+
+export function SupportDetail(props:Props&{id:string}){
+ const {data:v,error}=useRead<SupportDetailView>(`/api/support/${props.id}`,props.revision);
+ useEffect(()=>{if(v)props.onActiveTitle?.(`${v.person.displayName}さんからの問い合わせ`);},[props.onActiveTitle,v]);
+ if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;
+ const allowed=props.operator.roles.some(r=>v.executeRoles.includes(r))&&props.operator.roles.some(r=>r==='ADMIN'||r==='OPERATOR');
+ const latest=v.records.filter(x=>x.kind!=='DRAFT').at(-1);
+ return <><a href="#/support">問い合わせ一覧へ</a><h1>{v.person.displayName}さんからの問い合わせ</h1><p>受付: {time(v.event.createdAt)}</p><p><a className="secondary" href="#/explore?q=VPN">関連情報を探す</a></p>
+ <div className="workspace support-workspace"><section aria-label="今の対応">
+ {!v.evaluation&&<section className="next-action"><h2>次にやること</h2><p>問い合わせの確認・対応を始めます。あなたの担当として記録します。</p><button disabled={props.busy||!allowed} onClick={()=>void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'REQUIRED'});})}>対応を開始</button><details><summary>対応せずに受付を閉じる</summary><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'NOT_APPLICABLE',reason:f.get('reason')});});}}><label>対応しない理由<textarea name="reason" required maxLength={4000}/></label><button disabled={props.busy||!allowed}>理由を残して受付を閉じる</button></form></details></section>}
+ {v.evaluation&&!v.work&&<article><h2>対応は作成していません</h2><p>{v.evaluation.basisSummary}</p></article>}
+ {v.work&&<><section className="ownership"><p className="badge">{v.work.workOwnerOperatorId===props.operator.id?'あなたの担当です':'他の担当者の対応です'}</p><p>担当: {v.owner?.displayName??'未確認'}</p><p>担当になった理由: 対応を開始した担当者として登録されています。</p></section>
+ <ContextDevicePanel {...props} view={v} allowed={allowed} readOnly={v.work.status==='COMPLETED'}/>
+ {v.work.status!=='COMPLETED'&&<Wizard key={v.work.id} {...props} view={v} allowed={allowed}/>}
+ {v.decision&&<article><h2>対応の記録</h2>{latest?<Notes notes={latest.notes}/>:<><p>確認根拠: {v.evidence?.contentText}</p><p>実施内容: {v.action?.resultSummary}</p><p>今回の判断: {v.decision.rationale}</p></>}
+ <p>管理情報の変更: ありません。利用PC・VPN設定を変更した記録ではありません。</p><p>本人の申告と担当者の確認は区別して記録しています。結果の記録だけでは、VPN利用資格や恒久的な解決を確定しません。</p>
+ {v.work.status!=='COMPLETED'&&<p>以前の画面で保存済みの実施記録です。上の手順で内容を編集して完了できます。元の記録は履歴に残ります。</p>}
+ </article>}
+ {v.work.status==='COMPLETED'&&<><p role="status">{v.work.outcome==='NO_ACTION_REQUIRED'?'調査完了・追加対応不要':'確認・案内の対応を完了しました'}</p><Correction key={`${v.work.id}-${v.records.length}`} {...props} view={v} allowed={allowed}/></>}
+ {v.decision&&<details><summary>次の対応に役立つこと（任意・特になしで完了できます）</summary>{v.knowledge?<p>参考知識の候補として保存済みです。</p>:<form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void props.run(async()=>{await api(`/api/support-work/${v.work!.id}/knowledge`,props.csrf,{title:f.get('title'),content:f.get('content')});});}}><p>必要な場合だけ残します。承認済みルールにはなりません。</p><label>参考知識の見出し<input name="title" required maxLength={200}/></label><label>役立った内容・適用条件・限界<textarea name="content" required maxLength={4000}/></label><button disabled={props.busy||!allowed}>参考知識の候補を保存</button></form>}</details>}
+ </>}
+ </section><SupportContext view={v} revision={props.revision}/></div>
+ <SupportHistory view={v}/><SupportAudit view={v}/>
+ </>;
+}
+
+type EditorProps=Props&{view:SupportDetailView;allowed:boolean};
+function ContextDevicePanel({view:v,csrf,busy,run,allowed,candidateDeviceId,candidateDeviceLabel,readOnly=false}:EditorProps&{readOnly?:boolean}){
+ const current=v.currentDeviceContext&&v.currentContextDevice?{context:v.currentDeviceContext,device:v.currentContextDevice}:null;
+ const [source,setSource]=useState<'OPERATOR'|'CALLER'|'OTHER'>('OPERATOR'),[reason,setReason]=useState('');
+ const revision=v.deviceContextHistory.at(-1)?.context.revision??0;
+ const save=(kind:'confirm'|'correct')=>void run(async()=>{if(!candidateDeviceId)return;await api(`/api/support-work/${v.work!.id}/context-device/${kind}`,csrf,{requestId:crypto.randomUUID(),expectedRevision:revision,deviceId:candidateDeviceId,confirmationSource:source,reason:kind==='correct'?reason:''});location.hash=`/support/${v.event.id}`;});
+ const end=()=>void run(async()=>{await api(`/api/support-work/${v.work!.id}/context-device/end`,csrf,{requestId:crypto.randomUUID(),expectedRevision:revision,reason});setReason('');});
+ return <section className="card" aria-label="今回の対応対象"><h2>今回の対応対象</h2>
+  {current?<><p><strong>{current.device.assetTag}</strong>{current.device.displayName&&<> — {current.device.displayName}</>}</p><p>今回の対応対象として記録済みです。Registryの利用PC情報や障害原因は変更・確定しません。</p></>:<p className="unknown">対象機器は未特定です。未特定のまま対応を続けられます。</p>}
+  {readOnly?<p className="notice">完了した対応の対象記録です。表示のみで変更できません。</p>:<><p><a className="secondary button" href={`#/explore?q=${encodeURIComponent(current?.device.assetTag??'')}`}>機器を探す</a></p>
+  {candidateDeviceId&&<section className="notice"><h3>選択した候補: {candidateDeviceLabel??'端末'}</h3><p>検索結果を見ただけでは記録されません。今回の対応対象として明示的に記録してください。</p><label>確認元<select value={source} onChange={e=>setSource(e.target.value as typeof source)}><option value="OPERATOR">担当者が確認</option><option value="CALLER">申告者が確認</option><option value="OTHER">その他</option></select></label>{current&&<label>対象を変更する理由<textarea value={reason} onChange={e=>setReason(e.target.value)} required maxLength={1000}/></label>}<button disabled={busy||!allowed||(!!current&&!reason.trim())} onClick={()=>save(current?'correct':'confirm')}>{current?'対象を変更して記録':'今回の対象として記録'}</button></section>}
+  {current&&<section><label>対象の記録を取り消す理由<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000}/></label><button className="secondary" disabled={busy||!allowed||!reason.trim()} onClick={end}>対象の記録を取り消す</button></section>}</>}
+  <details><summary>対象の記録履歴を見る</summary>{!v.deviceContextHistory.length?<p>まだ対象機器は記録していません。</p>:<ol>{v.deviceContextHistory.map(({context:x,device,operator})=><li key={x.id}>{time(x.recordedAt)} — {x.kind==='CONFIRMED'?'対象として記録':x.kind==='CORRECTED'?'対象を訂正':'対象の記録を取り消し'}{device&&<>: {device.assetTag}</>} / {operator.displayName}{x.reason&&<>（理由: {x.reason}）</>}</li>)}</ol>}</details>
+ </section>;
+}
+function useUnsaved(dirty:boolean){useEffect(()=>{if(!dirty)return;const unload=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[dirty]);}
+function Wizard({view:v,csrf,busy,run,allowed,onDirtyChange}:EditorProps){
+ const [n,setN]=useState<SupportNotes>(()=>v.records.at(-1)?.notes??(v.decision?{...blank,checks:v.evidence?.contentText??'',action:v.decision.mode==='NO_ACTION_REQUIRED'?'NO_ACTION_REQUIRED':'OTHER_GUIDANCE',actionDetails:v.action?.resultSummary??'',exceptionReason:v.decision.rationale}:{...blank}));const [step,setStep]=useState(0),[dirty,setDirty]=useState(false),[message,setMessage]=useState('');
+ const revision=useRef(v.records.at(-1)?.revision??0),request=useRef(crypto.randomUUID());useUnsaved(dirty);
+ useEffect(()=>{onDirtyChange?.(dirty);return()=>onDirtyChange?.(false);},[dirty,onDirtyChange]);
+ const change=(k:keyof SupportNotes,value:string)=>{setN(x=>({...x,[k]:value}));setDirty(true);setMessage('');request.current=crypto.randomUUID();};
+ const save=(kind:'DRAFT'|'COMPLETION')=>void run(async()=>{const result=await api<SupportRecord>(`/api/support-work/${v.work!.id}/records`,csrf,{requestId:request.current,expectedRevision:revision.current,kind,notes:n,correctionReason:''});revision.current=result.revision;request.current=crypto.randomUUID();setDirty(false);setMessage(kind==='DRAFT'?'下書きを保存しました':'対応を完了しました');});
+ return <section className="card support-wizard"><ol className="support-steps" aria-label="対応の手順">{['確認','対応','結果確認','完了前レビュー'].map((s,i)=><li key={s} aria-current={i===step?'step':undefined}>{i+1}. {s}</li>)}</ol><h2>次にやること</h2><h3>{['必要なことだけ確認する','実際に行ったことを記録する','どうなったかを確認する','内容を確認して完了する'][step]}</h3>
+ <form onSubmit={e=>{e.preventDefault();if(step<3)setStep(step+1);else save('COMPLETION');}}><fieldset disabled={busy||!allowed}>
+ {step===0&&<><p>利用PCが確認済みなら聞き直す必要はありません。VPN利用対象か、いつから・どんな表示かを、分かる範囲で確認してください。</p>{!v.deviceFact&&<p className="unknown">利用PCも未確認です。今回確認できた内容と確認元を下に残してください。</p>}<label>確認した内容と根拠<textarea value={n.checks} onChange={e=>change('checks',e.target.value)} required maxLength={1000} placeholder="例: 本人は今朝から接続できないと回答。エラー表示は未確認。利用対象は契約窓口に確認中。"/></label><p>分からない内容は未確認のままで進められます。パスワード・認証コードは記録しないでください。</p><DemoProcedure/></>}
+ {step===1&&<><p>ここでは確認・案内を記録します。機器やVPN設定の管理情報を変更する場合は、検証と正式反映を伴う別の対応が必要です。</p><label>行った対応<select aria-label="行った対応" value={n.action} onChange={e=>change('action',e.target.value)}>{Object.entries(supportActionLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label>{n.action==='OTHER_GUIDANCE'?'対応の補足（必須）':'対応の補足（任意）'}<textarea value={n.actionDetails} onChange={e=>change('actionDetails',e.target.value)} required={n.action==='OTHER_GUIDANCE'} maxLength={1000} placeholder="通常と異なることや、追加情報がある場合のみ入力"/></label>{['OTHER_GUIDANCE','NO_ACTION_REQUIRED'].includes(n.action)&&<label>標準外・追加対応なしの理由<textarea value={n.exceptionReason} onChange={e=>change('exceptionReason',e.target.value)} required maxLength={1000}/></label>}</>}
+ {step===2&&<><label>接続の結果<select aria-label="接続の結果" value={n.result} onChange={e=>change('result',e.target.value)}>{Object.entries(supportResultLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label>結果の確認元<select aria-label="結果の確認元" value={n.resultSource} onChange={e=>change('resultSource',e.target.value)}>{Object.entries(sourceLabel).map(([key,label])=><option key={key} value={key} disabled={key==='UNKNOWN'&&n.result!=='UNCONFIRMED'}>{label}</option>)}</select></label><label>{n.result==='UNCONFIRMED'?'未確認の状況（必須）':'結果の補足（任意）'}<textarea value={n.resultDetails} onChange={e=>change('resultDetails',e.target.value)} required={n.result==='UNCONFIRMED'} maxLength={1000} placeholder="追加の確認内容、または結果が未確認の状況"/></label><p>本人の回答は申告として残ります。「接続できた」は恒久的な解決の認定ではありません。</p></>}
+ {step===3&&<><Notes notes={n}/><p>次の対応に役立つこと: 特になし（任意のメモは完了後も追加できます）</p><p>この内容を実施記録として保存して対応を完了します。利用PCの管理情報は変わりません。</p><p>入力を直す場合は「戻る」を選んでください。</p></>}
+ <div>{step>0&&<button type="button" className="secondary" onClick={()=>setStep(step-1)}>戻る</button>}<button type="button" className="secondary" onClick={()=>save('DRAFT')}>下書き保存</button><button>{step===3?'問い合わせ対応を完了':'次へ'}</button></div></fieldset></form>{message&&<p role="status">{message}</p>}</section>;
+}
+function Correction({view:v,csrf,busy,run,allowed,onDirtyChange}:EditorProps){
+ const [open,setOpen]=useState(false),[reason,setReason]=useState(''),[review,setReview]=useState(false),[n,setN]=useState<SupportNotes>(()=>v.records.filter(x=>x.kind!=='DRAFT').at(-1)?.notes??{...blank,checks:v.evidence?.contentText??'',action:'OTHER_GUIDANCE',actionDetails:v.action?.resultSummary??''});
+ const request=useRef(crypto.randomUUID());useUnsaved(open);
+ useEffect(()=>{onDirtyChange?.(open);return()=>onDirtyChange?.(false);},[open,onDirtyChange]);
+ const change=(k:keyof SupportNotes,value:string)=>{setN(x=>({...x,[k]:value}));request.current=crypto.randomUUID();};
+ if(!open)return <button className="secondary" disabled={busy||!allowed} onClick={()=>setOpen(true)}>記録を訂正</button>;
+ return <form className="card" onSubmit={e=>{e.preventDefault();if(!review){setReview(true);return;}void run(async()=>{await api(`/api/support-work/${v.work!.id}/records`,csrf,{requestId:request.current,expectedRevision:v.records.at(-1)?.revision??0,kind:'CORRECTION',notes:n,correctionReason:reason});setOpen(false);});}}><h2>完了後の訂正</h2><p>元の記録を残し、訂正者・日時・理由を追加します。作業をもう一度実行した記録にはしません。</p><fieldset disabled={busy||!allowed}>{review?<><Notes notes={n}/><p>訂正理由: {reason}</p><button type="button" className="secondary" onClick={()=>setReview(false)}>戻る</button></>:<><label>確認した内容と根拠<textarea value={n.checks} onChange={e=>change('checks',e.target.value)} maxLength={1000} required/></label><label>行った対応<select aria-label="行った対応" value={n.action} onChange={e=>change('action',e.target.value)}>{Object.entries(supportActionLabels).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label><label>{n.action==='OTHER_GUIDANCE'?'対応の補足（必須）':'対応の補足（任意）'}<textarea value={n.actionDetails} onChange={e=>change('actionDetails',e.target.value)} maxLength={1000} required={n.action==='OTHER_GUIDANCE'}/></label><label>接続の結果<select aria-label="接続の結果" value={n.result} onChange={e=>change('result',e.target.value)}>{Object.entries(supportResultLabels).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label><label>結果の確認元<select aria-label="結果の確認元" value={n.resultSource} onChange={e=>change('resultSource',e.target.value)}>{Object.entries(sourceLabel).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label><label>{n.result==='UNCONFIRMED'?'未確認の状況（必須）':'結果の補足（任意）'}<textarea value={n.resultDetails} onChange={e=>change('resultDetails',e.target.value)} maxLength={1000} required={n.result==='UNCONFIRMED'}/></label>{['OTHER_GUIDANCE','NO_ACTION_REQUIRED'].includes(n.action)&&<label>標準外・追加対応なしの理由<textarea value={n.exceptionReason} onChange={e=>change('exceptionReason',e.target.value)} maxLength={1000} required/></label>}<label>訂正理由<textarea value={reason} onChange={e=>{setReason(e.target.value);request.current=crypto.randomUUID();}} required maxLength={1000}/></label></>}<button type="button" className="secondary" onClick={()=>setOpen(false)}>訂正をやめる</button><button>{review?'訂正履歴を保存':'訂正内容を確認'}</button></fieldset></form>;
+}

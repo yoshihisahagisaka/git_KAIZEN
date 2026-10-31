@@ -1,6 +1,6 @@
 # Controlled Customer Pilot #1 — S社 Management Conversation v1
 
-Status: **BUSINESS EXECUTION / PILOT CANDIDATE — NOT CUSTOMER DIAGNOSIS**  
+Status: **BUSINESS EXECUTION / PILOT CANDIDATE — NOT CUSTOMER DIAGNOSIS**
 Date: 2026-09-13
 
 Purpose: IT経営KAIZEN Controlled Customer PilotのPrimary CandidateとしてS社との最初のManagement Conversationを設計する。

@@ -1,6 +1,6 @@
 # IT経営KAIZEN — System / AI Assisted Service Delivery & Sales Guide v1
 
-Status: **CANONICAL — BUSINESS / SERVICE DELIVERY & SALES ENABLEMENT**  
+Status: **CANONICAL — BUSINESS / SERVICE DELIVERY & SALES ENABLEMENT**
 Date: 2026-09-17
 
 ## 1. Decision
@@ -9,8 +9,8 @@ IT経営KAIZENは、営業担当者やコンサルタントの経験だけに依
 
 経営者との対話、IT経営KAIZEN 無料診断、設計Assessment等から得られた情報について、**システム / AIが複雑な整理・分析・提案を支援し、人が確認・承認し、重要な実行内容は経営者が最終決定する**構造を、営業教育・サービス説明で明確に伝える。
 
-> **システム / AI：整理・分析・提案を支援**  
-> **人：確認・承認**  
+> **システム / AI：整理・分析・提案を支援**
+> **人：確認・承認**
 > **経営者：最終決定**
 
 これは「AI Suggests. Human Decides.」のBusiness / Sales Translationである。
@@ -55,10 +55,10 @@ IT経営KAIZENの説明を受けた役員・営業メンバーが、
 - 残す
 - 整える
 
-> **技術 × 運用 × 管理**  
-> ↓  
-> **なくす / 自動化する / 標準化する / 任せる / 残す / 整える**  
-> ↓  
+> **技術 × 運用 × 管理**
+> ↓
+> **なくす / 自動化する / 標準化する / 任せる / 残す / 整える**
+> ↓
 > **改善の選択肢**
 
 ## 4. 設計Assessment — Sales Explanation Scope

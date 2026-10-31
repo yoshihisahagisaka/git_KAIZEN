@@ -1,6 +1,6 @@
 # Assessment → Commercial Scope Decision Model v1
 
-Status: **BUSINESS MODEL / PROPOSAL — PRICE DECISION NOT YET FIXED**  
+Status: **BUSINESS MODEL / PROPOSAL — PRICE DECISION NOT YET FIXED**
 Date: 2026-09-13
 
 ## 1. Purpose

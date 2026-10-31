@@ -1,6 +1,6 @@
 # Commercial Quote Engine v0 — Functional Spec v1
 
-Status: **BUSINESS / MVP FUNCTIONAL SPEC — DEVELOPMENT INPUT**  
+Status: **BUSINESS / MVP FUNCTIONAL SPEC — DEVELOPMENT INPUT**
 Date: 2026-09-13
 
 ## 1. Goal

@@ -1,6 +1,6 @@
 # IT経営KAIZEN — First Customer Sales Execution Playbook v1
 
-Status: **BUSINESS EXECUTION / LAUNCH VALIDATION**  
+Status: **BUSINESS EXECUTION / LAUNCH VALIDATION**
 Date: 2026-09-13
 
 ## 1. Purpose

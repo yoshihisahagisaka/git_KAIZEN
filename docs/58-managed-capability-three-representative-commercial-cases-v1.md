@@ -1,6 +1,6 @@
 # Managed Capability — Three Representative Commercial Cases v1
 
-Status: **BUSINESS HYPOTHESIS / SENSITIVITY MODEL — NOT PRICE DECISION**  
+Status: **BUSINESS HYPOTHESIS / SENSITIVITY MODEL — NOT PRICE DECISION**
 Date: 2026-09-13
 
 ## 1. Purpose
