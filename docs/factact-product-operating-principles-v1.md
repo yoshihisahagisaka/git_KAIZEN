@@ -112,6 +112,21 @@ HumanもAIもAuthorityを越えて操作しない。
 
 Application authorizationとRLSの既存境界を維持する。
 
+### 7.1 Read Authority v1
+
+Read Authority v1は、認証済みの内部OperatorによるFACTACT内の閲覧に適用する。
+
+- 同一Tenant内では横断閲覧を許可する。
+- `ADMIN`、`OPERATOR`、`REVIEWER`のいずれか1つ以上の明示Roleを必要とする。Roleを持たないOperatorは閲覧できない。
+- Tenant境界を越える閲覧は許可しない。
+- 初期版ではService、Contract、Owner、TeamによるRead制限を設けない。
+- Read AuthorityとExecute / Review Authorityを分離し、Contractの`executeRoles` / `reviewRoles`をRead条件へ転用しない。
+- Knowledge Candidateは未承認情報であり、Approved KnowledgeまたはRuleとして表示・利用しない。
+- Person email、Device serial、Work title、およびKnowledge Candidate本文への検索一致から存在を推測できることは、内部Operatorによる同一Tenant共有モデルの範囲で許容する。
+- このDecisionを将来の個別機密情報や外部利用者へ自動適用しない。それらには別のRead Authority Decisionを必要とする。
+
+Application Queryはsession上のRoleだけを根拠にせず、tenant-scoped transaction内でactive Operatorと現在のRoleを再取得して判定する。RLSは引き続きTenant isolationを担い、画面の表示・非表示だけをAuthorityとして扱わない。
+
 ## 8. Core Independent from Integrations
 
 FACTACT Coreへ外部システム固有の取り込み機能を直接持たせることを標準としない。

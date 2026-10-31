@@ -1,9 +1,9 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
-import {found} from '../../domain/src/join.js';
+import {assertRole,found} from '../../domain/src/join.js';
 import type {SupportRepository,SupportUnitOfWork} from './support-ports.js';
 export class SupportQueries {
  constructor(private uow:SupportUnitOfWork){}
- private run<T>(a:Operator,fn:(r:SupportRepository)=>Promise<T>){return this.uow.run(a.tenantId,async r=>{found(await r.core.operator(a.id));return fn(r);},true);}
+ private run<T>(a:Operator,fn:(r:SupportRepository)=>Promise<T>){return this.uow.run(a.tenantId,async r=>{assertRole(found(await r.core.operator(a.id)),['ADMIN','OPERATOR','REVIEWER']);return fn(r);},true);}
  list(a:Operator){return this.run(a,async r=>{
   const now=new Date().toISOString();
   const services=[];

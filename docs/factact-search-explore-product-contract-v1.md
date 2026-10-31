@@ -87,6 +87,14 @@ Searchがしないこと:
 - 自動Close
 - Authorityを超えた判断
 
+### 5.1 Read Authority v1
+
+Exploreは認証済みの内部Operatorを対象とし、同一Tenant内のOrganization、Person、Device、Service、Work、Knowledge Candidateを横断検索できる。`ADMIN`、`OPERATOR`、`REVIEWER`のいずれか1つ以上の明示Roleを必要とし、Roleなしのactive Operatorは検索できない。
+
+初期版ではService / Contract / Owner / TeamによるRead制限を設けない。ReadをExecute / Reviewと混同せず、Contractの`executeRoles` / `reviewRoles`を検索条件へ転用しない。Person email、Device serial、Work title、Knowledge Candidate本文への検索一致による存在推測は、この内部Tenant共有モデルの範囲で許容する。
+
+Knowledge Candidateは常に未承認候補として扱い、Approved KnowledgeまたはRuleと誤認させない。このRead Authorityを個別機密情報または外部利用者へ自動適用しない。
+
 ## 6. Work Context layers
 
 次の3層を分離する。

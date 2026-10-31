@@ -38,7 +38,35 @@ async function supportKnowledge(currentActor=actor,personId=ids.person,serviceId
   return {event,work,decision,knowledge};
 }
 
+async function setRoles(roles:Operator['roles']) {
+  await db.admin.query('delete from factact.operator_roles where tenant_id=$1 and operator_id=$2',[ids.tenant,ids.operator]);
+  for(const role of roles) await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[ids.tenant,ids.operator,role]);
+}
+
 describe('Explore-01 read search',()=>{
+  it('applies current Read Authority v1 Roles to all six result types without reauthentication',async()=>{
+    const fixture=await supportKnowledge(actor,ids.person,ids.service,'ROLE-READ-KNOWLEDGE');
+    const cases=[
+      {query:'Example株式会社',type:'ORGANIZATION'},
+      {query:'田中',type:'PERSON'},
+      {query:'PC-0073',type:'DEVICE'},
+      {query:'情シス',type:'SERVICE'},
+      {query:fixture.work.id,type:'WORK'},
+      {query:'ROLE-READ-KNOWLEDGE',type:'KNOWLEDGE_CANDIDATE'},
+    ] as const;
+    for(const role of ['ADMIN','OPERATOR','REVIEWER'] as const){
+      await setRoles([role]);
+      for(const current of cases) expect((await queries.search(actor,{query:current.query,types:[current.type],limit:20})).results[0]?.resultType).toBe(current.type);
+    }
+    await setRoles([]);
+    await expect(queries.search(actor,{query:'PC',limit:20})).rejects.toMatchObject({code:'FORBIDDEN'});
+  });
+
+  it('rejects an inactive Operator even when the session actor still has Roles',async()=>{
+    await db.admin.query("update factact.operators set status='INACTIVE' where id=$1",[ids.operator]);
+    await expect(queries.search(actor,{query:'PC',limit:20})).rejects.toMatchObject({code:'NOT_FOUND'});
+  });
+
   it('orders Organization exact, prefix and contains matches stably',async()=>{
     const prefix=randomUUID(),contains=randomUUID();
     await db.admin.query("insert into factact.organizations(id,tenant_id,name,status) values($1,$3,'Example株式会社 東日本','ACTIVE'),($2,$3,'東日本 Example株式会社','ACTIVE')",[prefix,contains,ids.tenant]);
@@ -122,5 +150,8 @@ describe('Explore-01 read search',()=>{
       const response=await request(app).get(path).set('Cookie','factact_session=explore-test').expect(400);
       expect(response.body.error.code).toBe('INVALID_INPUT');
     }
+    await setRoles([]);
+    const revoked=await request(app).get('/api/explore/search?q=PC&types=DEVICE&limit=20').set('Cookie','factact_session=explore-test').expect(403);
+    expect(revoked.body.error.code).toBe('FORBIDDEN');
   });
 });

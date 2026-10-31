@@ -20,3 +20,13 @@ and OPTIONS require an active session, exact configured Origin and timing-safe
 session CSRF validation. Command handlers consume the resolved Operator and do
 not duplicate CSRF checks. Application commands refresh Operator grants inside
 their tenant transaction and enforce pinned Contract Authority, including self-review.
+
+Read Authority v1 checkpoint, 2026-10-31: authenticated internal reads require an
+active Operator with at least one current tenant-scoped `ADMIN`, `OPERATOR` or
+`REVIEWER` Role. Explore, SUPPORT and JOIN Application Queries refresh the Operator
+and Roles inside their tenant-scoped read-only transaction rather than trusting only
+the session snapshot. These Roles permit same-Tenant reads in v1; Service, Contract,
+Owner and Team do not further restrict reads. Read remains separate from Execute and
+Review, so Contract `executeRoles` and `reviewRoles` are not reused as read grants.
+Tenant RLS remains mandatory. This checkpoint applies only to internal Operators and
+does not decide external-user or individually confidential-data access.

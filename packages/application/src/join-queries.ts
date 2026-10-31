@@ -1,11 +1,11 @@
 import type { Operator } from '../../domain/src/operator.js';
-import { found, type Relation } from '../../domain/src/join.js';
+import { assertRole, found, type Relation } from '../../domain/src/join.js';
 import type { JoinRepository, JoinUnitOfWork } from './join-ports.js';
 
 export class JoinQueries {
   constructor(private readonly uow: JoinUnitOfWork) {}
   private run<T>(actor: Operator, query: (r: JoinRepository) => Promise<T>) {
-    return this.uow.run(actor.tenantId, async r => { found(await r.operator(actor.id)); return query(r); },true);
+    return this.uow.run(actor.tenantId, async r => { assertRole(found(await r.operator(actor.id)), ['ADMIN','OPERATOR','REVIEWER']); return query(r); },true);
   }
   private async fact(r: JoinRepository, relation: Relation | null) {
     if (!relation) return null;
