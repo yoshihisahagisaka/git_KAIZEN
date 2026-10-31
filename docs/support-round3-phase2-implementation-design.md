@@ -1,8 +1,8 @@
 # SUPPORT Human Review Round 3 — Phase 2 Implementation Design
 
-Status: DRAFT FOR CORE FIT VALIDATION  
-Branch: `review/factact-support-phase2-design`  
-Date: 2026-09-14  
+Status: DRAFT FOR CORE FIT VALIDATION
+Branch: `review/factact-support-phase2-design`
+Date: 2026-09-14
 Product decision source: `docs/support-round3-phase2-decisions.md` — Decisions 1–7 ALL ACCEPTED
 
 ## 1. Purpose and gate

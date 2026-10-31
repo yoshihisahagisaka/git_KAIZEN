@@ -1,8 +1,8 @@
 # FACTACT Documentation Index
 
-This directory contains the canonical design context for FACTACT.
+This directory contains the canonical design context for FACTACT and the current business/service design context for IT経営KAIZEN.
 
-The repository, not chat history, is the source of truth. When a material Product, Domain, UX, security, integration, or implementation decision changes, update the appropriate canonical document in the same development cycle.
+The repository, not chat history, is the source of truth. When a material Business, Service, Product, Domain, UX, security, integration, or implementation decision changes, update the appropriate canonical document in the same development cycle.
 
 ## Status vocabulary
 
@@ -10,152 +10,138 @@ The repository, not chat history, is the source of truth. When a material Produc
 - **ACTIVE DRAFT** — current design work; may change, but newer than legacy material.
 - **LEGACY / REFERENCE** — useful historical detail, but must not override current canonical principles.
 - **SUPERSEDED** — retained only for history; do not implement from it without reconciliation.
+- **IMPLEMENTATION HANDOFF** — approved task-specific implementation instructions derived from Canonical documents.
+
+## Critical business/service hierarchy
+
+> **IT経営KAIZEN = atLIBのITコンサルティング事業の中核となる事業・サービス**
+>
+> **FACTACT = IT経営KAIZENを日々の仕事の中で継続・標準化・ストック化するためのService Operating Platform**
+
+**情シスKAIZENをIT経営KAIZENの上位概念・中心事業・起点として扱ってはならない。**
+
+新しい事業・サービス設計では、まず `17-it-management-kaizen-business-service-canonical-v1.md` を確認すること。
 
 ## Recommended reading order
 
+### Business / Service design
+
+1. `17-it-management-kaizen-business-service-canonical-v1.md` — **CANONICAL**
+2. `18-it-management-diagnosis-assessment-boundary-sales-story-v1.md` — **CANONICAL**
+3. `19-free-it-management-diagnosis-channel-flows-v1.md` — **CANONICAL**
+4. `20-it-management-kaizen-factact-consistency-principles-v1.md` — **CANONICAL**
+5. `21-free-it-management-diagnosis-operating-model-v1.md` — **CANONICAL**
+
+### Free IT management diagnosis development
+
+6. `22-free-it-management-diagnosis-development-canonical-v1.md` — **CANONICAL DEVELOPMENT / MVP DESIGN**
+7. `23-free-it-management-diagnosis-implementation-spec-v1.md` — **CANONICAL IMPLEMENTATION SPECIFICATION**
+8. `24-free-it-management-diagnosis-existing-resource-reuse-map-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+9. `25-free-it-management-diagnosis-slice1-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+10. `26-free-it-management-diagnosis-survey-v2-question-set-v1.md` — **CANONICAL IMPLEMENTATION REFERENCE**
+11. `27-free-it-management-diagnosis-slice2-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+12. `28-free-it-management-diagnosis-slice3-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+13. `29-free-it-management-diagnosis-slice4-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+14. `30-free-it-management-diagnosis-slice5-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+15. `31-free-it-management-diagnosis-slice6-codex-implementation-handoff-v1.md` — **IMPLEMENTATION HANDOFF — COMPLETED**
+16. `32-free-it-management-diagnosis-production-readiness-gate-v1.md` — **IMPLEMENTATION / VALIDATION HANDOFF — READY FOR CODEX**
+
 ### AI / developer entry point
 
-1. `99-ai-development-context.md` — **CANONICAL ENTRY POINT**
+17. `99-ai-development-context.md` — **CANONICAL ENTRY POINT FOR FACTACT DEVELOPMENT**
 
-### Product and Core
+### FACTACT Product and Core
 
-2. `00-product-vision.md` — **CANONICAL** — FACTACT identity, Fact First, product direction
-3. `01-core-prd.md` — **CANONICAL** — Core product requirements and boundaries
-4. `02-domain-model.md` — **CANONICAL** — Core domain semantics and invariants
-5. `03-operational-context.md` — **CANONICAL** — trusted operational information and epistemic state
-6. `04-progressive-onboarding.md` — **CANONICAL** — safe service start with incomplete context
+18. `00-product-vision.md` — **CANONICAL**
+19. `01-core-prd.md` — **CANONICAL**
+20. `02-domain-model.md` — **CANONICAL**
+21. `03-operational-context.md` — **CANONICAL**
+22. `04-progressive-onboarding.md` — **CANONICAL**
 
-### Service Model, UX and implementation handoff
+### UX and implementation handoff
 
-7. `11-josys-kaizen-service-model-v1.md` — **ACTIVE DRAFT / CURRENT** — 情シスKAIZEN Service Model V1
-8. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT** — JOIN operator Golden Flow
-9. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION** — Home / Work / Operational Context / shared product UX
-10. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION** — screen responsibilities, shared components, commands, authority/AI boundaries, transitions and UI acceptance criteria
-11. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT** — minimum persistence model, Domain/Application Commands, read models, API boundary, tenancy/authorization, transactions and Golden Tests for the first executable JOIN flow
-12. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE** — current split-repository reuse map and VS Code/Codex inspection instructions
+23. `12-factact-join-ux-golden-flow.md` — **ACTIVE DRAFT / CURRENT**
+24. `13-factact-product-ux-architecture.md` — **CANONICAL UX DIRECTION**
+25. `14-factact-ui-specification-v1.md` — **CANONICAL IMPLEMENTATION UX SPECIFICATION**
+26. `15-first-vertical-slice-contract-v1.md` — **CANONICAL IMPLEMENTATION CONTRACT**
+27. `16-existing-resource-reuse-audit.md` — **CANONICAL IMPLEMENTATION REFERENCE**
 
-### Legacy implementation handoff documents
+### FACTACT current implementation checkpoints
 
-The following documents predate the final FACTACT naming and later Fact First / UX decisions:
+- `bootstrap.md` — local bootstrap and verification
+- `adr/0001-application-boundary.md` through `adr/0007-support-operator-records.md` — architecture decisions
+- `join-checkpoint.md` and `human-usable-join-checkpoint.md` — JOIN implementation checkpoints
+- `support-checkpoint.md` and `support-v2-checkpoint.md` — SUPPORT implementation checkpoints
+- `factact-product-operating-principles-v1.md` — Product operating principles
+- `factact-search-explore-product-contract-v1.md` — Search / Explore Product Contract
+- `support-round3-phase2-decisions.md` — SUPPORT Phase 2 Decisions 1–7
+- `support-round3-phase2-core-fit-validation.md` — Core Fit Validation
+- `support-round3-phase2-implementation-contract.md` — implementation contract
 
-- `05_NEMESIA_V1_機能要件.md`
-- `06_NEMESIA_V1_画面一覧・画面機能要件.md`
-- `07_NEMESIA_V1_画面ワイヤーフレーム_API_状態遷移仕様.md`
+## Superseded / legacy material
 
-Status: **LEGACY / REFERENCE — RECONCILIATION REQUIRED**
+`11-josys-kaizen-service-model-v1.md` is **SUPERSEDED AS BUSINESS HIERARCHY / REFERENCE ONLY**. Useful operational detail may be reused only after reconciliation with `17`; do not reintroduce 情シスKAIZEN as the center of the business architecture.
 
-They may contain useful detailed requirements, API ideas, screen lists and state-transition thinking, but they must not override `00–04`, `11–16`, or `99` where they conflict.
-
-`NEMESIA` in these filenames is an old/internal project code. New product-facing specifications should use **FACTACT**.
-
-Do not mechanically rename these files yet. First extract still-valid implementation detail into current FACTACT specifications, then archive or supersede them explicitly.
+Legacy NEMESIA documents are **LEGACY / REFERENCE — RECONCILIATION REQUIRED**. `NEMESIA` is not a current public product name.
 
 ## Repository role
 
-Bootstrap implementation and verification instructions: [`bootstrap.md`](bootstrap.md).
-Architecture decisions: [`adr/0001-application-boundary.md`](adr/0001-application-boundary.md),
-[`adr/0002-identity-session-authority.md`](adr/0002-identity-session-authority.md),
-[`adr/0003-rls-execution.md`](adr/0003-rls-execution.md),
-[`adr/0004-evaluation-reproducibility.md`](adr/0004-evaluation-reproducibility.md),
-[`adr/0005-change-lifecycle.md`](adr/0005-change-lifecycle.md).
+`yoshihisahagisaka/git_KAIZEN` is the Single Source of Truth for current IT経営KAIZEN business/service design and FACTACT product/implementation design.
 
-`yoshihisahagisaka/git_KAIZEN` is the FACTACT Single Source of Truth and implementation target.
+For free IT management diagnosis implementation, the primary implementation/reuse target is `yoshihisahagisaka/atlib-sales-tools`, with `yoshihisahagisaka/atlib-corporate-site` as the current LP/entry asset.
 
-Existing atLIB systems have been split out of the former `atlib-msp-dev` repository. `atlib-msp-dev` is now an archive/index. Use the current split repositories listed in `16-existing-resource-reuse-audit.md` as reuse/reference sources.
-
-## Target structure
-
-```text
-/
-├── README.md
-├── docs/
-│   ├── README.md
-│   ├── 00-product-vision.md
-│   ├── ...
-│   ├── 99-ai-development-context.md
-│   └── adr/
-├── apps/
-│   └── web/
-├── packages/
-│   ├── domain/
-│   ├── application/
-│   ├── ui/
-│   └── shared/
-├── supabase/
-│   └── migrations/
-├── tests/
-│   └── golden/
-└── .github/
-```
-
-The structure is a direction, not permission to create abstractions before they are needed.
-
-## Documentation ownership by concern
-
-| Concern | Canonical location |
-|---|---|
-| Product identity / philosophy | `00-product-vision.md` |
-| Core requirements / scope | `01-core-prd.md` |
-| Domain objects / invariants | `02-domain-model.md` |
-| Operational Context / Fact trust | `03-operational-context.md` |
-| Progressive onboarding | `04-progressive-onboarding.md` |
-| 情シスKAIZEN Service Model | `11-josys-kaizen-service-model-v1.md` |
-| JOIN UX Golden Flow | `12-factact-join-ux-golden-flow.md` |
-| Shared product UX | `13-factact-product-ux-architecture.md` |
-| Implementation-ready UI behavior | `14-factact-ui-specification-v1.md` |
-| First executable slice: persistence/commands/API/tests | `15-first-vertical-slice-contract-v1.md` |
-| Existing-code reuse decisions | `16-existing-resource-reuse-audit.md` |
-| AI / developer handoff context | `99-ai-development-context.md` |
-| Architecture decisions | `docs/adr/` when introduced |
-| DB schema | migrations + `15-first-vertical-slice-contract-v1.md` until a dedicated schema reference becomes necessary |
-| API contract | implementation + `15-first-vertical-slice-contract-v1.md` for the first slice |
-| Golden Flow behavior | `tests/golden/` + relevant design doc |
+- Slice 1 implementation/completion: `25`
+- Survey v2 definition: `26`
+- Slice 2 implementation/completion: `27`
+- Slice 3 implementation/completion: `28`
+- Slice 4 implementation/completion: `29`
+- Slice 5 implementation/completion: `30`
+- Slice 6 implementation/completion: `31`
+- Production Readiness / Pilot Readiness Gate: `32`
 
 ## Decision precedence
 
 When documents disagree, do not silently choose whichever is easiest to implement.
 
 1. explicit newer Product Owner decision recorded in a canonical doc;
-2. `00-product-vision.md` / Core Fact First principles;
-3. Core PRD and Domain Model invariants;
-4. current UX / Service Model specifications;
-5. implementation contracts / implementation detail documents;
-6. legacy/reference documents.
+2. `17` for Business / Service design;
+3. `18`–`32` for current free-diagnosis service/development/implementation concern, provided they do not conflict with `17`;
+4. `00-product-vision.md` / FACTACT Core Fact First principles;
+5. Core PRD and Domain Model invariants;
+6. current UX specifications;
+7. implementation contracts / implementation detail documents;
+8. superseded/legacy/reference documents.
 
-If a real conflict remains, stop and record/resolve the decision rather than hiding it in code.
+If a real conflict remains, stop and resolve the decision rather than hiding it in code.
 
 ## Naming rules
 
 Use in new work:
 
-- **FACTACT** — product/system
-- **情シスKAIZEN** — Service Model / service
+- **IT経営KAIZEN** — atLIBのITコンサルティング事業の中核となる事業・サービス
+- **FACTACT** — Service Operating Platform
 - **HELIX** — growth/learning model
-- **LALLIB** — working KAIZEN method name; not yet a universal Core concept
 - **atLIB** — company
 
-Do not introduce `NEMESIA` as a public product name.
+For free IT management diagnosis UI / customer-facing output:
 
-## VS Code / AI handoff
+- customer organization display = `会社名 + 様`; DB stores formal name without `様`
+- provider company display = **atLIB株式会社**
 
-For the first implementation session, use:
+Do not introduce `NEMESIA` as a public product name. Do not use **情シスKAIZEN** as the current top-level business/service architecture.
 
-> Read `docs/99-ai-development-context.md`, `docs/README.md`, `docs/15-first-vertical-slice-contract-v1.md`, and `docs/16-existing-resource-reuse-audit.md` first. Treat this repository as the FACTACT Single Source of Truth. Before coding, summarize the Core invariants touched by the first vertical slice and inspect the current split reference repositories according to `16`. Classify reusable candidates as REUSE, ADAPT, REFERENCE, or DO NOT REUSE. Do not replace Fact First semantics with generic ticket/CRUD patterns. Then propose the minimum implementation stack and bootstrap plan. Do not write application code until the invariants and reuse decisions are summarized.
+## Free diagnosis MVP milestone
 
-The longer copy/paste-ready prompt is maintained in section 12 of `16-existing-resource-reuse-audit.md`.
+**無料 IT経営診断 MVP Vertical Slices 1–6 are completed end-to-end.**
 
-## Immediate next task
+- Slice 2 completed at `atlib-sales-tools/main` `00500a14311901a9afa47db76bb16ea77a78093d`
+- Slice 3 completed at `4132f6ad6b5f50cf7622dd6cc2cc44af6a9efe37`
+- Slice 4 completed at `632e9cd49f8208ec831a0299f650d444d120dd03`
+- Slice 5 completed at `a30f100a913781d0c2e4a2816b6f7364523bc2fd`
+- Slice 6 completed at `2c81a0b1ad354ced710884a36998c32497dd9237`
 
-The design-to-implementation handoff is complete enough to begin the first executable JOIN vertical slice.
+The active Development Lane target is **Production Readiness / Pilot Readiness Gate** according to `32-free-it-management-diagnosis-production-readiness-gate-v1.md`, not another feature Slice.
 
-Next in VS Code:
+The Gate must produce Evidence for migration/rollback, production configuration and secrets, real AI-01–04, real Google Workspace auth, PostgreSQL concurrency/worker behavior, security/privacy, observability/runbook, backup/restore, and WEB/SALES_VISIT pilot E2E, followed by an explicit Go / Conditional Go / No-Go recommendation.
 
-1. clone/open `git_KAIZEN`;
-2. read `99`, this index, `15`, and `16`;
-3. inspect only the high-priority reusable platform code identified in `16`;
-4. choose the minimum Web/TypeScript/PostgreSQL stack;
-5. record consequential stack decisions as ADRs;
-6. bootstrap application + Supabase migration baseline;
-7. implement the Golden Flow in `15` before broader Service Desk, KAIZEN analytics, or AI automation.
-
-Do not continue producing broad speculative architecture documents instead of beginning the executable vertical slice.
+FACTACT Product Lane implementation may proceed according to its canonical Product/Core/UX documents, but any business/service assumption that conflicts with `17` must be reconciled explicitly rather than silently implemented.

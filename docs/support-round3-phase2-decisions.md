@@ -1,9 +1,9 @@
 # SUPPORT Human Review Round 3 — Phase 2 Product Decisions
 
-Status: PRODUCT DECISIONS COMPLETE — IMPLEMENTATION DESIGN PENDING  
-Branch: `review/factact-join-slice`  
-Started: 2026-09-12  
-Product decisions completed: 2026-09-14  
+Status: PRODUCT DECISIONS COMPLETE — IMPLEMENTATION DESIGN PENDING
+Branch: `review/factact-join-slice`
+Started: 2026-09-12
+Product decisions completed: 2026-09-14
 Depends on: `support-round3-core-fit-gap.md`, `17-factact-ux-translation-layer.md`, `18-operator-work-context-v1.md`
 
 ## Purpose

@@ -1,9 +1,9 @@
 # SUPPORT Human Review Round 3 — Phase 2 Implementation Contract
 
-Status: DRAFT FOR IMPLEMENTATION APPROVAL  
+Status: DRAFT FOR IMPLEMENTATION APPROVAL
 Depends on: accepted `support-round3-phase2-decisions.md`, accepted
 `support-round3-phase2-core-fit-validation.md`, and
-`support-round3-phase2-implementation-design.md`  
+`support-round3-phase2-implementation-design.md`
 Baseline: `2eed54cd31b1c6fd12b1da2a90c618c766aa5513`
 
 ## 1. Purpose, precedence and non-goals
