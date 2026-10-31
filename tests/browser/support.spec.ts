@@ -181,7 +181,12 @@ test('SUPPORT Device Work Context requires an explicit Work-side confirmation an
  await page.getByRole('link',{name:'この端末を今回の対象候補として作業へ戻る',exact:true}).click();
  await expect(page.getByText('検索結果を見ただけでは記録されません。今回の対応対象として明示的に記録してください。')).toBeVisible();
  await page.getByRole('button',{name:'今回の対象として記録',exact:true}).click();
- await expect(page.getByRole('region',{name:'今回の対応対象'}).getByText('PC-0073',{exact:false})).toBeVisible();
+ await expect(page.getByRole('region',{name:'今回の対応対象'}).locator('strong')).toHaveText('PC-0073');
  expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);
  expect((await db.admin.query('select count(*)::int as n from factact.support_work_device_contexts c join factact.work w on w.id=c.work_id where w.support_event_id=$1',[eventId])).rows[0].n).toBe(1);
+});
+
+test('completed SUPPORT Work shows Device Context history without edit controls',async({page})=>{
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'completed context'});const work=(await commands.evaluate(actor,event.id,'REQUIRED','review')).work!;await commands.confirmContextDevice(actor,work.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});await commands.recordWork(actor,work.id,{requestId:randomUUID(),expectedRevision:0,kind:'COMPLETION',notes:{checks:'確認',action:'RESTART_GUIDANCE',actionDetails:'',result:'CONNECTED',resultSource:'CALLER',resultDetails:'',exceptionReason:''},correctionReason:''});
+ await login(page);await page.goto(`${origin}/#/support/${event.id}`);const context=page.getByRole('region',{name:'今回の対応対象'});await expect(context.locator('strong')).toHaveText('PC-0073');await expect(context.getByText('完了した対応の対象記録です。表示のみで変更できません。')).toBeVisible();await expect(context.getByRole('link',{name:'機器を探す'})).toHaveCount(0);await expect(context.getByRole('button',{name:/対象/})).toHaveCount(0);
 });

@@ -146,3 +146,30 @@ it('Context-01 guards idempotency, stale revisions, tenant boundary and complete
  await s.recordWork(a,w.id,recordInput('COMPLETION'));await expect(s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:1,reason:'after completion'})).rejects.toMatchObject({code:'WORK_STATE_CONFLICT'});
  await expect(withTenant(db.runtime,a.tenantId,c=>c.query('delete from factact.support_work_device_contexts where work_id=$1',[w.id]))).rejects.toMatchObject({code:'42501'});
 });
+it('Context-01 review: End permits a new Confirm, while Correct and a second End remain invalid',async()=>{
+ const {e,w}=await work();const first=await s.confirmContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});
+ const ended=await s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:1,reason:'再確認が必要'});
+ await expect(s.endContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:2,reason:'duplicate'})).rejects.toMatchObject({code:'CONTEXT_STATE_CONFLICT'});
+ await expect(s.correctContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:2,deviceId:ids.device,confirmationSource:'OPERATOR',reason:'invalid'})).rejects.toMatchObject({code:'CONTEXT_STATE_CONFLICT'});
+ const again=await s.confirmContextDevice(a,w.id,{requestId:randomUUID(),expectedRevision:2,deviceId:ids.device,confirmationSource:'CALLER'});const v=await q.detail(a,e.id);
+ expect(again.revision).toBe(3);expect(again.supersedesContextId).toBe(ended.id);expect(v.currentContextDevice?.id).toBe(ids.device);expect(first.id).not.toBe(again.id);
+});
+it('Context-01 review: completed Work accepts only an identical retry and rejects unrelated Evidence',async()=>{
+ const {w}=await work(),input={requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR' as const};const saved=await s.confirmContextDevice(a,w.id,input);
+ await s.recordWork(a,w.id,recordInput('COMPLETION'));await expect(s.confirmContextDevice(a,w.id,input)).resolves.toEqual(saved);
+ await expect(s.confirmContextDevice(a,w.id,{...input,requestId:randomUUID(),expectedRevision:1})).rejects.toMatchObject({code:'WORK_STATE_CONFLICT'});
+ const {e:openEvent,w:open}=await work();await s.recordResolution(a,open.id,resolution);const ownEvidence=(await q.detail(a,openEvent.id)).evidence!.id;const unrelated=randomUUID();await db.admin.query("insert into factact.evidence(id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at) values($1,$2,'DIAGNOSTIC','other','other',$3,now())",[unrelated,ids.tenant,ids.operator]);await expect(s.confirmContextDevice(a,open.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR',evidenceId:unrelated})).rejects.toMatchObject({code:'EVIDENCE_CONTEXT_MISMATCH'});await expect(s.confirmContextDevice(a,open.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR',evidenceId:ownEvidence})).resolves.toMatchObject({evidenceId:ownEvidence});
+});
+it('Context-01 review: database rejects a supersession that crosses Work within one Tenant',async()=>{
+ const workA=(await work()).w,workB=(await work()).w;
+ const contextA=await s.confirmContextDevice(a,workA.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});
+ const registryBefore=(await db.admin.query('select * from factact.relations order by id')).rows;
+ const insert=`insert into factact.support_work_device_contexts
+  (id,tenant_id,work_id,request_id,revision,kind,device_id,confirmation_source,evidence_id,reason,supersedes_context_id,recorded_by_operator_id,recorded_at)
+  values($1,$2,$3,$4,$5,'CORRECTED',$6,'OPERATOR',null,'review test',$7,$8,$9)`;
+ await expect(withTenant(db.runtime,a.tenantId,c=>c.query(insert,[randomUUID(),a.tenantId,workB.id,randomUUID(),1,ids.device,contextA.id,a.id,clock.now()]))).rejects.toMatchObject({code:'23514'});
+ expect((await db.admin.query('select work_id,revision from factact.support_work_device_contexts order by work_id,revision')).rows).toEqual([{work_id:workA.id,revision:1}]);
+ expect((await db.admin.query('select * from factact.relations order by id')).rows).toEqual(registryBefore);
+ await expect(withTenant(db.runtime,a.tenantId,c=>c.query(insert,[randomUUID(),a.tenantId,workA.id,randomUUID(),2,ids.device,contextA.id,a.id,clock.now()]))).resolves.toMatchObject({rowCount:1});
+ expect((await db.admin.query('select revision from factact.support_work_device_contexts where work_id=$1 order by revision',[workA.id])).rows).toEqual([{revision:1},{revision:2}]);
+});

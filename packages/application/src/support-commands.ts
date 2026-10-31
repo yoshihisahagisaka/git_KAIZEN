@@ -15,18 +15,18 @@ export class SupportCommands {
  }
  private changeContextDevice(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportDeviceContext['kind'];deviceId:string|null;confirmationSource:SupportDeviceContext['confirmationSource'];evidenceId?:string|null;reason:string}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
-  requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象機器は変更できません。必要なら新しい対応を開始してください。');
   const history=await r.deviceContexts(workId),old=history.find(x=>x.requestId===input.requestId);
   if(old){requireCondition(old.kind===input.kind&&old.deviceId===input.deviceId&&old.confirmationSource===input.confirmationSource&&old.evidenceId===(input.evidenceId??null)&&old.reason===input.reason,'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象機器は変更できません。必要なら新しい対応を開始してください。');
   requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象機器の記録が更新されています。最新の内容を確認してください。');
-  const current=history.at(-1)??null;
+  const previous=history.at(-1)??null,current=previous?.kind==='ENDED'?null:previous;
   requireCondition(input.kind==='CONFIRMED'?current===null:current!==null,'CONTEXT_STATE_CONFLICT',input.kind==='CONFIRMED'?'現在の対象機器はすでに記録されています。変更または取り消しを選択してください。':'現在の対象機器がありません。機器を記録してください。');
   requireCondition(['OPERATOR','CALLER','OTHER'].includes(input.confirmationSource),'INVALID_INPUT','確認元を選択してください。',400);
   requireCondition(input.reason.length<=1000,'INVALID_INPUT','理由は1000文字以内で入力してください。',400);
   requireCondition(input.kind==='CONFIRMED'||input.reason.trim().length>0,'REASON_REQUIRED','訂正・取り消し理由を入力してください。',400);
   if(input.deviceId) found(await r.core.device(input.deviceId));
-  if(input.evidenceId) found(await r.evidence(input.evidenceId));
-  const context:SupportDeviceContext={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,deviceId:input.deviceId,confirmationSource:input.confirmationSource,evidenceId:input.evidenceId??null,reason:input.reason,supersedesContextId:current?.id??null,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  if(input.evidenceId){const decision=found(await r.decision(workId));requireCondition(decision.evidenceId===input.evidenceId,'EVIDENCE_CONTEXT_MISMATCH','この対応に記録された確認根拠だけを指定できます。',400);found(await r.evidence(input.evidenceId));}
+  const context:SupportDeviceContext={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,deviceId:input.deviceId,confirmationSource:input.confirmationSource,evidenceId:input.evidenceId??null,reason:input.reason,supersedesContextId:previous?.id??null,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
   await r.insertDeviceContext(context);await this.audit(r,a,w.supportEventId,`SUPPORT_CONTEXT_DEVICE_${input.kind}`,{workId,contextId:context.id,deviceId:context.deviceId,supersedesContextId:context.supersedesContextId});return context;
  });}
  recordWork(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportRecord['kind'];notes:SupportNotes;correctionReason:string}){return this.run(actor,async(r,a)=>{
