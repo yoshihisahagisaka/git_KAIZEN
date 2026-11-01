@@ -95,9 +95,9 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await page.screenshot({path:test.info().outputPath('support-v2-review.png'),fullPage:true});
  await page.getByRole('button',{name:'対応を記録',exact:true}).click();
  await expect(page.getByText('対応を記録しました。Closeは責任状態から明示してください。',{exact:true})).toBeVisible();
- const lifecycle=page.getByRole('region',{name:'対応の責任状態'});await lifecycle.getByText('対応をCloseする',{exact:true}).click();await lifecycle.getByLabel('Close理由').fill('本人への案内を完了したため');await lifecycle.getByLabel('根拠').fill('担当者が結果を確認');await lifecycle.getByRole('button',{name:'対応をClose',exact:true}).click();await expect(lifecycle.getByText('Close済みです。RESOLVED / 本人への案内を完了したため')).toBeVisible();
+ const lifecycle=page.getByRole('region',{name:'対応の責任状態'});await lifecycle.getByText('対応をCloseする',{exact:true}).click();await lifecycle.getByLabel('Close理由').fill('本人への案内を完了したため');await lifecycle.getByLabel('根拠').fill('担当者が結果を確認');await lifecycle.getByRole('button',{name:'対応をClose',exact:true}).click();await expect(lifecycle.getByText('Close済みです。解決としてCloseしました / 本人への案内を完了したため')).toBeVisible();
  const w=(await db.admin.query('select id,outcome from factact.work where support_event_id=$1',[eventId])).rows[0];
- expect(w.outcome).toBe('COMPLETED');
+ expect(w.outcome).toBe('RESOLVED');
  expect((await db.admin.query('select count(*)::int as n from factact.knowledge_candidates')).rows[0].n).toBe(0);
  expect((await db.admin.query('select count(*)::int as n from factact.changes where work_id=$1',[w.id])).rows[0].n).toBe(0);
  expect((await db.admin.query("select id from factact.relations where status='ACTIVE'")).rows[0].id).toBe(relationId);
