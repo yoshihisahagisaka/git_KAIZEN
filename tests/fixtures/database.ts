@@ -18,7 +18,14 @@ export async function testDatabase() {
   const embedded=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'test-admin',port,persistent:true,createPostgresUser:false,initdbFlags:['--encoding=UTF8','--locale=C'],postgresFlags:['-c','listen_addresses=127.0.0.1'],onLog:()=>{},onError:()=>{}});
   const admin=new Pool({host:'127.0.0.1',port,user:'postgres',password:'test-admin',database:'postgres'});
   const runtime=new Pool({host:'127.0.0.1',port,user:'factact_runtime',password:'test-runtime',database:'postgres',max:5});
+  let closing=false;
+  const handlePoolError=(error:Error&{code?:string})=>{
+    if(closing&&error.code==='57P01') return;
+    queueMicrotask(()=>{throw error;});
+  };
+  admin.on('error',handlePoolError);runtime.on('error',handlePoolError);
   async function close() {
+    closing=true;
     await runtime.end();await admin.end();await embedded.stop();
     const root=await realpath(process.cwd()),target=await realpath(directory);
     if(!target.startsWith(root+sep+'.factact-db-test-')) throw new Error('Unsafe fixture cleanup target');
