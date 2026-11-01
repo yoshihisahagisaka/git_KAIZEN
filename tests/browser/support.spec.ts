@@ -108,7 +108,7 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await page.getByRole('button',{name:'訂正内容を確認'}).click();
  await page.getByRole('button',{name:'訂正履歴を保存'}).click();
  await expect(page.getByRole('button',{name:'記録を訂正',exact:true})).toBeVisible();
- const businessHistory=page.getByRole('region',{name:'問い合わせの対応履歴'}),newest=await businessHistory.locator('li strong').allTextContents();
+ const businessHistory=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(businessHistory.getByText('対応記録を訂正しました',{exact:true})).toBeVisible();const newest=await businessHistory.locator('li strong').allTextContents();
  await businessHistory.getByLabel('対応履歴の表示順').selectOption('oldest');expect(await businessHistory.locator('li strong').allTextContents()).toEqual([...newest].reverse());
  await page.getByText('監査用の詳細',{exact:true}).click();
  await expect(page.getByText('元の確認根拠:',{exact:false})).toContainText('再起動後に接続できた');
