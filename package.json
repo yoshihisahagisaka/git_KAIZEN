@@ -19,6 +19,7 @@
     "test": "vitest run --config vitest.config.ts",
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:browser": "npm run build && playwright test",
+    "human-review": "tsx scripts/human-review-runner.ts",
     "db:start": "supabase start",
     "db:configure-local": "tsx --env-file=.env scripts/local-database.ts",
     "db:prepare-support": "tsx --env-file=.env scripts/prepare-support-demo.ts",

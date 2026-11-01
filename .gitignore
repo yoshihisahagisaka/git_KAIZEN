@@ -5,6 +5,7 @@ dist/
 !.env.example
 .npm-cache/
 .factact-db-test-*/
+.factact-human-review-*/
 coverage/
 test-results/
 playwright-report/
