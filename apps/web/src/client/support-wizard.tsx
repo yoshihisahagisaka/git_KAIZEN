@@ -37,11 +37,12 @@ export function SupportDetail(props:Props&{id:string}){
 }
 
 type EditorProps=Props&{view:SupportDetailView;allowed:boolean};
+const closeOutcomeLabel:Record<NonNullable<import('../../../../packages/domain/src/support.js').SupportWork['outcome']>,string>={COMPLETED:'確認・案内の対応を完了しました',NO_ACTION_REQUIRED:'調査完了・追加対応不要',RESOLVED:'解決としてCloseしました',WITHDRAWN:'取り下げとしてCloseしました',NOT_ELIGIBLE:'対象外としてCloseしました',FORMALLY_TRANSFERRED:'正式移管としてCloseしました',OTHER_RESPONSIBILITY_ENDED:'責任終了としてCloseしました'};
 function LifecyclePanel({view:v,csrf,busy,run,allowed}:EditorProps){
  const w=v.work!,[party,setParty]=useState(''),[reason,setReason]=useState(''),[next,setNext]=useState(w.nextAction),[followUp,setFollowUp]=useState(w.followUpAt?.slice(0,16)??''),[closeReason,setCloseReason]=useState(''),[basis,setBasis]=useState('');
  const revision=w.lifecycleRevision;
  const call=(path:string,body:object)=>void run(async()=>{await api(`/api/support-work/${w.id}${path}`,csrf,{requestId:crypto.randomUUID(),expectedRevision:revision,...body});});
- if(w.status==='COMPLETED')return <section className="card" aria-label="対応の責任状態"><h2>対応の責任状態</h2><p>Close済みです。{v.closeDecision?.outcome} / {v.closeDecision?.closeReason}</p></section>;
+ if(w.status==='COMPLETED')return <section className="card" aria-label="対応の責任状態"><h2>対応の責任状態</h2><p>Close済みです。{closeOutcomeLabel[w.outcome!] ?? v.closeDecision?.outcome} / {v.closeDecision?.closeReason}</p></section>;
  return <section className="card" aria-label="対応の責任状態"><h2>対応の責任状態</h2><p>次の対応: {w.nextAction}</p>{w.waiting?<p>Waiting: {w.waitingParty} — {w.waitingReason}</p>:<p>現在Waitingではありません。</p>}<p>Follow-up: {w.followUpAt?time(w.followUpAt):'未設定'}</p>{v.needsFollowUp&&<p className="unknown">Follow-upの確認が必要です。</p>}
   <details><summary>Waitingにする</summary><label>待っている相手<input value={party} onChange={e=>setParty(e.target.value)} maxLength={1000}/></label><label>理由<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000}/></label><label>再開後の次の対応<input value={next} onChange={e=>setNext(e.target.value)} maxLength={1000}/></label><label>Follow-up（任意）<input type="datetime-local" value={followUp} onChange={e=>setFollowUp(e.target.value)}/></label><button disabled={busy||!allowed||w.waiting} onClick={()=>call('/waiting',{party,reason,nextAction:next,followUpAt:followUp?new Date(followUp).toISOString():null,sourceType:'HUMAN_DECISION',basisText:'担当者の継続判断'})}>Waitingを記録</button></details>
   {w.waiting&&<button className="secondary" disabled={busy||!allowed} onClick={()=>call('/resume',{nextAction:next})}>対応を再開</button>}

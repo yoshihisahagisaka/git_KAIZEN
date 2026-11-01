@@ -19,6 +19,7 @@ class PgSupportRepository implements SupportRepository {
  insertFollowUp(followUp:SupportFollowUp){return this.insert('support_work_follow_ups',followUp);}
  closeDecision(id:string){return this.one<SupportCloseDecision>('select * from factact.support_work_close_decisions where work_id=$1',[id]);}
  insertCloseDecision(decision:SupportCloseDecision){return this.insert('support_work_close_decisions',decision);}
+ verificationItems(workId:string){return this.many<{actionType:string;changeStatus:string|null}>(`select a.action_type,c.status as change_status from factact.actions a left join factact.changes c on c.tenant_id=a.tenant_id and c.action_id=a.id where a.work_id=$1 order by a.started_at,a.id`,[workId]);}
  records(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportRecord>('select * from factact.support_work_records where work_id=$1 order by revision',[id]);}
  insertRecord(record:import('../../../../../packages/domain/src/support.js').SupportRecord){return this.insert('support_work_records',record);}
  core:PgJoinRepository;

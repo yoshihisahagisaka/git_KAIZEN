@@ -12,6 +12,7 @@ export interface SupportRepository {
  insertFollowUp(followUp:SupportFollowUp):Promise<void>;
  closeDecision(workId:string):Promise<SupportCloseDecision|null>;
  insertCloseDecision(decision:SupportCloseDecision):Promise<void>;
+ verificationItems(workId:string):Promise<{actionType:string;changeStatus:string|null}[]>;
  records(workId:string):Promise<import('../../domain/src/support.js').SupportRecord[]>;
  insertRecord(record:import('../../domain/src/support.js').SupportRecord):Promise<void>;
  core:JoinRepository;
