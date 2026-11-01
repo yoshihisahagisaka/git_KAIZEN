@@ -2,7 +2,7 @@
 import {withTenant} from './database.js';
 import {PgJoinRepository} from './join-repository.js';
 import type {SupportRepository,SupportUnitOfWork} from '../../../../../packages/application/src/support-ports.js';
-import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation} from '../../../../../packages/domain/src/support.js';
+import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision} from '../../../../../packages/domain/src/support.js';
 import type {Action} from '../../../../../packages/domain/src/join.js';
 export class PgSupportUnitOfWork implements SupportUnitOfWork {
  constructor(private pool:Pool){}
@@ -13,6 +13,13 @@ class PgSupportRepository implements SupportRepository {
  insertDeviceContext(context:import('../../../../../packages/domain/src/support.js').SupportDeviceContext){return this.insert('support_work_device_contexts',context);}
  targetObservations(id:string){return this.many<SupportTargetObservation>('select * from factact.support_work_target_observations where work_id=$1 order by revision',[id]);}
  insertTargetObservation(observation:SupportTargetObservation){return this.insert('support_work_target_observations',observation);}
+ lifecycleEvents(id:string){return this.many<SupportLifecycleEvent>('select * from factact.support_work_lifecycle_events where work_id=$1 order by revision',[id]);}
+ insertLifecycleEvent(event:SupportLifecycleEvent){return this.insert('support_work_lifecycle_events',event);}
+ followUps(id:string){return this.many<SupportFollowUp>('select * from factact.support_work_follow_ups where work_id=$1 order by revision',[id]);}
+ insertFollowUp(followUp:SupportFollowUp){return this.insert('support_work_follow_ups',followUp);}
+ closeDecision(id:string){return this.one<SupportCloseDecision>('select * from factact.support_work_close_decisions where work_id=$1',[id]);}
+ insertCloseDecision(decision:SupportCloseDecision){return this.insert('support_work_close_decisions',decision);}
+ verificationItems(workId:string){return this.many<{actionType:string;changeStatus:string|null}>(`select a.action_type,c.status as change_status from factact.actions a left join factact.changes c on c.tenant_id=a.tenant_id and c.action_id=a.id where a.work_id=$1 order by a.started_at,a.id`,[workId]);}
  records(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportRecord>('select * from factact.support_work_records where work_id=$1 order by revision',[id]);}
  insertRecord(record:import('../../../../../packages/domain/src/support.js').SupportRecord){return this.insert('support_work_records',record);}
  core:PgJoinRepository;
@@ -31,7 +38,7 @@ class PgSupportRepository implements SupportRepository {
  work(id:string,lock=false){return this.one<SupportWork>(`select * from factact.work where lane='SUPPORT' and id=$1 ${lock?'for update':''}`,[id]);}
  workForEvent(id:string){return this.one<SupportWork>("select * from factact.work where lane='SUPPORT' and support_event_id=$1",[id]);}
  insertWork(w:SupportWork){return this.insert('work',{...w,workType:'INCIDENT',lane:'SUPPORT'});}
- async progress(w:SupportWork){await this.db.query('update factact.work set status=$2,outcome=$3,next_action=$4,updated_at=$5,closed_at=$6 where id=$1',[w.id,w.status,w.outcome,w.nextAction,w.updatedAt,w.closedAt]);}
+ async progress(w:SupportWork){await this.db.query('update factact.work set status=$2,outcome=$3,next_action=$4,updated_at=$5,closed_at=$6,lifecycle_version=$7,waiting=$8,waiting_party=$9,waiting_reason=$10,next_action_open=$11,follow_up_at=$12,lifecycle_revision=$13 where id=$1',[w.id,w.status,w.outcome,w.nextAction,w.updatedAt,w.closedAt,w.lifecycleVersion,w.waiting,w.waitingParty,w.waitingReason,w.nextActionOpen,w.followUpAt,w.lifecycleRevision]);}
  decision(id:string){return this.one<SupportDecision>('select * from factact.support_decisions where work_id=$1',[id]);}
  evidence(id:string){return this.one<DiagnosticEvidence>("select * from factact.evidence where evidence_type='DIAGNOSTIC' and id=$1",[id]);}
  async insertResolution(e:DiagnosticEvidence,a:Action,d:SupportDecision){await this.insert('evidence',e);await this.insert('actions',{...a,actionType:'INVESTIGATE_GUIDE',status:'COMPLETED',inputJson:{decisionMode:d.mode,evidenceId:e.id}});await this.insert('support_decisions',d);}
