@@ -1,9 +1,11 @@
 ﻿import type { JoinRepository, JoinRuntime } from './join-ports.js';
 import type { Action } from '../../domain/src/join.js';
-import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit } from '../../domain/src/support.js';
+import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation } from '../../domain/src/support.js';
 export interface SupportRepository {
  deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
  insertDeviceContext(context:import('../../domain/src/support.js').SupportDeviceContext):Promise<void>;
+ targetObservations(workId:string):Promise<SupportTargetObservation[]>;
+ insertTargetObservation(observation:SupportTargetObservation):Promise<void>;
  records(workId:string):Promise<import('../../domain/src/support.js').SupportRecord[]>;
  insertRecord(record:import('../../domain/src/support.js').SupportRecord):Promise<void>;
  core:JoinRepository;

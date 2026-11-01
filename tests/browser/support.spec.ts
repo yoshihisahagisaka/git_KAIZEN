@@ -190,3 +190,11 @@ test('completed SUPPORT Work shows Device Context history without edit controls'
  const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'completed context'});const work=(await commands.evaluate(actor,event.id,'REQUIRED','review')).work!;await commands.confirmContextDevice(actor,work.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});await commands.recordWork(actor,work.id,{requestId:randomUUID(),expectedRevision:0,kind:'COMPLETION',notes:{checks:'確認',action:'RESTART_GUIDANCE',actionDetails:'',result:'CONNECTED',resultSource:'CALLER',resultDetails:'',exceptionReason:''},correctionReason:''});
  await login(page);await page.goto(`${origin}/#/support/${event.id}`);const context=page.getByRole('region',{name:'今回の対応対象'});await expect(context.locator('strong')).toHaveText('PC-0073');await expect(context.getByText('完了した対応の対象記録です。表示のみで変更できません。')).toBeVisible();await expect(context.getByRole('link',{name:'機器を探す'})).toHaveCount(0);await expect(context.getByRole('button',{name:/対象/})).toHaveCount(0);
 });
+
+test('SUPPORT records an unidentified target explicitly without creating Registry facts',async({page})=>{
+ await login(page);const eventId=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ const before=(await db.admin.query('select * from factact.relations')).rows;
+ const panel=page.getByRole('region',{name:'今回の対応対象'});await panel.getByLabel('未特定の状況（任意）').fill('管理番号は未確認');await panel.getByRole('button',{name:'対象は未特定として記録',exact:true}).click();
+ await expect(panel.getByText('今回の対象は未特定として記録されています。未特定のまま対応を続けられます。')).toBeVisible();await expect(panel.getByText('サポート可否: 未評価（適用Ruleが未登録です）')).toBeVisible();
+ expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);expect((await db.admin.query('select count(*)::int as n from factact.changes where work_id=(select id from factact.work where support_event_id=$1)',[eventId])).rows[0].n).toBe(0);
+});
