@@ -26,7 +26,7 @@ async function main() {
     const uow = new PgJoinUnitOfWork(pool);
     const supportUow = new PgSupportUnitOfWork(pool);
     const exploreUow = new PgExploreSearchUnitOfWork(pool);
-    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) }, {commands:new SupportCommands(supportUow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(supportUow)}, {queries:new ExploreQueries(exploreUow)});
+    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) }, {commands:new SupportCommands(supportUow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})}, {queries:new ExploreQueries(exploreUow)});
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void pool.end(); });

@@ -8,6 +8,7 @@ export function supportRoutes({commands:c,queries:q}:SupportServices){
  const r=Router(),id=z.uuid(),text=z.string().trim().min(1).max(4000),empty=z.strictObject({});
  const actor=(locals:Record<string,unknown>)=>(locals.session as {operator:Operator}).operator;
  r.get('/support',async(_req,res)=>res.json({ok:true,data:await q.list(actor(res.locals))}));
+ r.get('/support-responsibility',async(_req,res)=>res.json({ok:true,data:await q.responsibility(actor(res.locals))}));
  r.get('/support/:id',async(req,res)=>res.json({ok:true,data:await q.detail(actor(res.locals),id.parse(req.params.id))}));
  r.post('/support',async(req,res)=>{const input=z.strictObject({requestId:id,personId:id,serviceId:id,symptom:text}).parse(req.body);res.status(201).json({ok:true,data:await c.createEvent(actor(res.locals),input)});});
  r.post('/support/:id/evaluate',async(req,res)=>{const input=z.strictObject({decision:z.enum(['REQUIRED','NOT_APPLICABLE']),reason:z.string().trim().max(4000).default('')}).parse(req.body);res.json({ok:true,data:await c.evaluate(actor(res.locals),id.parse(req.params.id),input.decision,input.reason)});});
