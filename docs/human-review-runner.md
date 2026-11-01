@@ -24,22 +24,25 @@ safe cleanup without opening a browser or performing Google login:
 npm.cmd run human-review -- --env-file C:\atlib\git_KAIZEN\.env --check
 ```
 
-## Fresh Google verification and interactive start
+## Direct Google verification and interactive start
 
-The application accepts only the real Google OIDC provider. The one-shot verifier
-creates an ignored proof containing issuer, subject and verification time, never
-OAuth tokens. It expires after 30 minutes.
+The runner accepts no identity proof file. On every interactive start it first
+opens a short-lived localhost verification endpoint and passes the callback
+directly to the existing Google OIDC verifier. That verifier checks the Google
+signature and issuer together with state, nonce and PKCE. Only its in-memory
+issuer/subject result is bound to the disposable Synthetic Operator; it is never
+accepted from command-line JSON and no OAuth token is persisted.
 
 ```powershell
-npx.cmd tsx --env-file=C:\atlib\git_KAIZEN\.env scripts/verify-google-identity.ts
 npm.cmd run human-review -- `
-  --env-file C:\atlib\git_KAIZEN\.env `
-  --identity-proof .env.google-identity.json
+  --env-file C:\atlib\git_KAIZEN\.env
 ```
 
-Open `http://localhost:5173`, use Google login, then review `#/responsibility`.
-Google verification alone grants no role: the runner explicitly binds the verified
-subject to the seeded Synthetic Operator inside only the disposable database.
+Open `http://localhost:5173` and complete the verification link. The runner then
+replaces the verification endpoint with FACTACT on the same loopback address; use
+Google login once more, then review `#/responsibility`. Google verification alone
+grants no role: the runner explicitly binds that exact verified subject to the
+already-role-bearing seeded Synthetic Operator inside only the disposable database.
 
 ## Synthetic scope
 
