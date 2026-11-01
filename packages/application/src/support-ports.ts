@@ -2,6 +2,7 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision } from '../../domain/src/support.js';
 export interface SupportRepository {
+ managementRows():Promise<SupportManagementRow[]>;
  deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
  insertDeviceContext(context:import('../../domain/src/support.js').SupportDeviceContext):Promise<void>;
  targetObservations(workId:string):Promise<SupportTargetObservation[]>;
@@ -35,6 +36,13 @@ export interface SupportRepository {
  candidates(serviceId:string):Promise<KnowledgeCandidate[]>;
  insertKnowledge(k:KnowledgeCandidate):Promise<void>;
  audit(e:SupportAudit):Promise<void>;
+}
+export interface SupportManagementRow extends SupportWork {
+ supportEventId:string;
+ personName:string;
+ serviceName:string;
+ ownerName:string|null;
+ ownerStatus:'ACTIVE'|'INACTIVE'|null;
 }
 export interface SupportUnitOfWork {run<T>(tenantId:string,fn:(r:SupportRepository)=>Promise<T>,readOnly?:boolean):Promise<T>}
 export type SupportRuntime=JoinRuntime;

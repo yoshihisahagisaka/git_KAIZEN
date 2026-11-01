@@ -199,3 +199,21 @@ test('SUPPORT records an unidentified target explicitly without creating Registr
  await expect(panel.getByText('今回の対象は未特定として記録されています。未特定のまま対応を続けられます。')).toBeVisible();await expect(panel.getByText('サポート可否: 未評価（適用Ruleが未登録です）')).toBeVisible();
  expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);expect((await db.admin.query('select count(*)::int as n from factact.changes where work_id=(select id from factact.work where support_event_id=$1)',[eventId])).rows[0].n).toBe(0);
 });
+
+test('Responsibility management shows explainable My Work, Waiting and follow-up views without mutation',async({page})=>{
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});
+ const event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'回答待ちの問い合わせ'});
+ const work=(await commands.evaluate(actor,event.id,'REQUIRED','確認が必要')).work!;
+ await commands.setWaiting(actor,work.id,{requestId:randomUUID(),expectedRevision:0,party:'利用者',reason:'回答待ち',nextAction:'利用者へ確認する'});
+ const beforeAudit=(await db.admin.query('select count(*)::int n from factact.audit_events')).rows[0].n;
+ await login(page);await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'対応管理',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'対応管理',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'自分の対応',exact:true}).locator('..')).toContainText('田中 一郎さんの問い合わせ');
+ await expect(page.getByRole('heading',{name:'Waiting',exact:true}).locator('..')).toContainText('Waiting: 利用者 — 回答待ち');
+ await expect(page.getByRole('heading',{name:'フォローが必要',exact:true}).locator('..')).toContainText('Waiting中ですがFollow-upが未設定です');
+ await expect(page.getByRole('heading',{name:'担当確認が必要',exact:true}).locator('..')).toContainText('該当する対応はありません。');
+ await page.getByRole('heading',{name:'フォローが必要',exact:true}).locator('..').getByRole('link',{name:'田中 一郎さんの問い合わせ'}).click();
+ await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ',exact:true})).toBeVisible();
+ expect((await db.admin.query('select count(*)::int n from factact.audit_events')).rows[0].n).toBe(beforeAudit);
+ expect((await db.admin.query('select waiting,status,work_owner_operator_id from factact.work where id=$1',[work.id])).rows[0]).toEqual({waiting:true,status:'IN_PROGRESS',work_owner_operator_id:actor.id});
+});

@@ -1,8 +1,14 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
 import {assertRole,found} from '../../domain/src/join.js';
 import type {SupportRepository,SupportUnitOfWork} from './support-ports.js';
+export type SupportResponsibilityReason='FOLLOW_UP_REACHED'|'WAITING_FOLLOW_UP_UNSET'|'WAITING_NEXT_ACTION_MISSING'|'OWNER_UNAVAILABLE';
+export interface SupportResponsibilityItem {
+ workId:string;supportEventId:string;title:string;personName:string;serviceName:string;ownerId:string;ownerName:string|null;ownerStatus:'ACTIVE'|'INACTIVE'|null;
+ nextAction:string;waiting:boolean;waitingParty:string|null;waitingReason:string|null;followUpAt:string|null;reasons:SupportResponsibilityReason[];
+ facts:{followUpReached:boolean;followUpUnset:boolean;nextActionMissing:boolean;ownerUnavailable:boolean;clock:string};
+}
 export class SupportQueries {
- constructor(private uow:SupportUnitOfWork){}
+ constructor(private uow:SupportUnitOfWork,private clock:{now():string}={now:()=>new Date().toISOString()}){}
  private run<T>(a:Operator,fn:(r:SupportRepository)=>Promise<T>){return this.uow.run(a.tenantId,async r=>{assertRole(found(await r.core.operator(a.id)),['ADMIN','OPERATOR','REVIEWER']);return fn(r);},true);}
  list(a:Operator){return this.run(a,async r=>{
   const now=new Date().toISOString();
@@ -12,6 +18,21 @@ export class SupportQueries {
     if(contracts.length===1&&contracts[0]?.configurationJson.support?.enabled) services.push(service);
   }
   return {people:await r.core.people(),services,inquiries:await Promise.all((await r.events()).map(async e=>({event:e,person:found(await r.core.recipientPerson(e.serviceRecipientId)),work:await r.workForEvent(e.id)})))};
+ });}
+ responsibility(a:Operator){return this.run(a,async r=>{
+  const clock=this.clock.now(),at=Date.parse(clock);
+  const all:SupportResponsibilityItem[]=(await r.managementRows()).map(row=>{
+   const w=row,followUpReached=!!w.followUpAt&&Date.parse(w.followUpAt)<=at;
+   const followUpUnset=w.waiting&&!w.followUpAt,nextActionMissing=w.waiting&&(!w.nextActionOpen||!w.nextAction.trim());
+   const ownerUnavailable=row.ownerStatus!=='ACTIVE';
+   const reasons:SupportResponsibilityReason[]=[];
+   if(followUpReached)reasons.push('FOLLOW_UP_REACHED');
+   if(followUpUnset)reasons.push('WAITING_FOLLOW_UP_UNSET');
+   if(nextActionMissing)reasons.push('WAITING_NEXT_ACTION_MISSING');
+   if(ownerUnavailable)reasons.push('OWNER_UNAVAILABLE');
+   return {workId:w.id,supportEventId:row.supportEventId,title:w.title,personName:row.personName,serviceName:row.serviceName,ownerId:w.workOwnerOperatorId,ownerName:row.ownerName,ownerStatus:row.ownerStatus,nextAction:w.nextAction,waiting:w.waiting,waitingParty:w.waitingParty,waitingReason:w.waitingReason,followUpAt:w.followUpAt,reasons,facts:{followUpReached,followUpUnset,nextActionMissing,ownerUnavailable,clock}};
+  });
+  return {clock,myWork:all.filter(x=>x.ownerId===a.id),waiting:all.filter(x=>x.waiting),needsFollowUp:all.filter(x=>x.reasons.length>0),ownerGap:all.filter(x=>x.facts.ownerUnavailable)};
  });}
  detail(a:Operator,eventId:string){return this.run(a,async r=>{
   const event=found(await r.event(eventId)),person=found(await r.core.recipientPerson(event.serviceRecipientId)),observation=found(await r.observation(eventId)),evaluation=await r.evaluation(eventId),work=await r.workForEvent(eventId);
@@ -46,3 +67,4 @@ export class SupportQueries {
 }
 export type SupportListView=Awaited<ReturnType<SupportQueries['list']>>;
 export type SupportDetailView=Awaited<ReturnType<SupportQueries['detail']>>;
+export type SupportResponsibilityView=Awaited<ReturnType<SupportQueries['responsibility']>>;

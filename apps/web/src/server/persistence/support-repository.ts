@@ -9,6 +9,16 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
 class PgSupportRepository implements SupportRepository {
+ managementRows(){return this.many<import('../../../../../packages/application/src/support-ports.js').SupportManagementRow>(`select w.*,e.id as support_event_id,p.display_name as person_name,s.name as service_name,
+  o.display_name as owner_name,o.status as owner_status
+  from factact.work w
+  join factact.support_events e on e.id=w.support_event_id and e.tenant_id=w.tenant_id
+  join factact.service_recipients r on r.id=w.service_recipient_id and r.tenant_id=w.tenant_id
+  join factact.people p on p.id=r.recipient_id and p.tenant_id=w.tenant_id
+  join factact.services s on s.id=w.service_id and s.tenant_id=w.tenant_id
+  left join factact.operators o on o.id=w.work_owner_operator_id and o.tenant_id=w.tenant_id
+  where w.lane='SUPPORT' and w.status<>'COMPLETED'
+  order by w.updated_at,w.id`);}
  deviceContexts(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportDeviceContext>('select * from factact.support_work_device_contexts where work_id=$1 order by revision',[id]);}
  insertDeviceContext(context:import('../../../../../packages/domain/src/support.js').SupportDeviceContext){return this.insert('support_work_device_contexts',context);}
  targetObservations(id:string){return this.many<SupportTargetObservation>('select * from factact.support_work_target_observations where work_id=$1 order by revision',[id]);}
