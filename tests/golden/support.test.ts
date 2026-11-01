@@ -23,7 +23,9 @@ const recordInput=(kind:'DRAFT'|'COMPLETION'|'CORRECTION',expectedRevision=0)=>(
 beforeAll(async()=>{db=await testDatabase();const su=new PgSupportUnitOfWork(db.runtime),ju=new PgJoinUnitOfWork(db.runtime);s=new SupportCommands(su,clock);q=new SupportQueries(su);j=new JoinCommands(ju,clock);jq=new JoinQueries(ju);});
 beforeEach(async()=>db.reset());afterAll(async()=>db?.close());
 const intake=()=>s.createEvent(a,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'会社PCでVPNにつながりません'});
-async function work(){const e=await intake();const r=await s.evaluate(a,e.id,'REQUIRED','利用対象と症状の確認・案内が必要');return{e,w:r.work!};}
+// Existing V1 behavior remains covered as historical compatibility. Slice 2 V2 cases create their own Work below.
+async function work(){const e=await intake();const r=await s.evaluate(a,e.id,'REQUIRED','利用対象と症状の確認・案内が必要');await db.admin.query('update factact.work set lifecycle_version=1 where id=$1',[r.work!.id]);return{e,w:{...r.work!,lifecycleVersion:1}};}
+async function workV2(){const e=await intake();const r=await s.evaluate(a,e.id,'REQUIRED','利用対象と症状の確認・案内が必要');return{e,w:r.work!};}
 async function joinFact(){const e=await j.createJoinEvent(a,{organizationId:ids.organization,personId:ids.person,serviceId:ids.service,joinDate:'2026-10-02'});const r=await j.evaluateJoinRequirements(a,e.eventId),w=r.works[0]!;const p=await j.startAssignDeviceAction(a,{workId:w.id,deviceId:ids.device,executionSummary:'実機確認・引き渡し済み',effectiveFrom:'2026-10-01T07:00:00.000Z'});await j.verifyChange(a,p.changeId,'本人・実機を確認');return {workId:w.id,relation:await j.commitChange(a,p.changeId)};}
 async function setReadRoles(roles:Operator['roles']){await db.admin.query('delete from factact.operator_roles where tenant_id=$1 and operator_id=$2',[ids.tenant,ids.operator]);for(const role of roles)await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[ids.tenant,ids.operator,role]);}
 it('SUPPORT Read Authority v1 uses current Roles and remains separate from Command Authority',async()=>{const e=await intake();for(const role of ['ADMIN','OPERATOR','REVIEWER'] as const){await setReadRoles([role]);expect((await q.detail(a,e.id)).event.id).toBe(e.id);}await expect(s.createEvent(a,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'reviewer cannot execute'})).rejects.toMatchObject({code:'FORBIDDEN'});await setReadRoles([]);await expect(q.detail(a,e.id)).rejects.toMatchObject({code:'FORBIDDEN'});await db.admin.query("update factact.operators set status='INACTIVE' where id=$1",[ids.operator]);await expect(q.list(a)).rejects.toMatchObject({code:'NOT_FOUND'});});
@@ -191,4 +193,32 @@ it('Context-01 review: database rejects a supersession that crosses Work within 
  expect((await db.admin.query('select * from factact.relations order by id')).rows).toEqual(registryBefore);
  await expect(withTenant(db.runtime,a.tenantId,c=>c.query(insert,[randomUUID(),a.tenantId,workA.id,randomUUID(),2,ids.device,contextA.id,a.id,clock.now()]))).resolves.toMatchObject({rowCount:1});
  expect((await db.admin.query('select revision from factact.support_work_device_contexts where work_id=$1 order by revision',[workA.id])).rows).toEqual([{revision:1},{revision:2}]);
+});
+
+it('Slice 2: v2 continuation records Action without closing Work, then retains Waiting and Resume history',async()=>{
+ const {e,w}=await workV2();expect(w.lifecycleVersion).toBe(2);
+ const continuation=await s.recordContinuation(a,w.id,{requestId:randomUUID(),expectedRevision:0,notes,nextAction:'本人から結果を確認する',nextActionOpen:true});
+ let v=await q.detail(a,e.id);expect(v.work).toMatchObject({status:'IN_PROGRESS',closedAt:null,nextActionOpen:true,workOwnerOperatorId:a.id});expect(v.records.at(-1)?.kind).toBe('CONTINUATION');expect(v.lifecycleEvents).toHaveLength(1);expect(continuation.kind).toBe('CONTINUATION_RECORDED');
+ const waiting=await s.setWaiting(a,w.id,{requestId:randomUUID(),expectedRevision:1,party:'利用者',reason:'本人の再接続結果を待つ',nextAction:'本人へ結果を確認する'});v=await q.detail(a,e.id);expect(v.work).toMatchObject({waiting:true,waitingParty:'利用者',workOwnerOperatorId:a.id});expect(v.needsFollowUp).toBe(true);expect(waiting.kind).toBe('WAITING_SET');
+ await s.resumeWork(a,w.id,{requestId:randomUUID(),expectedRevision:2,nextAction:'本人へ結果を確認する'});v=await q.detail(a,e.id);expect(v.work).toMatchObject({waiting:false,nextActionOpen:true,workOwnerOperatorId:a.id});expect(v.lifecycleEvents.map(x=>x.kind)).toEqual(['CONTINUATION_RECORDED','WAITING_SET','RESUMED']);
+});
+
+it('Slice 2: v2 follow-up is append-only, clearable and does not auto-close',async()=>{
+ const {e,w}=await workV2();const at='2026-10-03T09:00:00.000Z';const set=await s.setFollowUp(a,w.id,{requestId:randomUUID(),expectedRevision:0,followUpAt:at,sourceType:'HUMAN_DECISION',basisText:'担当者判断',reason:'翌営業日に確認'});
+ let v=await q.detail(a,e.id);expect(v.work?.followUpAt).toBe(at);expect(v.followUps[0]).toMatchObject({id:set.id,kind:'SET',sourceType:'HUMAN_DECISION'});await s.clearFollowUp(a,w.id,{requestId:randomUUID(),expectedRevision:1,sourceType:'HUMAN_DECISION',basisText:'担当者判断',reason:'確認不要になった'});v=await q.detail(a,e.id);expect(v.work?.followUpAt).toBeNull();expect(v.followUps.map(x=>x.kind)).toEqual(['SET','CLEARED']);expect(v.work?.status).not.toBe('COMPLETED');
+});
+
+it('Slice 2: Close requires explicit cleared responsibility, preserves provenance and is retry safe',async()=>{
+ const {e,w}=await workV2();await s.recordContinuation(a,w.id,{requestId:randomUUID(),expectedRevision:0,notes,nextAction:'結果確認',nextActionOpen:true});
+ await expect(s.closeWork(a,w.id,{requestId:randomUUID(),expectedRevision:1,outcome:'RESOLVED',closeReason:'対応を終えた',provenanceType:'HUMAN_DECISION',provenanceReference:'担当者が確認'})).rejects.toMatchObject({code:'CLOSE_GUARD_UNMET'});
+ await s.clearNextAction(a,w.id,{requestId:randomUUID(),expectedRevision:1,reason:'追加の対応は不要'});const input={requestId:randomUUID(),expectedRevision:2,outcome:'RESOLVED' as const,closeReason:'本人への案内を完了',provenanceType:'HUMAN_DECISION' as const,provenanceReference:'担当者が結果を確認'};const closed=await s.closeWork(a,w.id,input);await expect(s.closeWork(a,w.id,input)).resolves.toEqual(closed);await expect(s.closeWork(a,w.id,{...input,closeReason:'異なる理由'})).rejects.toMatchObject({code:'RETRY_CONFLICT'});
+ const v=await q.detail(a,e.id);expect(v.work).toMatchObject({status:'COMPLETED',nextActionOpen:false});expect(v.closeDecision).toMatchObject({id:closed.id,outcome:'RESOLVED',closeReason:input.closeReason,guardSnapshot:{waiting:false,nextActionOpen:false,requiredVerificationOpen:false}});expect(v.records.filter(x=>x.kind==='CONTINUATION')).toHaveLength(1);
+});
+
+it('Slice 2: Waiting and stale revision block Close; no command auto-closes Work',async()=>{
+ const {w}=await workV2();await s.setWaiting(a,w.id,{requestId:randomUUID(),expectedRevision:0,party:'外部窓口',reason:'回答待ち',nextAction:'回答を確認する'});await expect(s.closeWork(a,w.id,{requestId:randomUUID(),expectedRevision:1,outcome:'FORMALLY_TRANSFERRED',closeReason:'移管',provenanceType:'FORMAL_TRANSFER',provenanceReference:'受付番号'})).rejects.toMatchObject({code:'CLOSE_GUARD_UNMET'});await expect(s.resumeWork(a,w.id,{requestId:randomUUID(),expectedRevision:0,nextAction:'stale'})).rejects.toMatchObject({code:'STALE_REVISION'});expect((await q.detail(a,(await intake()).id)).work).toBeNull();
+});
+
+it('Slice 2: grounded formal transfer can close an otherwise unresolved responsibility',async()=>{
+ const {e,w}=await workV2();await s.clearNextAction(a,w.id,{requestId:randomUUID(),expectedRevision:0,reason:'正式移管のため元Workの次Actionを終了'});const closed=await s.closeWork(a,w.id,{requestId:randomUUID(),expectedRevision:1,outcome:'FORMALLY_TRANSFERRED',closeReason:'契約窓口が責任を引き受けた',provenanceType:'FORMAL_TRANSFER',provenanceReference:'移管受付番号 TR-001'});const v=await q.detail(a,e.id);expect(v.closeDecision).toMatchObject({id:closed.id,outcome:'FORMALLY_TRANSFERRED',provenanceType:'FORMAL_TRANSFER'});expect(v.work?.status).toBe('COMPLETED');
 });

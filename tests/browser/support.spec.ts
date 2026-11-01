@@ -87,14 +87,15 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await page.getByLabel('結果の確認元',{exact:true}).selectOption('CALLER');
  await expect(page.getByLabel('結果の補足（任意）')).toHaveValue('');
  await page.getByRole('button',{name:'次へ',exact:true}).click();
- await expect(page.getByText('次の対応に役立つこと: 特になし',{exact:false})).toBeVisible();
+ await expect(page.getByText('この内容を実施記録として保存します。WorkのCloseは別の明示操作です。',{exact:true})).toBeVisible();
  await expect(page.getByText(/WORKAROUND|ROOT_CAUSE|PERMANENT_RESOLUTION/)).toHaveCount(0);
  await page.getByRole('button',{name:'戻る',exact:true}).click();
  await page.getByLabel('結果の補足（任意）').fill('本人から「再起動後に接続できた」と回答。');
  await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.screenshot({path:test.info().outputPath('support-v2-review.png'),fullPage:true});
- await page.getByRole('button',{name:'問い合わせ対応を完了',exact:true}).click();
- await expect(page.getByText('確認・案内の対応を完了しました',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'対応を記録',exact:true}).click();
+ await expect(page.getByText('対応を記録しました。Closeは責任状態から明示してください。',{exact:true})).toBeVisible();
+ const lifecycle=page.getByRole('region',{name:'対応の責任状態'});await lifecycle.getByText('対応をCloseする',{exact:true}).click();await lifecycle.getByLabel('Close理由').fill('本人への案内を完了したため');await lifecycle.getByLabel('根拠').fill('担当者が結果を確認');await lifecycle.getByRole('button',{name:'対応をClose',exact:true}).click();await expect(lifecycle.getByText('Close済みです。RESOLVED / 本人への案内を完了したため')).toBeVisible();
  const w=(await db.admin.query('select id,outcome from factact.work where support_event_id=$1',[eventId])).rows[0];
  expect(w.outcome).toBe('COMPLETED');
  expect((await db.admin.query('select count(*)::int as n from factact.knowledge_candidates')).rows[0].n).toBe(0);
@@ -148,8 +149,8 @@ test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
  await page.getByRole('button',{name:'次へ',exact:true}).click();
  await expect(page.getByLabel('接続の結果',{exact:true})).toHaveValue('UNCONFIRMED');await page.getByRole('button',{name:'次へ',exact:true}).click();await expect(page.getByLabel('未確認の状況（必須）')).toBeVisible();await page.getByLabel('未確認の状況（必須）').fill('本人から結果の連絡待ち。');
  await page.getByRole('button',{name:'次へ',exact:true}).click();
- await page.getByRole('button',{name:'問い合わせ対応を完了',exact:true}).click();
- await expect(page.getByText('調査完了・追加対応不要',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'対応を記録',exact:true}).click();
+ await expect(page.getByText('対応を記録しました。Closeは責任状態から明示してください。',{exact:true})).toBeVisible();
 });
 
 test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a different Work',async({page})=>{
@@ -187,7 +188,7 @@ test('SUPPORT Device Work Context requires an explicit Work-side confirmation an
 });
 
 test('completed SUPPORT Work shows Device Context history without edit controls',async({page})=>{
- const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'completed context'});const work=(await commands.evaluate(actor,event.id,'REQUIRED','review')).work!;await commands.confirmContextDevice(actor,work.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});await commands.recordWork(actor,work.id,{requestId:randomUUID(),expectedRevision:0,kind:'COMPLETION',notes:{checks:'確認',action:'RESTART_GUIDANCE',actionDetails:'',result:'CONNECTED',resultSource:'CALLER',resultDetails:'',exceptionReason:''},correctionReason:''});
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'completed context'});const work=(await commands.evaluate(actor,event.id,'REQUIRED','review')).work!;await db.admin.query('update factact.work set lifecycle_version=1 where id=$1',[work.id]);await commands.confirmContextDevice(actor,work.id,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});await commands.recordWork(actor,work.id,{requestId:randomUUID(),expectedRevision:0,kind:'COMPLETION',notes:{checks:'確認',action:'RESTART_GUIDANCE',actionDetails:'',result:'CONNECTED',resultSource:'CALLER',resultDetails:'',exceptionReason:''},correctionReason:''});
  await login(page);await page.goto(`${origin}/#/support/${event.id}`);const context=page.getByRole('region',{name:'今回の対応対象'});await expect(context.locator('strong')).toHaveText('PC-0073');await expect(context.getByText('完了した対応の対象記録です。表示のみで変更できません。')).toBeVisible();await expect(context.getByRole('link',{name:'機器を探す'})).toHaveCount(0);await expect(context.getByRole('button',{name:/対象/})).toHaveCount(0);
 });
 
