@@ -271,3 +271,21 @@ additive persistence/authority choices before writing migration or application
 code. Any requirement that cannot be represented by the listed existing
 concepts stops implementation and returns for Product Decision; it must not be
 filled by a new Core Object.
+
+## 13. Slice 1 residual implementation approval — Unknown Target Observation
+
+Approved implementation scope: extend the existing Context-01 Work-to-Device
+history with `UNIDENTIFIED` and add append-only Work-context Observations for
+identification, ownership and management state. An unidentified target has no
+Device ID and creates no Registry Device, Relation or Change. A later explicit
+Device confirmation supersedes the unidentified Context record while retaining
+all prior history and provenance. Context and Observation writes retain the
+existing tenant transaction, SUPPORT execution authority, request-id retry,
+stale-revision, Audit and completed-Work guards.
+
+Eligibility is deliberately limited to the read projection
+`UNKNOWN / NO_APPLICABLE_RULE / null` because the current Contract model has no
+applicable support-eligibility Rule representation. This Slice must not invent
+a Rule engine, Contract setting, ALLOWED/RESTRICTED result, automatic Action,
+or automatic Registry update. Ownership, management state, identification and
+Action authority remain separate concerns.

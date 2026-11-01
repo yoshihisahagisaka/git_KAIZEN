@@ -2,7 +2,7 @@
 import {withTenant} from './database.js';
 import {PgJoinRepository} from './join-repository.js';
 import type {SupportRepository,SupportUnitOfWork} from '../../../../../packages/application/src/support-ports.js';
-import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit} from '../../../../../packages/domain/src/support.js';
+import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation} from '../../../../../packages/domain/src/support.js';
 import type {Action} from '../../../../../packages/domain/src/join.js';
 export class PgSupportUnitOfWork implements SupportUnitOfWork {
  constructor(private pool:Pool){}
@@ -11,6 +11,8 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
 class PgSupportRepository implements SupportRepository {
  deviceContexts(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportDeviceContext>('select * from factact.support_work_device_contexts where work_id=$1 order by revision',[id]);}
  insertDeviceContext(context:import('../../../../../packages/domain/src/support.js').SupportDeviceContext){return this.insert('support_work_device_contexts',context);}
+ targetObservations(id:string){return this.many<SupportTargetObservation>('select * from factact.support_work_target_observations where work_id=$1 order by revision',[id]);}
+ insertTargetObservation(observation:SupportTargetObservation){return this.insert('support_work_target_observations',observation);}
  records(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportRecord>('select * from factact.support_work_records where work_id=$1 order by revision',[id]);}
  insertRecord(record:import('../../../../../packages/domain/src/support.js').SupportRecord){return this.insert('support_work_records',record);}
  core:PgJoinRepository;

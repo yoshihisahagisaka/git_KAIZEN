@@ -1,9 +1,32 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
 import {assertRole,found,requireCondition} from '../../domain/src/join.js';
-import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext} from '../../domain/src/support.js';
+import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation} from '../../domain/src/support.js';
 import {supportActionLabels,supportResultLabels,type SupportNotes,type SupportRecord} from '../../domain/src/support.js';
 import type {SupportRepository,SupportRuntime,SupportUnitOfWork} from './support-ports.js';
 export class SupportCommands {
+ recordUnidentifiedTarget(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;sourceType:SupportTargetObservation['sourceType'];detail:string}){return this.run(actor,async(r,a)=>{
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+  const history=await r.deviceContexts(workId),old=history.find(x=>x.requestId===input.requestId);
+  if(old){requireCondition(old.kind==='UNIDENTIFIED','RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
+  requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象の記録が更新されています。');
+  requireCondition(!history.length||history.at(-1)?.kind==='ENDED','CONTEXT_STATE_CONFLICT','現在の対象がある場合は、訂正または取り消しを選択してください。');
+  requireCondition(['OPERATOR','CALLER','OTHER'].includes(input.sourceType)&&input.detail.length<=1000,'INVALID_INPUT','入力内容を確認してください。',400);
+  const at=this.runtime.now(),context:SupportDeviceContext={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:'UNIDENTIFIED',deviceId:null,confirmationSource:input.sourceType,evidenceId:null,reason:'',supersedesContextId:history.at(-1)?.id??null,recordedByOperatorId:a.id,recordedAt:at};
+  await r.insertDeviceContext(context);await r.insertTargetObservation({id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context.id,requestId:this.runtime.id(),revision:1,kind:'IDENTIFICATION',value:'UNIDENTIFIED',detail:input.detail,sourceType:input.sourceType,evidenceId:null,supersedesObservationId:null,recordedByOperatorId:a.id,recordedAt:at});
+  await this.audit(r,a,w.supportEventId,'SUPPORT_CONTEXT_TARGET_UNIDENTIFIED',{workId,contextId:context.id});return context;
+ });}
+ recordTargetObservation(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportTargetObservation['kind'];value:SupportTargetObservation['value'];detail:string;sourceType:SupportTargetObservation['sourceType'];evidenceId?:string|null}){return this.run(actor,async(r,a)=>{
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
+  const context=(await r.deviceContexts(workId)).at(-1);requireCondition(!!context&&context.kind!=='ENDED','CONTEXT_STATE_CONFLICT','現在の対象を記録してから対象情報を追加してください。');
+  const history=await r.targetObservations(workId),old=history.find(x=>x.requestId===input.requestId);if(old){requireCondition(old.kind===input.kind&&old.value===input.value&&old.detail===input.detail&&old.sourceType===input.sourceType&&old.evidenceId===(input.evidenceId??null),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象情報が更新されています。');
+  const permitted:Record<SupportTargetObservation['kind'],readonly string[]>={IDENTIFICATION:['UNIDENTIFIED','PARTIALLY_IDENTIFIED','UNKNOWN'],OWNERSHIP:['PERSONALLY_OWNED','COMPANY_OWNED','UNKNOWN'],MANAGEMENT_STATE:['MANAGED','UNMANAGED','UNKNOWN']};
+  requireCondition(permitted[input.kind].includes(input.value)&&['OPERATOR','CALLER','OTHER'].includes(input.sourceType)&&input.detail.length<=1000,'INVALID_INPUT','入力内容を確認してください。',400);
+  if(input.evidenceId){const d=found(await r.decision(workId));requireCondition(d.evidenceId===input.evidenceId,'EVIDENCE_CONTEXT_MISMATCH','この対応に記録された確認根拠だけを指定できます。',400);}
+  const observation:SupportTargetObservation={id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context!.id,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,value:input.value,detail:input.detail,sourceType:input.sourceType,evidenceId:input.evidenceId??null,supersedesObservationId:history.filter(x=>x.kind===input.kind).at(-1)?.id??null,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  await r.insertTargetObservation(observation);await this.audit(r,a,w.supportEventId,'SUPPORT_CONTEXT_TARGET_OBSERVED',{workId,observationId:observation.id,kind:observation.kind,value:observation.value});return observation;
+ });}
  confirmContextDevice(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;deviceId:string;confirmationSource:SupportDeviceContext['confirmationSource'];evidenceId?:string|null}){
   return this.changeContextDevice(actor,workId,{...input,kind:'CONFIRMED',reason:''});
  }
@@ -20,7 +43,7 @@ export class SupportCommands {
   requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象機器は変更できません。必要なら新しい対応を開始してください。');
   requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象機器の記録が更新されています。最新の内容を確認してください。');
   const previous=history.at(-1)??null,current=previous?.kind==='ENDED'?null:previous;
-  requireCondition(input.kind==='CONFIRMED'?current===null:current!==null,'CONTEXT_STATE_CONFLICT',input.kind==='CONFIRMED'?'現在の対象機器はすでに記録されています。変更または取り消しを選択してください。':'現在の対象機器がありません。機器を記録してください。');
+  requireCondition(input.kind==='CONFIRMED'?(current===null||current.kind==='UNIDENTIFIED'):current!==null,'CONTEXT_STATE_CONFLICT',input.kind==='CONFIRMED'?'現在の対象機器はすでに記録されています。変更または取り消しを選択してください。':'現在の対象機器がありません。機器を記録してください。');
   requireCondition(['OPERATOR','CALLER','OTHER'].includes(input.confirmationSource),'INVALID_INPUT','確認元を選択してください。',400);
   requireCondition(input.reason.length<=1000,'INVALID_INPUT','理由は1000文字以内で入力してください。',400);
   requireCondition(input.kind==='CONFIRMED'||input.reason.trim().length>0,'REASON_REQUIRED','訂正・取り消し理由を入力してください。',400);
