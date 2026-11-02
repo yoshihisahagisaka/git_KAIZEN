@@ -88,6 +88,8 @@ sourceSnapshot: Record<string, unknown>; // DBの既存行は {}
 
 保存経路は既存 `POST /support-work/:id/context-target/observations` → `recordTargetObservation`。入力にsourceSnapshotを丸ごと信用して受け取らず、サーバーがその時点で読んだRegistry/Contextから生成する。Humanが選ぶのはkind/value/detailのみ。リクエストには従来のrequestId/expectedRevision/sourceTypeを必須とする。現在のTarget Contextがない場合は既存の明示`UNIDENTIFIED`記録を先に案内するが、自動作成は禁止。履歴は既存supersessionとactor/timeで不変、Registry更新なし。
 
+¤recordUnidentifiedTarget¤が既存のIDENTIFICATION Observationを作る箇所にはsourceSnapshot={}を明示追加する。¤SupportQueries.detail¤の¤observationKind¤/¤observationValue¤分岐と¤ContextDevicePanel¤のラベルにも新kind/valueを追加し、型の網羅漏れを残さない。
+
 対象Observation拡張は表示Sliceとは切り離してレビューする。A-1読取表示を先に受け入れる。
 
 ## 3. B — 単一応答入力と1トランザクション
