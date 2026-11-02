@@ -53,16 +53,20 @@ async function login(page:import('@playwright/test').Page){await page.goto(origi
 test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, correction and next inquiry',async({page})=>{
  await login(page);const eventId=await intake(page);
  const context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});
- await expect(context.getByRole('heading',{name:'利用PC: PC-0073'})).toBeVisible();
+ await expect(context.getByRole('heading',{name:'登録情報: PC-0073'})).toBeVisible();
  await expect(context.getByText('確認済み',{exact:true})).toBeVisible();
  await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('VPN利用要否: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
  await expect(page.getByRole('article',{name:'本人からの申告'}).getByText('会社PCでVPNにつながりません',{exact:true})).toBeVisible();
- await expect(page.getByText('本人から聞いた内容です。技術的な障害として確認済みではありません。')).toBeVisible();
+ await expect(page.getByText('本人から聞いた内容です。技術的な障害として確認済みではありません。')).toHaveCount(0);
  await expect(page.getByRole('textbox',{name:/PC/})).toHaveCount(0);
  await context.getByRole('button',{name:'利用PCの確認元',exact:true}).click();const source=page.getByRole('dialog',{name:'利用PCの確認元'});await expect(source.getByText('管理情報へ反映済み',{exact:false})).toBeVisible();await source.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.getByRole('button',{name:'対応を開始',exact:true}).click();
- await expect(page.getByText('あなたの担当です',{exact:true})).toBeVisible();
- await expect(page.getByText('担当になった理由: 対応を開始した担当者として登録されています。')).toBeVisible();
+ await expect(page.getByRole('region',{name:'現在の対応状況'})).toContainText('担当');
+ await expect(page.getByRole('list',{name:'対応の手順'})).toHaveCount(0);
+ for(const heading of ['確認リスト','確認したこと','行った対応','対応結果'])await expect(page.getByRole('heading',{name:heading,exact:true})).toBeVisible();
+ await expect(page.getByRole('region',{name:'現在の対応状況'}).getByText('開発オペレーター',{exact:true})).toBeVisible();
+ await expect(page.getByText('あなたがこの対応の担当です。',{exact:true})).toHaveCount(0);
+ const entryRegion=page.getByRole('region',{name:'対応を記録'}),historyRegion=page.getByRole('region',{name:'問い合わせの対応履歴'}),stateRegion=page.getByRole('region',{name:'対応状態の操作'});const entryBox=await entryRegion.boundingBox(),historyBox=await historyRegion.boundingBox(),stateBox=await stateRegion.boundingBox();expect(entryBox!.y).toBeLessThan(historyBox!.y);expect(historyBox!.y).toBeLessThan(stateBox!.y);
  await expect(page.getByRole('textbox',{name:/理由/})).toHaveCount(0);
  await page.getByRole('button',{name:'デモ用参考手順を見る'}).click();const procedure=page.getByRole('dialog',{name:'デモ用参考手順を見る'});await expect(procedure.getByText('デモ用参考手順です。実運用で承認された手順ではありません。')).toBeVisible();await page.keyboard.press('Escape');await expect(procedure).toHaveCount(0);
  await page.getByLabel('確認した内容と根拠').fill('本人は今朝から接続不可と回答。VPN利用対象は契約窓口に確認中。');
@@ -78,24 +82,21 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await page.getByRole('button',{name:'下書き保存',exact:true}).click();
  await expect(page.getByText('下書きを保存しました',{exact:true})).toBeVisible();
  await page.reload();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('本人は今朝から接続不可と回答。VPN利用対象は契約窓口に確認中。');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.getByLabel('行った対応',{exact:true}).selectOption('RESTART_GUIDANCE');
  await expect(page.getByLabel('対応の補足（任意）')).toHaveValue('');
  await expect(page.getByRole('textbox',{name:/理由/})).toHaveCount(0);
- await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.getByLabel('接続の結果',{exact:true}).selectOption('CONNECTED');
  await page.getByLabel('結果の確認元',{exact:true}).selectOption('CALLER');
  await expect(page.getByLabel('結果の補足（任意）')).toHaveValue('');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
- await expect(page.getByText('この内容を実施記録として保存します。WorkのCloseは別の明示操作です。',{exact:true})).toBeVisible();
+ await expect(page.getByText('対応の記録だけではWorkをCloseしません。',{exact:true})).toHaveCount(0);
  await expect(page.getByText(/WORKAROUND|ROOT_CAUSE|PERMANENT_RESOLUTION/)).toHaveCount(0);
- await page.getByRole('button',{name:'戻る',exact:true}).click();
  await page.getByLabel('結果の補足（任意）').fill('本人から「再起動後に接続できた」と回答。');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.screenshot({path:test.info().outputPath('support-v2-review.png'),fullPage:true});
  await page.getByRole('button',{name:'対応を記録',exact:true}).click();
- await expect(page.getByText('対応を記録しました。Closeは責任状態から明示してください。',{exact:true})).toBeVisible();
- const lifecycle=page.getByRole('region',{name:'対応の責任状態'});await lifecycle.getByText('対応をCloseする',{exact:true}).click();await lifecycle.getByLabel('Close理由').fill('本人への案内を完了したため');await lifecycle.getByLabel('根拠').fill('担当者が結果を確認');await lifecycle.getByRole('button',{name:'対応をClose',exact:true}).click();await expect(lifecycle.getByText('Close済みです。解決としてCloseしました / 本人への案内を完了したため')).toBeVisible();
+ await expect(page.getByRole('status')).toHaveText('対応を記録しました');
+ await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('');
+ await expect(page.getByLabel('対応の補足（任意）')).toHaveValue('');
+ const lifecycle=page.getByRole('region',{name:'対応状態の操作'});await lifecycle.locator('summary').filter({hasText:'対応を終了'}).click();await lifecycle.getByLabel('終了理由').fill('本人への案内を完了したため');await lifecycle.getByLabel('根拠').fill('担当者が結果を確認');await lifecycle.getByRole('button',{name:'対応を終了',exact:true}).click();await expect(lifecycle.getByText('解決として対応を終了しました / 本人への案内を完了したため')).toBeVisible();
  const w=(await db.admin.query('select id,outcome from factact.work where support_event_id=$1',[eventId])).rows[0];
  expect(w.outcome).toBe('RESOLVED');
  expect((await db.admin.query('select count(*)::int as n from factact.knowledge_candidates')).rows[0].n).toBe(0);
@@ -108,6 +109,8 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await page.getByRole('button',{name:'訂正内容を確認'}).click();
  await page.getByRole('button',{name:'訂正履歴を保存'}).click();
  await expect(page.getByRole('button',{name:'記録を訂正',exact:true})).toBeVisible();
+ const businessHistory=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(businessHistory.getByText('対応記録を訂正しました',{exact:true})).toBeVisible();const newest=await businessHistory.locator('li strong').allTextContents();
+ await businessHistory.getByLabel('対応履歴の表示順').selectOption('oldest');expect(await businessHistory.locator('li strong').allTextContents()).toEqual([...newest].reverse());
  await page.getByText('監査用の詳細',{exact:true}).click();
  await expect(page.getByText('元の確認根拠:',{exact:false})).toContainText('再起動後に接続できた');
  await intake(page);await page.getByRole('button',{name:'過去の関連する対応',exact:true}).click();
@@ -115,7 +118,7 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await expect(history.getByText('PC再起動を案内',{exact:true}).first()).toBeVisible();
  await expect(history.getByText('本人から接続できたと回答。確認時刻は10:15。',{exact:true}).first()).toBeVisible();
  await expect(history.getByText('訂正後の記録',{exact:false})).toBeVisible();await expect(history.locator('pre:visible')).toHaveCount(0);await history.getByText('対応の詳しい履歴と監査',{exact:true}).click();await history.getByText('監査用の詳細',{exact:true}).click();await expect(history.locator('pre:visible').first()).toBeVisible();await history.getByRole('button',{name:'閉じる',exact:true}).click();
- await expect(context.getByRole('heading',{name:'利用PC: PC-0073'})).toBeVisible();
+ await expect(context.getByRole('heading',{name:'登録情報: PC-0073'})).toBeVisible();
  // Optional V1 candidate creation and provenance are still usable after completion.
  await page.goto(`${origin}/#/support/${eventId}`);
  await page.getByText('次の対応に役立つこと（任意・特になしで完了できます）',{exact:true}).click();
@@ -128,6 +131,19 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await expect(page.getByText(`Work: ${w.id}`,{exact:true})).toBeVisible();
 });
 
+test('UX-01 uses a wide Work surface and keeps Context available as a dialog on narrow screens',async({page})=>{
+ await page.setViewportSize({width:1440,height:900});await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ const status=page.getByRole('region',{name:'現在の対応状況'}),work=page.getByRole('region',{name:'対応を記録'}),context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});await expect(status).toContainText('次にやること');await expect(status).toContainText('次回確認予定');
+ const workBox=await work.boundingBox(),contextBox=await context.boundingBox();expect(workBox!.width).toBeGreaterThan(contextBox!.width*2.5);expect(workBox!.width).toBeLessThan(contextBox!.width*3.5);
+ await page.setViewportSize({width:800,height:900});await expect(context).toBeHidden();const open=page.getByRole('button',{name:'参照情報',exact:true});await expect(open).toBeVisible();await open.click();await expect(page.getByRole('dialog',{name:'参照情報'})).toContainText('本人からの申告');
+});
+
+test('UX-02 records consecutive actions from a fresh form and keeps both history entries',async({page})=>{
+ await login(page);const eventId=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
+ for(const [checks,details] of [['1回目の確認','1回目の結果'],['2回目の確認','2回目の結果']] as const){await page.getByLabel('確認した内容と根拠').fill(checks);await page.getByLabel('接続の結果',{exact:true}).selectOption('CONNECTED');await page.getByLabel('結果の確認元',{exact:true}).selectOption('CALLER');await page.getByLabel('結果の補足（任意）').fill(details);await page.getByRole('button',{name:'対応を記録',exact:true}).click();await expect(page.getByRole('status')).toHaveText('対応を記録しました');await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('');}
+ const history=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(history.getByText('対応を記録しました',{exact:true})).toHaveCount(2);const workId=(await db.admin.query('select id from factact.work where support_event_id=$1',[eventId])).rows[0].id;expect((await db.admin.query('select count(*)::int n from factact.support_work_records where work_id=$1',[workId])).rows[0].n).toBe(2);
+});
+
 test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
  await login(page);const first=await intake(page);
  await page.getByText('対応せずに受付を閉じる',{exact:true}).click();
@@ -137,30 +153,26 @@ test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
  expect((await db.admin.query('select id from factact.work where support_event_id=$1',[first])).rows).toHaveLength(0);
  await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
  await page.getByLabel('確認した内容と根拠').fill('本人に確認したが、結果の連絡はまだない。');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
  await page.getByLabel('行った対応',{exact:true}).selectOption('OTHER_GUIDANCE');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
  await expect(page.getByLabel('対応の補足（必須）')).toBeVisible();
- await expect(page.getByLabel('接続の結果',{exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('接続の結果',{exact:true})).toBeVisible();
  await page.getByLabel('行った対応',{exact:true}).selectOption('NO_ACTION_REQUIRED');
  await expect(page.getByLabel('標準外・追加対応なしの理由')).toBeVisible();
  await page.getByLabel('対応の補足（任意）').fill('本人へ状況を確認した。');
  await page.getByLabel('標準外・追加対応なしの理由').fill('本人が追加の案内は不要と回答。');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
- await expect(page.getByLabel('接続の結果',{exact:true})).toHaveValue('UNCONFIRMED');await page.getByRole('button',{name:'次へ',exact:true}).click();await expect(page.getByLabel('未確認の状況（必須）')).toBeVisible();await page.getByLabel('未確認の状況（必須）').fill('本人から結果の連絡待ち。');
- await page.getByRole('button',{name:'次へ',exact:true}).click();
+ await expect(page.getByLabel('接続の結果',{exact:true})).toHaveValue('UNCONFIRMED');await expect(page.getByLabel('未確認の状況（必須）')).toBeVisible();await page.getByLabel('未確認の状況（必須）').fill('本人から結果の連絡待ち。');
  await page.getByRole('button',{name:'対応を記録',exact:true}).click();
- await expect(page.getByText('対応を記録しました。Closeは責任状態から明示してください。',{exact:true})).toBeVisible();
+ await expect(page.getByRole('status')).toHaveText('対応を記録しました');
 });
 
 test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a different Work',async({page})=>{
  await login(page);const eventA=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
- await page.getByLabel('確認した内容と根拠').fill('保存前の確認内容');await page.getByRole('button',{name:'次へ',exact:true}).click();
+ await page.getByLabel('確認した内容と根拠').fill('保存前の確認内容');
  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();
  await expect(page.getByRole('heading',{name:'情報を探す',exact:true})).toBeVisible();
  const anchor=page.getByRole('complementary',{name:'現在の作業'});await expect(anchor).toContainText('田中 一郎さんからの問い合わせ');await expect(anchor).toContainText('問い合わせ対応');
  await page.getByLabel('検索語').fill('PC-0073');await page.getByRole('button',{name:'検索',exact:true}).click();await page.getByLabel('検索語').fill('田中');await page.getByRole('button',{name:'検索',exact:true}).click();
- await anchor.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByRole('heading',{name:'実際に行ったことを記録する',exact:true})).toBeVisible();await page.getByRole('button',{name:'戻る',exact:true}).click();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
+ await anchor.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByRole('heading',{name:'今回の対応を記録',exact:true})).toBeVisible();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'探す',exact:true}).click();await page.goBack();await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');await page.goForward();await expect(anchor.getByRole('link',{name:'作業に戻る',exact:true})).toBeVisible();
  const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const eventB=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'別の問い合わせ'});await commands.evaluate(actor,eventB.id,'REQUIRED','別の確認が必要');
  page.once('dialog',dialog=>dialog.dismiss());await page.evaluate(id=>{location.hash=`/support/${id}`;},eventB.id);await expect(page.getByLabel('確認した内容と根拠')).toHaveValue('保存前の確認内容');
@@ -209,8 +221,8 @@ test('Responsibility management shows explainable My Work, Waiting and follow-up
  await login(page);await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'対応管理',exact:true}).click();
  await expect(page.getByRole('heading',{name:'対応管理',exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:'自分の対応',exact:true}).locator('..')).toContainText('田中 一郎さんの問い合わせ');
- await expect(page.getByRole('heading',{name:'Waiting',exact:true}).locator('..')).toContainText('Waiting: 利用者 — 回答待ち');
- await expect(page.getByRole('heading',{name:'フォローが必要',exact:true}).locator('..')).toContainText('Waiting中ですがFollow-upが未設定です');
+ await expect(page.getByRole('heading',{name:'回答・対応待ち',exact:true}).locator('..')).toContainText('回答・対応待ち: 利用者 — 回答待ち');
+ await expect(page.getByRole('heading',{name:'フォローが必要',exact:true}).locator('..')).toContainText('回答・対応待ちですが次回確認予定が未設定です');
  await expect(page.getByRole('heading',{name:'担当確認が必要',exact:true}).locator('..')).toContainText('該当する対応はありません。');
  await page.getByRole('heading',{name:'フォローが必要',exact:true}).locator('..').getByRole('link',{name:'田中 一郎さんの問い合わせ'}).click();
  await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ',exact:true})).toBeVisible();
