@@ -4,6 +4,8 @@ Status: **DRAFT FOR TECHNICAL REVIEW — NOT IMPLEMENTATION APPROVAL**
 Date: 2026-11-02  
 Supersedes: this file's initial broad A/B/C design draft (retained in Git history). The scope is now **minimum modification of existing SUPPORT**, not rebuilding FACTACT.
 
+**Work向けコードレベル差分契約:** [support-human-review2-work-code-patch-20261102.md](support-human-review2-work-code-patch-20261102.md)。実装時の具体的な型・コマンド・UI分岐・Migration・テスト境界はこの文書を優先する。以下はFit/Gapと最小差分の設計経緯として保持する。
+
 ## 0. Existing source and baseline
 
 - main `f9d1dc9f1cba24560b8fd0488b18dbe37311d7b2`
