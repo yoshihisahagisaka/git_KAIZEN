@@ -161,3 +161,45 @@ Approximate impact: **8 existing application files + 1 migration + extensions to
 7. Work receives explicit code-level patch/test contract **after** 統括レビュー. No independent redesign, production migration, main merge or deployment.
 
 **No-Go** for implementation until the remaining technical points in this minimal delta are verified and the code-level patch is approved separately. This Draft PR is documentation-only.
+
+
+## 7. UI-first patch order — PR #10 baseline
+
+The implementation should start by replacing the **human interaction in existing PR #10 files**, then add the smallest Application/Persistence support. No new UX shell, page, form engine or ticket list.
+
+### 7.1 Current `SupportDetail` layout to retain
+
+Retain: heading, Work status bar, full-width main Workspace / Context 75:25 layout, responsive dialog, Active Work Anchor, Explore navigation, current Registry/Work context, human-readable History, audit disclosure, legacy record corrections. Keep the same Work and same source records. A Context visit or computed match never persists anything.
+
+### 7.2 Normal entry — change `Wizard`, not the entire page
+
+Replace the current three-column `checks/action/result` + separate `nextActionOpen/nextAction` normal flow with:
+- One initially blank `対応内容` text area (required).
+- One initially unselected `対応後の状態` choice: `顧客対応・回答待ち`, `要調査`, `様子見`, `対応完了`.
+- `次回確認予定` shown and required for the first three states; never prefill a guessed date.
+- One `対応を記録` action, disabled while invalid/busy/unauthorized.
+- Do not normally request waiting party, separate next-action narrative or legacy structured Action/result/source fields.
+
+For `対応完了`, the same button opens a **single explicit confirmation** with the human-selected Close outcome and the existing close reason/provenance. The response text may be offered as an editable close-reason *suggestion*, and the resulting saved Response ID is a grounded provenance reference. The user confirms that the displayed remaining responsibility has ended. The server must still reject open required Verification. No Close occurs merely by selecting the option. Existing exceptional Close outcomes remain available in the confirmation, not forced to RESOLVED.
+
+A stable request ID is generated for one submission and retained across network retry until success or an intentional changed payload. After success, clear the form; only an explicitly saved DRAFT is restored. Never pull the latest completed/continuation record into a new entry.
+
+### 7.3 Current status and history — reuse PR #10
+
+- Status bar: display the latest effective `顧客対応・回答待ち/要調査/様子見/対応終了` where grounded in the new Response/Reopen event; fall back to the existing status wording for legacy Work.
+- Follow-up: the existing Work projection; Do Not infer Due.
+- The right Context and left confirmation checklist currently duplicate PC data. Use **one** clear comparison row in Context: Registered Device / Inquiry Device / `一致・異なる・未確認` with provenance. The left editor can link/focus it, avoiding duplicate Registry descriptions.
+- A mismatch opens a deterministic caller-first question. Record an answer only after the operator enters it explicitly; source is CALLER and unverified.
+- Extend PR #10 `SupportBusinessHistory` for RESPONSE and REOPENED while preserving old Notes, correction, Waiting, Follow-up, target and Close history. A single response transaction is presented as one human activity, with expandable technical audit.
+- Move current `LifecyclePanel`'s multiple routine buttons behind exceptional/legacy operations (if still needed). Do not make operators complete those commands separately for the new normal flow.
+- On a completed Work, show `対応中に戻す` next to the completed summary. Require reason, one of the three active situations and next check, with one explicit action. Do not call the old `ResumeWork` (which only exits Waiting and does not reopen completed Work).
+
+### 7.4 Patch sequence and review checkpoints
+
+1. **UI query-only change**: PR #10 comparison display and deterministic caller-first guide using existing Query data. No Migration. Human Review of display/unknown/provenance.
+2. **Atomic response bridge**: introduce RESPONSE kind/one Application Command and small schema CHECK changes, then replace daily entry UI. Validate 4 states, one-action history, retry, rollback and legacy compatibility.
+3. **Reopen/re-Close**: close sequence constraint and REOPENED event; add completed Work button, history and tests.
+4. **Target statement persistence**: extend existing target Observation kind only if needed to retain explicit caller answers and human comparison decisions; no new table. Add test for source and correction.
+5. Run full regression and the combined PR #9 Runner + PR #10 UI Human Review. Stop on UX/authority drift. Work does not make new Product decisions.
+
+Do not bundle optional Knowledge versioning, Team comments, multi-Work handoff, escalation workflow or Registry Change UI into A/B/C. These remain later accepted-but-unimplemented items and are separate slices.
