@@ -136,7 +136,7 @@ type RecordSupportResponseInput = {
 - 完了時のprovenanceTypeはHUMAN_DECISION、provenanceReferenceは**同一トランザクションで生成されたResponse record.id**。UIは別の「根拠」欄を重複入力させない。Evidenceに由来する例外Closeは既存の詳細/legacy `/close`を使用。
 - Zod `strictObject`、UUID、nonnegative revision、`datetime`、CSRF/Origin/Sessionは既存共通middlewareのまま。認可は`SupportCommands.run`＋`context`の現行Contract executeRolesで再評価。
 
-新式下書きは既存 `POST .../records` のDRAFTとしてnotes.form=SIMPLE_RESPONSEを受け付ける（新エンドポイント・新テーブルなし）。サーバーでform/文字長/状態/dateの型を検証し、未選択値や日付なしでもDRAFTだけは許可。 `recordWork` のDRAFT以外は既存SupportNotesを厳密要求し、Responseをその既存メソッドへ流さない。再送比較は既存`stable`の順序正規化を使う。
+新式下書きは既存 `POST .../records` のDRAFTとしてnotes.form=SIMPLE_RESPONSEを受け付ける（新エンドポイント・新テーブルなし）。サーバーでform/文字長/状態/dateの型を検証し、未選択値や日付なしでもDRAFTだけは許可。 `recordWork` の入力型は `{kind:'DRAFT';notes:SupportNotes|SupportResponseDraftNotes} | {kind:'COMPLETION'|'CORRECTION';notes:SupportNotes}` の判別Unionにする。これによりnon-DRAFT分岐のnotes型をSupportNotesへ絞れる。旧`sameNotes`比較はDraftの形が増えるため`stable`でのオブジェクト完全比較へ置換する。DRAFT以外は既存SupportNotesを厳密要求し、Responseをその既存メソッドへ流さない。
 
 ### 3.3 Application: recordSupportResponse
 
