@@ -33,6 +33,30 @@ begin
    (waiting=false and waiting_party is null and waiting_reason is null)
    or (waiting=true and ((waiting_party is null and waiting_reason is null) or (waiting_party is not null and waiting_reason is not null and length(trim(waiting_party))>0 and length(trim(waiting_reason))>0)))
  );
+
+ select count(*), min(conname) into n,c from pg_constraint where conrelid='factact.support_work_target_observations'::regclass and contype='c' and pg_get_constraintdef(oid) like '%kind%' and pg_get_constraintdef(oid) like '%IDENTIFICATION%' and pg_get_constraintdef(oid) not like '%value%';
+ if n<>1 then raise exception 'support target observation kind constraint not uniquely identified'; end if;
+ execute format('alter table factact.support_work_target_observations drop constraint %I',c);
+ alter table factact.support_work_target_observations add check(kind in ('IDENTIFICATION','OWNERSHIP','MANAGEMENT_STATE','REGISTRY_COMPARISON','CALLER_STATEMENT'));
+
+ select count(*), min(conname) into n,c from pg_constraint where conrelid='factact.support_work_target_observations'::regclass and contype='c' and pg_get_constraintdef(oid) like '%value%' and pg_get_constraintdef(oid) like '%PARTIALLY_IDENTIFIED%' and pg_get_constraintdef(oid) not like '%kind%';
+ if n<>1 then raise exception 'support target observation value constraint not uniquely identified'; end if;
+ execute format('alter table factact.support_work_target_observations drop constraint %I',c);
+ alter table factact.support_work_target_observations add check(value in ('UNIDENTIFIED','PARTIALLY_IDENTIFIED','PERSONALLY_OWNED','COMPANY_OWNED','MANAGED','UNMANAGED','MATCH','DIFFERENT','UNKNOWN'));
+
+ select count(*), min(conname) into n,c from pg_constraint where conrelid='factact.support_work_target_observations'::regclass and contype='c' and pg_get_constraintdef(oid) like '%kind%' and pg_get_constraintdef(oid) like '%value%' and pg_get_constraintdef(oid) like '%MANAGEMENT_STATE%';
+ if n<>1 then raise exception 'support target observation combination constraint not uniquely identified'; end if;
+ execute format('alter table factact.support_work_target_observations drop constraint %I',c);
+ alter table factact.support_work_target_observations add check(
+   (kind='IDENTIFICATION' and value in ('UNIDENTIFIED','PARTIALLY_IDENTIFIED','UNKNOWN')) or
+   (kind='OWNERSHIP' and value in ('PERSONALLY_OWNED','COMPANY_OWNED','UNKNOWN')) or
+   (kind='MANAGEMENT_STATE' and value in ('MANAGED','UNMANAGED','UNKNOWN')) or
+   (kind='REGISTRY_COMPARISON' and value in ('MATCH','DIFFERENT','UNKNOWN') and source_type='OPERATOR') or
+   (kind='CALLER_STATEMENT' and value='UNKNOWN' and source_type='CALLER' and length(trim(detail))>0)
+ );
+
+ alter table factact.support_work_target_observations add column source_snapshot jsonb not null default '{}'::jsonb;
+ alter table factact.support_work_target_observations add check(jsonb_typeof(source_snapshot)='object');
 end $$;
 
 commit;
