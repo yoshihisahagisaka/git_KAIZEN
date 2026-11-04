@@ -39,10 +39,10 @@ export interface SupportDeviceContext {
 // Work-scoped observations retain what is known about a target without promoting it to Registry fact.
 export interface SupportTargetObservation {
  id:string;tenantId:string;workId:string;targetContextId:string;requestId:string;revision:number;
- kind:'IDENTIFICATION'|'OWNERSHIP'|'MANAGEMENT_STATE';
- value:'UNIDENTIFIED'|'PARTIALLY_IDENTIFIED'|'PERSONALLY_OWNED'|'COMPANY_OWNED'|'MANAGED'|'UNMANAGED'|'UNKNOWN';
+ kind:'IDENTIFICATION'|'OWNERSHIP'|'MANAGEMENT_STATE'|'REGISTRY_COMPARISON'|'CALLER_STATEMENT';
+ value:'UNIDENTIFIED'|'PARTIALLY_IDENTIFIED'|'PERSONALLY_OWNED'|'COMPANY_OWNED'|'MANAGED'|'UNMANAGED'|'MATCH'|'DIFFERENT'|'UNKNOWN';
  detail:string;sourceType:'OPERATOR'|'CALLER'|'OTHER';evidenceId:string|null;
- supersedesObservationId:string|null;recordedByOperatorId:string;recordedAt:string;
+ sourceSnapshot:Record<string,unknown>;supersedesObservationId:string|null;recordedByOperatorId:string;recordedAt:string;
 }
 export interface SupportEligibility {state:'UNKNOWN';reason:'NO_APPLICABLE_RULE';ruleSource:null}
 export interface SupportLifecycleEvent {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'CONTINUATION_RECORDED'|'RESPONSE_RECORDED'|'WAITING_SET'|'RESUMED'|'NEXT_ACTION_CLEARED'|'REOPENED';nextAction:string;waitingParty:string;waitingReason:string;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
