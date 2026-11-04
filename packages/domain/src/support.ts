@@ -19,11 +19,16 @@ export interface SupportNotes {
  resultDetails:string;
  exceptionReason:string;
 }
-export interface SupportRecord {
- id:string;tenantId:string;workId:string;requestId:string;revision:number;
- kind:'DRAFT'|'COMPLETION'|'CORRECTION'|'CONTINUATION';notes:SupportNotes;correctionReason:string;
- recordedByOperatorId:string;recordedAt:string;
-}
+export type ResponseDisposition='CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED';
+export interface SupportResponseNotes {responseText:string;disposition:ResponseDisposition}
+export interface SupportResponseDraftNotes {form:'SIMPLE_RESPONSE';responseText:string;disposition:ResponseDisposition|null;followUpAt:string|null}
+interface SupportRecordBase {id:string;tenantId:string;workId:string;requestId:string;revision:number;correctionReason:string;recordedByOperatorId:string;recordedAt:string}
+export type SupportRecord=
+ | SupportRecordBase&{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION';notes:SupportNotes}
+ | SupportRecordBase&{kind:'DRAFT';notes:SupportNotes|SupportResponseDraftNotes}
+ | SupportRecordBase&{kind:'RESPONSE';notes:SupportResponseNotes};
+export const isLegacySupportRecord=(record:SupportRecord):record is Extract<SupportRecord,{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION'}>=>['COMPLETION','CORRECTION','CONTINUATION'].includes(record.kind);
+export const isLegacySupportNotes=(notes:SupportRecord['notes']):notes is SupportNotes=>'checks' in notes;
 // Deliberate Work Context, not a Registry fact and not diagnostic evidence of a cause.
 export interface SupportDeviceContext {
  id:string;tenantId:string;workId:string;requestId:string;revision:number;
@@ -40,7 +45,7 @@ export interface SupportTargetObservation {
  supersedesObservationId:string|null;recordedByOperatorId:string;recordedAt:string;
 }
 export interface SupportEligibility {state:'UNKNOWN';reason:'NO_APPLICABLE_RULE';ruleSource:null}
-export interface SupportLifecycleEvent {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'CONTINUATION_RECORDED'|'WAITING_SET'|'RESUMED'|'NEXT_ACTION_CLEARED';nextAction:string;waitingParty:string;waitingReason:string;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
+export interface SupportLifecycleEvent {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'CONTINUATION_RECORDED'|'RESPONSE_RECORDED'|'WAITING_SET'|'RESUMED'|'NEXT_ACTION_CLEARED';nextAction:string;waitingParty:string;waitingReason:string;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
 export interface SupportFollowUp {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'SET'|'CLEARED';followUpAt:string|null;sourceType:'HUMAN_DECISION'|'CONTRACT'|'RULE'|'CUSTOMER_COMMITMENT'|'OTHER';basisText:string;reason:string;supersedesFollowUpId:string|null;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
 export interface SupportCloseDecision {id:string;tenantId:string;workId:string;requestId:string;outcome:SupportCloseOutcome;closeReason:string;provenanceType:'HUMAN_DECISION'|'EVIDENCE'|'RULE'|'FORMAL_TRANSFER'|'OTHER';provenanceReference:string;evidenceId:string|null;guardSnapshot:Record<string,unknown>;commandPayload:Record<string,unknown>;decidedByOperatorId:string;decidedAt:string}
 export const supportActionLabels:Record<SupportNotes['action'],string>={RESTART_GUIDANCE:'PC再起動を案内',CONNECTION_GUIDANCE:'接続手順を案内',OTHER_GUIDANCE:'その他の確認・案内',NO_ACTION_REQUIRED:'確認の結果、追加対応なし'};
