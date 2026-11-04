@@ -70,6 +70,15 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .support-context-mobile { display:none; margin-bottom:18px; }
 .support-summary dt { font-weight:600; margin-top:14px; }
 .support-summary dd { margin:4px 0 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.device-comparison { margin:16px 0; padding:16px; background:white; border:1px solid #cbdadd; border-radius:6px; }
+.device-comparison-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:#d5e1e3; border:1px solid #d5e1e3; }
+.device-comparison-grid > div { min-width:0; padding:12px; background:white; }
+.device-comparison-grid span,.device-comparison-grid small { display:block; color:#506970; }
+.device-comparison-grid strong { display:block; margin:4px 0; overflow-wrap:anywhere; }
+.comparison-match { color:#216a4e; }
+.comparison-different { color:#922b1c; }
+.comparison-unconfirmed { color:#73540f; }
+.comparison-note { font-size:13px; color:#506970; }
 .context-dialog { width:min(760px,92vw); max-height:85vh; overflow:auto; border:1px solid #80989f; border-radius:10px; padding:24px; color:#203c43; }
 .context-dialog::backdrop { background:rgb(15 36 40 / 45%); }
 .context-dialog header { display:flex; justify-content:space-between; align-items:center; padding:0; gap:16px; }
@@ -97,3 +106,4 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 @media(max-width:900px) { .workspace { grid-template-columns:1fr; } .support-context-desktop { display:none; } .support-context-mobile { display:block; } .work-status-bar { position:static; } }
 @media(max-width:700px) { .app-shell { grid-template-columns:1fr; } nav { padding:12px; } nav a { display:inline-block; margin:4px; padding:8px; } nav p,nav strong { display:none; } .page-content { padding:18px; } .account,header { flex-wrap:wrap; padding:12px 18px; } h1 { font-size:23px; } }
 @media(max-width:620px) { .work-status-bar,.confirmation-checklist dl { grid-template-columns:1fr; } .section-heading { display:block; } .form-actions { display:block; } .form-actions button { width:100%; } }
+@media(max-width:620px) { .device-comparison-grid { grid-template-columns:1fr; } }
