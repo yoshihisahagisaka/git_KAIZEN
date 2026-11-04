@@ -47,6 +47,14 @@ export class SupportQueries {
   const targetObservations=work?await r.targetObservations(work.id):[];
   const currentDeviceContext=rawDeviceContextHistory.at(-1)?.kind==='ENDED'?null:rawDeviceContextHistory.at(-1)??null;
   const currentContextDevice=currentDeviceContext?.deviceId?found(await r.core.device(currentDeviceContext.deviceId)):null;
+  const deviceComparison={
+   result:deviceFact&&currentDeviceContext&&currentContextDevice
+    ?deviceFact.device.id===currentContextDevice.id?'MATCH' as const:'DIFFERENT' as const
+    :'UNCONFIRMED' as const,
+   registry:deviceFact?{deviceId:deviceFact.device.id,assetTag:deviceFact.device.assetTag,relationId:deviceFact.relation.id,verifiedAt:deviceFact.relation.verifiedAt}:null,
+   target:currentDeviceContext&&currentContextDevice?{deviceId:currentContextDevice.id,assetTag:currentContextDevice.assetTag,contextId:currentDeviceContext.id,source:currentDeviceContext.confirmationSource,recordedAt:currentDeviceContext.recordedAt}:null,
+   targetUnidentified:currentDeviceContext?.kind==='UNIDENTIFIED'
+  };
   const deviceContextHistory=await Promise.all(rawDeviceContextHistory.map(async context=>({context,device:context.deviceId?found(await r.core.device(context.deviceId)):null,operator:found(await r.core.operator(context.recordedByOperatorId))})));
   const contract=found(await r.core.contract(event.contractProfileId));
   const records=work?await r.records(work.id):[];
@@ -78,7 +86,7 @@ export class SupportQueries {
    previousWork.push({eventId:other.id,work:w,observation:await r.observation(other.id),action:await r.core.action(d.actionId),evidence:await r.evidence(d.evidenceId),record:(await r.records(w.id)).filter(x=>x.kind!=='DRAFT').at(-1)??null});
   }
   const needsFollowUp=!!work&&work.status!=='COMPLETED'&&((work.waiting&&!work.followUpAt)||(!!work.followUpAt&&new Date(work.followUpAt)<=new Date()));
-  return {event,person,observation,evaluation,work,owner:work?await r.core.operator(work.workOwnerOperatorId):null,deviceFact,currentDeviceContext,currentContextDevice,deviceContextHistory,targetObservations,lifecycleEvents,followUps,closeDecision,businessHistory:history,needsFollowUp,eligibility:{state:'UNKNOWN' as const,reason:'NO_APPLICABLE_RULE' as const,ruleSource:null},unknowns:['VPN利用要否','発生時刻','表示されたエラー','他ネットワークでの再現'],decision,evidence,action,records,recordAuthors,previousWork,knowledge:work?await r.knowledge(work.id):null,relatedKnowledge:await r.candidates(event.serviceId),timeline:await r.core.timeline(eventId),executeRoles:contract.configurationJson.support?.executeRoles??[]};
+  return {event,person,observation,evaluation,work,owner:work?await r.core.operator(work.workOwnerOperatorId):null,deviceFact,currentDeviceContext,currentContextDevice,deviceComparison,deviceContextHistory,targetObservations,lifecycleEvents,followUps,closeDecision,businessHistory:history,needsFollowUp,eligibility:{state:'UNKNOWN' as const,reason:'NO_APPLICABLE_RULE' as const,ruleSource:null},unknowns:['VPN利用要否','発生時刻','表示されたエラー','他ネットワークでの再現'],decision,evidence,action,records,recordAuthors,previousWork,knowledge:work?await r.knowledge(work.id):null,relatedKnowledge:await r.candidates(event.serviceId),timeline:await r.core.timeline(eventId),executeRoles:contract.configurationJson.support?.executeRoles??[]};
  });}
 }
 export type SupportListView=Awaited<ReturnType<SupportQueries['list']>>;

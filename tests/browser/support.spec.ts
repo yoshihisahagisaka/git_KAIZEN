@@ -53,8 +53,8 @@ async function login(page:import('@playwright/test').Page){await page.goto(origi
 test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, correction and next inquiry',async({page})=>{
  await login(page);const eventId=await intake(page);
  const context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});
- await expect(context.getByRole('heading',{name:'登録情報: PC-0073'})).toBeVisible();
- await expect(context.getByText('確認済み',{exact:true})).toBeVisible();
+ await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('PC-0073');
+ await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('未確認');
  await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('VPN利用要否: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
  await expect(page.getByRole('article',{name:'本人からの申告'}).getByText('会社PCでVPNにつながりません',{exact:true})).toBeVisible();
  await expect(page.getByText('本人から聞いた内容です。技術的な障害として確認済みではありません。')).toHaveCount(0);
@@ -118,7 +118,7 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await expect(history.getByText('PC再起動を案内',{exact:true}).first()).toBeVisible();
  await expect(history.getByText('本人から接続できたと回答。確認時刻は10:15。',{exact:true}).first()).toBeVisible();
  await expect(history.getByText('訂正後の記録',{exact:false})).toBeVisible();await expect(history.locator('pre:visible')).toHaveCount(0);await history.getByText('対応の詳しい履歴と監査',{exact:true}).click();await history.getByText('監査用の詳細',{exact:true}).click();await expect(history.locator('pre:visible').first()).toBeVisible();await history.getByRole('button',{name:'閉じる',exact:true}).click();
- await expect(context.getByRole('heading',{name:'登録情報: PC-0073'})).toBeVisible();
+ await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('PC-0073');
  // Optional V1 candidate creation and provenance are still usable after completion.
  await page.goto(`${origin}/#/support/${eventId}`);
  await page.getByText('次の対応に役立つこと（任意・特になしで完了できます）',{exact:true}).click();
@@ -136,6 +136,7 @@ test('UX-01 uses a wide Work surface and keeps Context available as a dialog on 
  const status=page.getByRole('region',{name:'現在の対応状況'}),work=page.getByRole('region',{name:'対応を記録'}),context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});await expect(status).toContainText('次にやること');await expect(status).toContainText('次回確認予定');
  const workBox=await work.boundingBox(),contextBox=await context.boundingBox();expect(workBox!.width).toBeGreaterThan(contextBox!.width*2.5);expect(workBox!.width).toBeLessThan(contextBox!.width*3.5);
  await page.setViewportSize({width:800,height:900});await expect(context).toBeHidden();const open=page.getByRole('button',{name:'参照情報',exact:true});await expect(open).toBeVisible();await open.click();await expect(page.getByRole('dialog',{name:'参照情報'})).toContainText('本人からの申告');
+ await expect(page.getByRole('dialog',{name:'参照情報'}).getByRole('region',{name:'登録情報と今回の問合せ対象'})).toBeVisible();
 });
 
 test('UX-02 records consecutive actions from a fresh form and keeps both history entries',async({page})=>{
@@ -197,6 +198,17 @@ test('SUPPORT Device Work Context requires an explicit Work-side confirmation an
  await expect(page.getByRole('region',{name:'今回の対応対象'}).locator('strong')).toHaveText('PC-0073');
  expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);
  expect((await db.admin.query('select count(*)::int as n from factact.support_work_device_contexts c join factact.work w on w.id=c.work_id where w.support_event_id=$1',[eventId])).rows[0].n).toBe(1);
+});
+
+test('A1 compares Registry and current target as read-only MATCH, DIFFERENT or UNCONFIRMED',async({page})=>{
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});
+ await login(page);const eventId=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();await expect(page.getByRole('heading',{name:'今回の対応を記録',exact:true})).toBeVisible();
+ const workId=(await db.admin.query('select id from factact.work where support_event_id=$1',[eventId])).rows[0].id,comparison=page.getByRole('region',{name:'登録情報と今回の問合せ対象'});
+ await expect(comparison).toContainText('PC-0073');await expect(comparison.getByText('未確認',{exact:true})).toBeVisible();
+ const before={relations:(await db.admin.query('select count(*)::int n from factact.relations')).rows[0].n,contexts:(await db.admin.query('select count(*)::int n from factact.support_work_device_contexts')).rows[0].n,audit:(await db.admin.query('select count(*)::int n from factact.audit_events')).rows[0].n};
+ await page.reload();expect((await db.admin.query('select count(*)::int n from factact.relations')).rows[0].n).toBe(before.relations);expect((await db.admin.query('select count(*)::int n from factact.support_work_device_contexts')).rows[0].n).toBe(before.contexts);expect((await db.admin.query('select count(*)::int n from factact.audit_events')).rows[0].n).toBe(before.audit);
+ await commands.confirmContextDevice(actor,workId,{requestId:randomUUID(),expectedRevision:0,deviceId:ids.device,confirmationSource:'OPERATOR'});await page.reload();await expect(comparison.getByText('一致',{exact:true})).toBeVisible();
+ const other=randomUUID();await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,display_name,device_status) values($1,$2,'PC-0099','Temporary PC','AVAILABLE')",[other,ids.tenant]);await commands.correctContextDevice(actor,workId,{requestId:randomUUID(),expectedRevision:1,deviceId:other,confirmationSource:'CALLER',reason:'本人が一時借用端末を使用'});await page.reload();await expect(comparison.getByText('異なる',{exact:true})).toBeVisible();await expect(comparison).toContainText('登録情報では【PC-0073】ですが、今回の対象は【PC-0099】です。');await expect(comparison).toContainText('最近交換・一時借用などはありましたか？');
 });
 
 test('completed SUPPORT Work shows Device Context history without edit controls',async({page})=>{
