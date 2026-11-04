@@ -18,6 +18,7 @@ import { createApp } from '../../apps/web/src/server/app.js';
 import type { Config } from '../../apps/web/src/server/config.js';
 
 let db:Awaited<ReturnType<typeof testDatabase>>,server:Server,origin:string;
+test.use({timezoneId:'Asia/Tokyo'});
 test.beforeAll(async()=>{
   db=await testDatabase();const port=await freePort();origin=`http://127.0.0.1:${port}`;
   const config:Config={nodeEnv:'test',port,origin,databaseUrl:'postgresql://test-only',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test-only',clientSecret:'test-only',redirectUri:`${origin}/auth/callback`};
@@ -79,15 +80,15 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  await person.getByRole('button',{name:'閉じる',exact:true}).click();
  await expect(page.getByRole('button',{name:'対象者の現在の利用状況',exact:true})).toBeFocused();
  expect(page.url()).toBe(workUrl);await expect(page.getByLabel('対応内容')).toHaveValue('本人は今朝から接続不可と回答。VPN利用対象は契約窓口に確認中。');
- await page.getByRole('button',{name:'下書き保存',exact:true}).click();
+ await page.getByLabel('対応後の状態').selectOption('INVESTIGATING');await entryRegion.getByLabel('次回確認予定',{exact:true}).fill('2026-11-03T09:00');await page.getByRole('button',{name:'下書き保存',exact:true}).click();
  await expect(page.getByText('下書きを保存しました',{exact:true})).toBeVisible();
- await page.reload();await expect(page.getByLabel('対応内容')).toHaveValue('本人は今朝から接続不可と回答。VPN利用対象は契約窓口に確認中。');
+ await page.reload();await expect(page.getByLabel('対応内容')).toHaveValue('本人は今朝から接続不可と回答。VPN利用対象は契約窓口に確認中。');await expect(page.getByRole('region',{name:'対応を記録'}).getByLabel('次回確認予定',{exact:true})).toHaveValue('2026-11-03T09:00');
  await page.getByLabel('対応後の状態').selectOption('COMPLETED');
  await expect(page.getByText('対応の記録だけではWorkをCloseしません。',{exact:true})).toHaveCount(0);
  await expect(page.getByText(/WORKAROUND|ROOT_CAUSE|PERMANENT_RESOLUTION/)).toHaveCount(0);
  await page.screenshot({path:test.info().outputPath('support-v2-review.png'),fullPage:true});
- await page.getByRole('button',{name:'対応を記録',exact:true}).click();
- const close=page.getByRole('dialog',{name:'対応完了の確認'});await expect(close).toBeVisible();await close.getByLabel('終了理由').fill('本人への案内を完了したため');await close.getByLabel(/残る回答待ち/).check();await close.getByRole('button',{name:'確認して対応を終了'}).click();
+ const recordButton=page.getByRole('button',{name:'対応を記録',exact:true}),workId=(await db.admin.query('select id from factact.work where support_event_id=$1',[eventId])).rows[0].id,beforeCancel=(await db.admin.query('select count(*)::int n from factact.support_work_records where work_id=$1',[workId])).rows[0].n;await recordButton.click();
+ let close=page.getByRole('dialog',{name:'対応完了の確認'});await expect(close).toBeVisible();await expect(close.getByLabel('終了区分')).toBeFocused();await page.keyboard.press('Escape');await expect(close).toHaveCount(0);await expect(recordButton).toBeFocused();expect((await db.admin.query('select count(*)::int n from factact.support_work_records where work_id=$1',[workId])).rows[0].n).toBe(beforeCancel);await recordButton.click();close=page.getByRole('dialog',{name:'対応完了の確認'});await close.getByLabel('終了理由').fill('本人への案内を完了したため');await close.getByLabel(/残る回答待ち/).check();await close.getByRole('button',{name:'確認して対応を終了'}).click();
  await expect(page.getByRole('status')).toHaveText('確認・案内の対応を完了しました');
  const w=(await db.admin.query('select id,outcome from factact.work where support_event_id=$1',[eventId])).rows[0];
  expect(w.outcome).toBe('RESOLVED');
@@ -116,6 +117,12 @@ test('UX-02 records consecutive actions from a fresh form and keeps both history
  await login(page);const eventId=await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
  const entry=page.getByRole('region',{name:'対応を記録'}),history=page.getByRole('region',{name:'問い合わせの対応履歴'});let count=0;for(const text of ['1回目の対応','2回目の対応'] as const){await entry.getByLabel('対応内容').fill(text);await entry.getByLabel('対応後の状態').selectOption('INVESTIGATING');await entry.getByLabel('次回確認予定',{exact:true}).fill('2026-11-03T09:00');await entry.getByRole('button',{name:'対応を記録',exact:true}).click();await expect(history.getByText('対応を記録しました',{exact:true})).toHaveCount(++count);await expect(entry.getByLabel('対応内容')).toHaveValue('');await expect(entry.getByLabel('対応後の状態')).toHaveValue('');}
  const workId=(await db.admin.query('select id from factact.work where support_event_id=$1',[eventId])).rows[0].id;expect((await db.admin.query('select count(*)::int n from factact.support_work_records where work_id=$1',[workId])).rows[0].n).toBe(2);
+});
+
+test('legacy V1 keeps conditional correction fields and reference-knowledge operation',async({page})=>{
+ const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()}),event=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'V1互換確認'}),work=(await commands.evaluate(actor,event.id,'REQUIRED','V1互換確認')).work!;await db.admin.query('update factact.work set lifecycle_version=1 where id=$1',[work.id]);await commands.recordResolution(actor,work.id,{mode:'GUIDANCE_ONLY',diagnosticEvidence:'確認根拠',rationale:'案内が必要',actionSummary:'案内を実施'});
+ await login(page);await page.goto(`${origin}/#/support/${event.id}`);await page.getByLabel('確認した内容と根拠').fill('確認した');await page.getByLabel('行った対応').selectOption('OTHER_GUIDANCE');await expect(page.getByLabel('対応の補足（必須）')).toBeVisible();await page.getByLabel('対応の補足（必須）').fill('個別案内');await page.getByLabel('標準外・追加対応なしの理由').fill('例外案内のため');await page.getByLabel('接続の結果').selectOption('UNCONFIRMED');await page.getByLabel('未確認の状況（必須）').fill('本人の回答待ち');await page.getByRole('button',{name:'問い合わせ対応を完了'}).click();await expect(page.getByRole('button',{name:'記録を訂正',exact:true})).toBeVisible();await page.getByRole('button',{name:'記録を訂正',exact:true}).click();await page.getByLabel('行った対応').selectOption('OTHER_GUIDANCE');await page.getByLabel('対応の補足（必須）').fill('訂正した個別案内');await page.getByLabel('標準外・追加対応なしの理由').fill('訂正後も例外案内');await page.getByLabel('接続の結果').selectOption('UNCONFIRMED');await page.getByLabel('未確認の状況（必須）').fill('引き続き回答待ち');await page.getByLabel('訂正理由').fill('記録内容の補正');await page.getByRole('button',{name:'訂正内容を確認'}).click();await page.getByRole('button',{name:'訂正履歴を保存'}).click();await expect(page.getByRole('region',{name:'問い合わせの対応履歴'})).toContainText('対応記録を訂正しました');
+ await page.getByText('次の対応に役立つこと（任意・特になしで完了できます）',{exact:true}).click();await page.getByLabel('参考知識の見出し').fill('V1参考');await page.getByLabel('役立った内容・適用条件・限界').fill('V1の参考情報');await page.getByRole('button',{name:'参考知識の候補を保存'}).click();await expect(page.getByText('参考知識の候補として保存済みです。')).toBeVisible();expect((await db.admin.query('select count(*)::int n from factact.knowledge_candidates where source_work_id=$1',[work.id])).rows[0].n).toBe(1);
 });
 
 test('SUPPORT V2 exception and unknown paths remain explicit',async({page})=>{
