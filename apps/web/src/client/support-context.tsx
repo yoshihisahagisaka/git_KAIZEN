@@ -3,6 +3,7 @@ import type {SupportDetailView} from '../../../../packages/application/src/suppo
 import type {PersonContextView,WorkDetailView} from '../../../../packages/application/src/join-queries.js';
 import {useRead} from './support-ui.js';
 import {Notes} from './support-wizard.js';
+import {isLegacySupportRecord} from '../../../../packages/domain/src/support.js';
 
 const time=(s:string)=>new Date(s).toLocaleString('ja-JP');
 // Native modal: keeps the Work mounted, traps focus, supports Escape and restores focus.
@@ -37,7 +38,7 @@ function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision
  <ContextDialog title="対象者の現在の利用状況"><PersonContext id={v.person.id} revision={revision}/></ContextDialog>
  {v.deviceFact&&<ContextDialog title="利用PCの確認元"><JoinSource id={v.deviceFact.sourceChange.workId} revision={revision}/></ContextDialog>}
  <details><summary>未確認の管理情報</summary><ul>{v.unknowns.map(x=><li key={x}>{x}: 未確認</li>)}</ul><p>未確認は「なし」ではありません。今回の確認記録は管理情報を自動変更しません。</p></details>
- <ContextDialog title="過去の関連する対応"><section aria-label="過去の関連する対応"><p>同じ人・同じサービスの完了した対応です。今回の原因や推奨対応を意味しません。</p>{!v.previousWork.length&&<p>該当する対応はまだありません。</p>}{v.previousWork.map(h=><article key={h.work.id}><h3>{time(h.work.closedAt!)} — {v.person.displayName}さんの問い合わせ</h3><p>本人の申告: {h.observation?.contentText}</p>{h.record?<Notes notes={h.record.notes}/>:<><p>行ったこと: {h.action?.resultSummary}</p><p>確認・結果の記録: {h.evidence?.contentText}</p></>}{h.record?.kind==='CORRECTION'&&<p>訂正後の記録</p>}<details><summary>対応の詳しい履歴と監査</summary><PreviousSupport id={h.eventId} revision={revision}/></details></article>)}</section></ContextDialog>
+ <ContextDialog title="過去の関連する対応"><section aria-label="過去の関連する対応"><p>同じ人・同じサービスの完了した対応です。今回の原因や推奨対応を意味しません。</p>{!v.previousWork.length&&<p>該当する対応はまだありません。</p>}{v.previousWork.map(h=><article key={h.work.id}><h3>{time(h.work.closedAt!)} — {v.person.displayName}さんの問い合わせ</h3><p>本人の申告: {h.observation?.contentText}</p>{h.record?.kind==='RESPONSE'?<p>対応内容: {h.record.notes.responseText} / 状態: {h.record.notes.disposition}</p>:h.record&&isLegacySupportRecord(h.record)?<Notes notes={h.record.notes}/>:<><p>行ったこと: {h.action?.resultSummary}</p><p>確認・結果の記録: {h.evidence?.contentText}</p></>}{h.record?.kind==='CORRECTION'&&<p>訂正後の記録</p>}<details><summary>対応の詳しい履歴と監査</summary><PreviousSupport id={h.eventId} revision={revision}/></details></article>)}</section></ContextDialog>
  <ContextDialog title="参考知識を見る"><p>参考候補です。承認済みの手順・ルールではありません。</p>{!v.relatedKnowledge.length&&<p>このサービスの候補はまだありません。</p>}{v.relatedKnowledge.map(k=><article key={k.id}><h3>{k.title}</h3><p>参考知識の候補 / 未承認 — 適用ルールではありません</p><p>{k.contentText}</p><details className="audit-detail"><summary>元の対応・確認根拠</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}</ContextDialog>
  </>}
 export function SupportContext({view:v,revision,target}:{view:SupportDetailView;revision:number;target?:ReactNode}){return <><aside className="support-context-desktop" aria-label="確認済みの現在の利用状況"><h2>参照情報</h2><SupportContextContent v={v} revision={revision} target={target}/></aside><div className="support-context-mobile"><ContextDialog title="参照情報"><SupportContextContent v={v} revision={revision} target={target}/></ContextDialog></div></>;}

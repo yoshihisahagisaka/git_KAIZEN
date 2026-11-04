@@ -14,8 +14,10 @@ import type {Operator} from '../../packages/domain/src/operator.js';
 import {createApp} from '../../apps/web/src/server/app.js';
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {tokenHash} from '../../apps/web/src/server/auth/pkce.js';
+import type {SupportNotes} from '../../packages/domain/src/support.js';
 let db:Awaited<ReturnType<typeof testDatabase>>,s:SupportCommands,q:SupportQueries,j:JoinCommands,jq:JoinQueries;
 const a:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Demo',tenantName:'Demo',roles:['ADMIN','OPERATOR','REVIEWER']};
+const legacyNotes=(record:{notes:unknown})=>record.notes as SupportNotes;
 const clock={id:randomUUID,now:()=> '2026-10-01T09:00:00.000Z'};
 const resolution={mode:'GUIDANCE_ONLY' as const,diagnosticEvidence:'デモ: 契約窓口の利用対象確認と本人のエラー表示を照合',rationale:'利用対象の根拠が得られたため、既知の接続手順を案内する',actionSummary:'接続手順の確認方法を案内した。設定変更は行っていない'};
 const notes:import('../../packages/domain/src/support.js').SupportNotes={checks:'本人は今朝から接続不可と申告。利用対象は未確認。',action:'RESTART_GUIDANCE',actionDetails:'本人に再起動を案内し、実施したとの回答。',result:'CONNECTED',resultSource:'CALLER',resultDetails:'本人は再接続できたと回答。',exceptionReason:''};
@@ -112,7 +114,7 @@ it('V2 normal intake records explicit human basis; exception still needs reason'
 it('V2 drafts are editable append-only records, not Actions, Decisions or Facts',async()=>{
  const {e,w}=await work();const first=await s.recordWork(a,w.id,recordInput('DRAFT'));
  await s.recordWork(a,w.id,{...recordInput('DRAFT',first.revision),notes:{...notes,checks:'訂正した確認内容'}});
- const v=await q.detail(a,e.id);expect(v.records).toHaveLength(2);expect(v.records[0]?.notes.checks).toBe(notes.checks);expect(v.records[1]?.notes.checks).toBe('訂正した確認内容');expect(v.decision).toBeNull();expect(v.work?.status).toBe('OPEN');
+  const v=await q.detail(a,e.id);expect(v.records).toHaveLength(2);expect(legacyNotes(v.records[0]!).checks).toBe(notes.checks);expect(legacyNotes(v.records[1]!).checks).toBe('訂正した確認内容');expect(v.decision).toBeNull();expect(v.work?.status).toBe('OPEN');
  expect((await db.admin.query('select * from factact.actions where work_id=$1',[w.id])).rows).toHaveLength(0);
  await expect(withTenant(db.runtime,a.tenantId,c=>c.query('delete from factact.support_work_records where work_id=$1',[w.id]))).rejects.toMatchObject({code:'42501'});
  await expect(withTenant(db.runtime,a.tenantId,c=>c.query("update factact.support_work_records set correction_reason='overwrite' where work_id=$1",[w.id]))).rejects.toMatchObject({code:'42501'});
@@ -123,7 +125,7 @@ it('V2 finish atomically records Action, outcome evidence, Decision and completi
  expect(v.work?.outcome).toBe('COMPLETED');expect(v.evidence?.contentText).toContain('CALLER');expect(v.evidence?.contentText).toContain('接続できた');expect(v.decision?.rationale).toContain('標準手順');expect(v.action?.resultSummary).toContain('PC再起動');expect(v.knowledge).toBeNull();expect(v.unknowns).toHaveLength(4);
  expect((await db.admin.query('select * from factact.relations')).rows).toEqual(before);
  expect((await db.admin.query('select * from factact.changes where work_id=$1',[w.id])).rows).toHaveLength(0);
- const next=await intake();expect((await q.detail(a,next.id)).previousWork[0]?.record?.notes.resultSource).toBe('CALLER');
+  const next=await intake();expect(legacyNotes((await q.detail(a,next.id)).previousWork[0]!.record!).resultSource).toBe('CALLER');
 });
 it('V2 retry and stale-edit guards preserve the first committed record',async()=>{
  const {e,w}=await work(),input=recordInput('DRAFT');const [x,y]=await Promise.all([s.recordWork(a,w.id,input),s.recordWork(a,w.id,input)]);expect(x.id).toBe(y.id);
@@ -137,13 +139,13 @@ it('V2 correction preserves original Evidence/Action and surfaces corrected hist
  const {e,w}=await work();await s.recordWork(a,w.id,recordInput('COMPLETION'));const original=await q.detail(a,e.id);
  await expect(s.recordWork(a,w.id,{...recordInput('CORRECTION',1),correctionReason:''})).rejects.toMatchObject({code:'REASON_REQUIRED'});
  await s.recordWork(a,w.id,{...recordInput('CORRECTION',1),notes:{...notes,result:'NOT_CONNECTED',resultDetails:'回答を読み違えた。本人は接続不可と申告。'}});
- const v=await q.detail(a,e.id);expect(v.evidence).toEqual(original.evidence);expect(v.action).toEqual(original.action);expect(v.records[0]?.notes.result).toBe('CONNECTED');expect(v.records[1]?.notes.result).toBe('NOT_CONNECTED');
+  const v=await q.detail(a,e.id);expect(v.evidence).toEqual(original.evidence);expect(v.action).toEqual(original.action);expect(legacyNotes(v.records[0]!).result).toBe('CONNECTED');expect(legacyNotes(v.records[1]!).result).toBe('NOT_CONNECTED');
  expect((await db.admin.query('select * from factact.actions where work_id=$1',[w.id])).rows).toHaveLength(1);
- expect((await q.detail(a,(await intake()).id)).previousWork[0]?.record?.notes.result).toBe('NOT_CONNECTED');
+  expect(legacyNotes((await q.detail(a,(await intake()).id)).previousWork[0]!.record!).result).toBe('NOT_CONNECTED');
 });
 it('V2 unsupported certainty and unexplained exceptions are rejected',async()=>{
  const {w}=await work();for(const n of [{...notes,resultSource:'UNKNOWN' as const},{...notes,action:'NO_ACTION_REQUIRED' as const},{...notes,action:'OTHER_GUIDANCE' as const}])await expect(s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:n})).rejects.toMatchObject({status:400});
- await s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:{...notes,result:'UNCONFIRMED',resultSource:'UNKNOWN',resultDetails:'本人からの連絡待ち'}});expect((await q.detail(a,(await intake()).id)).previousWork[0]?.record?.notes.result).toBe('UNCONFIRMED');
+  await s.recordWork(a,w.id,{...recordInput('COMPLETION'),notes:{...notes,result:'UNCONFIRMED',resultSource:'UNKNOWN',resultDetails:'本人からの連絡待ち'}});expect(legacyNotes((await q.detail(a,(await intake()).id)).previousWork[0]!.record!).result).toBe('UNCONFIRMED');
 });
 it('V2 records honor tenant isolation and current Contract Authority',async()=>{
  const {w}=await work();await s.recordWork(a,w.id,recordInput('DRAFT'));
@@ -160,7 +162,7 @@ it('V2 audit failure rolls back the entire completion including structured recor
 it('V2 edits an unfinished V1 account while retaining its original execution evidence',async()=>{
  const {e,w}=await work();await s.recordResolution(a,w.id,resolution);const original=await q.detail(a,e.id);
  await s.recordWork(a,w.id,recordInput('DRAFT'));await s.recordWork(a,w.id,recordInput('COMPLETION',1));
- const v=await q.detail(a,e.id);expect(v.work?.status).toBe('COMPLETED');expect(v.evidence).toEqual(original.evidence);expect(v.action).toEqual(original.action);expect(v.records.at(-1)?.notes.actionDetails).toBe(notes.actionDetails);
+  const v=await q.detail(a,e.id);expect(v.work?.status).toBe('COMPLETED');expect(v.evidence).toEqual(original.evidence);expect(v.action).toEqual(original.action);expect(legacyNotes(v.records.at(-1)!).actionDetails).toBe(notes.actionDetails);
 });
 it('Human Review C/D: structured action/result/source suffice without repeated free text and survive correction',async()=>{
  const {e,w}=await work(),input={...recordInput('COMPLETION'),notes:{...notes,actionDetails:'',resultDetails:''}};
@@ -169,7 +171,7 @@ it('Human Review C/D: structured action/result/source suffice without repeated f
  expect(v.evidence?.contentText).toContain('接続できた');expect(v.evidence?.contentText).toContain('CALLER');
  expect(v.decision?.evidenceId).toBe(v.evidence?.id);expect(v.recordAuthors).toContainEqual({id:a.id,displayName:'開発オペレーター'});
  await s.recordWork(a,w.id,{...recordInput('CORRECTION',record.revision),notes:{...input.notes,result:'NOT_CONNECTED'}});
- const corrected=await q.detail(a,e.id);expect(corrected.evidence).toEqual(v.evidence);expect(corrected.action).toEqual(v.action);expect(corrected.records.at(-1)?.notes.result).toBe('NOT_CONNECTED');
+  const corrected=await q.detail(a,e.id);expect(corrected.evidence).toEqual(v.evidence);expect(corrected.action).toEqual(v.action);expect(legacyNotes(corrected.records.at(-1)!).result).toBe('NOT_CONNECTED');
 });
 it('Human Review E: Other and Unknown require explanation, not fabricated default evidence',async()=>{
  const {w}=await work();
@@ -284,4 +286,29 @@ it('Slice 2: Waiting and stale revision block Close; no command auto-closes Work
 
 it('Slice 2: grounded formal transfer can close an otherwise unresolved responsibility',async()=>{
  const {e,w}=await workV2();await s.clearNextAction(a,w.id,{requestId:randomUUID(),expectedRevision:0,reason:'正式移管のため元Workの次Actionを終了'});const closed=await s.closeWork(a,w.id,{requestId:randomUUID(),expectedRevision:1,outcome:'FORMALLY_TRANSFERRED',closeReason:'契約窓口が責任を引き受けた',provenanceType:'FORMAL_TRANSFER',provenanceReference:'移管受付番号 TR-001'});const v=await q.detail(a,e.id);expect(v.closeDecision).toMatchObject({id:closed.id,outcome:'FORMALLY_TRANSFERRED',provenanceType:'FORMAL_TRANSFER'});expect(v.work?.status).toBe('COMPLETED');
+});
+
+it('HR2 B atomically records each ongoing response disposition with follow-up and no Core execution facts',async()=>{
+ for(const disposition of ['CUSTOMER_WAIT','INVESTIGATING','MONITORING'] as const){const {e,w}=await workV2(),requestId=randomUUID(),before={actions:(await db.admin.query('select count(*)::int n from factact.actions')).rows[0].n,evidence:(await db.admin.query('select count(*)::int n from factact.evidence')).rows[0].n,decisions:(await db.admin.query('select count(*)::int n from factact.support_decisions')).rows[0].n};const input={requestId,expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:`${disposition}の対応内容`,disposition,followUpAt:'2026-11-03T09:00:00.000Z'};const first=await s.recordSupportResponse(a,w.id,input);await expect(s.recordSupportResponse(a,w.id,input)).resolves.toEqual(first);const v=await q.detail(a,e.id);expect(v.work).toMatchObject({status:'IN_PROGRESS',waiting:disposition==='CUSTOMER_WAIT',waitingParty:null,waitingReason:null,followUpAt:input.followUpAt,lifecycleRevision:1});expect(v.records.filter(x=>x.kind==='RESPONSE')).toHaveLength(1);expect(v.lifecycleEvents.filter(x=>x.kind==='RESPONSE_RECORDED')).toHaveLength(1);expect(v.followUps.filter(x=>x.requestId===requestId)).toHaveLength(1);expect(v.businessHistory.filter(x=>x.kind==='RESPONSE_RECORDED')).toHaveLength(1);if(disposition==='INVESTIGATING'){await s.recordSupportResponse(a,w.id,{...input,requestId:randomUUID(),expectedLifecycleRevision:1,expectedRecordRevision:1,responseText:'2回目の対応'});expect((await q.detail(a,e.id)).records.filter(x=>x.kind==='RESPONSE')).toHaveLength(2);}expect((await db.admin.query('select count(*)::int n from factact.actions')).rows[0].n).toBe(before.actions);expect((await db.admin.query('select count(*)::int n from factact.evidence')).rows[0].n).toBe(before.evidence);expect((await db.admin.query('select count(*)::int n from factact.support_decisions')).rows[0].n).toBe(before.decisions);await expect(s.recordSupportResponse(a,w.id,{...input,responseText:'異なる内容'})).rejects.toMatchObject({code:'RETRY_CONFLICT'});}
+});
+
+it('HR2 B requires follow-up for ongoing responses and rejects stale record or lifecycle revisions',async()=>{
+ const {w}=await workV2(),base={requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'調査する',disposition:'INVESTIGATING' as const,followUpAt:null};await expect(s.recordSupportResponse(a,w.id,base)).rejects.toMatchObject({code:'INVALID_INPUT'});await s.recordWork(a,w.id,{requestId:randomUUID(),expectedRevision:0,kind:'DRAFT',notes:{form:'SIMPLE_RESPONSE',responseText:'下書き',disposition:null,followUpAt:null},correctionReason:''});await expect(s.recordSupportResponse(a,w.id,{...base,requestId:randomUUID(),followUpAt:'2026-11-03T09:00:00.000Z'})).rejects.toMatchObject({code:'STALE_REVISION'});await expect(s.recordSupportResponse(a,w.id,{...base,requestId:randomUUID(),expectedRecordRevision:1,expectedLifecycleRevision:1,followUpAt:'2026-11-03T09:00:00.000Z'})).rejects.toMatchObject({code:'STALE_REVISION'});
+});
+
+it('HR2 B serializes concurrent responses and binds a retry to the original actor',async()=>{
+ const {e,w}=await workV2(),at='2026-11-03T09:00:00.000Z',first={requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'並行対応A',disposition:'INVESTIGATING' as const,followUpAt:at},second={...first,requestId:randomUUID(),responseText:'並行対応B'};const results=await Promise.allSettled([s.recordSupportResponse(a,w.id,first),s.recordSupportResponse(a,w.id,second)]);expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect(results.filter(x=>x.status==='rejected').map(x=>(x as PromiseRejectedResult).reason.code)).toEqual(['STALE_REVISION']);const saved=(await q.detail(a,e.id)).records.find(x=>x.kind==='RESPONSE')!;
+ const otherId=randomUUID();await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'response-operator@example.invalid','Response operator','ACTIVE')",[otherId,ids.tenant]);await db.admin.query("insert into factact.operator_roles values($1,$2,'OPERATOR')",[ids.tenant,otherId]);const other={...a,id:otherId,displayName:'Response operator',roles:['OPERATOR'] as Operator['roles']};const original=saved.requestId===first.requestId?first:second;await expect(s.recordSupportResponse(other,w.id,original)).rejects.toMatchObject({code:'RETRY_CONFLICT'});expect((await q.detail(a,e.id)).records.filter(x=>x.kind==='RESPONSE')).toHaveLength(1);
+});
+
+it('HR2 B completes through the combined response only after explicit responsibility confirmation',async()=>{
+ const {e,w}=await workV2(),base={requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'案内を完了した',disposition:'COMPLETED' as const,followUpAt:null};await expect(s.recordSupportResponse(a,w.id,base)).rejects.toMatchObject({code:'INVALID_INPUT'});const input={...base,close:{outcome:'RESOLVED' as const,closeReason:'本人が接続を確認',confirmsOutstandingResponsibilityEnded:true as const}};const result=await s.recordSupportResponse(a,w.id,input);await expect(s.recordSupportResponse(a,w.id,input)).resolves.toEqual(result);const v=await q.detail(a,e.id);expect(v.work).toMatchObject({status:'COMPLETED',waiting:false,nextActionOpen:false,followUpAt:null,outcome:'RESOLVED'});expect(v.closeDecision).toMatchObject({requestId:input.requestId,provenanceType:'HUMAN_DECISION',provenanceReference:result.id});expect(v.businessHistory.filter(x=>x.kind==='RESPONSE_RECORDED')).toHaveLength(1);expect(v.businessHistory.filter(x=>x.kind==='WORK_CLOSED')).toHaveLength(0);
+});
+
+it('HR2 B rolls back the combined completion when required Verification remains open',async()=>{
+ const {e,w}=await workV2(),actionId=randomUUID(),changeId=randomUUID();await db.admin.query("insert into factact.actions(id,tenant_id,work_id,action_type,actor_operator_id,status,input_json,result_summary,started_at,completed_at) values($1,$2,$3,'ASSIGN_DEVICE',$4,'COMPLETED','{}','変更候補',now(),now())",[actionId,ids.tenant,w.id,ids.operator]);await db.admin.query("insert into factact.changes(id,tenant_id,work_id,action_id,change_type,change_kind,status,subject_type,subject_id,proposed_effect_json,created_at) values($1,$2,$3,$4,'REALITY_CHANGE','PRIMARY_DEVICE_ASSIGNMENT','PROPOSED','PERSON',$5,'{}',now())",[changeId,ids.tenant,w.id,actionId,ids.person]);await expect(s.recordSupportResponse(a,w.id,{requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'対応完了',disposition:'COMPLETED',followUpAt:null,close:{outcome:'RESOLVED',closeReason:'完了',confirmsOutstandingResponsibilityEnded:true}})).rejects.toMatchObject({code:'CLOSE_GUARD_UNMET'});const v=await q.detail(a,e.id);expect(v.work).toMatchObject({status:'OPEN',lifecycleRevision:0});expect(v.records).toHaveLength(0);expect(v.lifecycleEvents).toHaveLength(0);expect(v.closeDecision).toBeNull();
+});
+
+it('HR2 B rolls back response, lifecycle, follow-up and Work projection when audit fails',async()=>{
+ const {e,w}=await workV2(),real=new PgSupportUnitOfWork(db.runtime),faulty=new SupportCommands({run:(tenant,fn)=>real.run(tenant,r=>{r.audit=async()=>{throw Error('audit failure');};return fn(r);})},clock);await expect(faulty.recordSupportResponse(a,w.id,{requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'回答待ち',disposition:'CUSTOMER_WAIT',followUpAt:'2026-11-03T09:00:00.000Z'})).rejects.toThrow('audit failure');const v=await q.detail(a,e.id);expect(v.records).toHaveLength(0);expect(v.lifecycleEvents).toHaveLength(0);expect(v.followUps).toHaveLength(0);expect(v.work).toMatchObject({status:'OPEN',lifecycleRevision:0,waiting:false,followUpAt:null});
 });
