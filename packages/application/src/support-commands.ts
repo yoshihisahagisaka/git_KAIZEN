@@ -96,9 +96,10 @@ export class SupportCommands {
   await this.audit(r,a,w.supportEventId,'SUPPORT_CONTEXT_TARGET_UNIDENTIFIED',{workId,contextId:context.id});return context;
  });}
  recordTargetObservation(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportTargetObservation['kind'];value:SupportTargetObservation['value'];detail:string;sourceType:SupportTargetObservation['sourceType'];evidenceId?:string|null}){return this.run(actor,async(r,a)=>{
-  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+  const history=await r.targetObservations(workId),old=history.find(x=>x.requestId===input.requestId);if(old){requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&old.value===input.value&&old.detail===input.detail&&old.sourceType===input.sourceType&&old.evidenceId===(input.evidenceId??null)&&old.revision===input.expectedRevision+1,'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
   const context=(await r.deviceContexts(workId)).at(-1);requireCondition(!!context&&context.kind!=='ENDED','CONTEXT_STATE_CONFLICT','現在の対象を記録してから対象情報を追加してください。');
-  const history=await r.targetObservations(workId),old=history.find(x=>x.requestId===input.requestId);if(old){requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&old.value===input.value&&old.detail===input.detail&&old.sourceType===input.sourceType&&old.evidenceId===(input.evidenceId??null),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
   requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象情報が更新されています。');
   const permitted:Record<SupportTargetObservation['kind'],readonly string[]>={IDENTIFICATION:['UNIDENTIFIED','PARTIALLY_IDENTIFIED','UNKNOWN'],OWNERSHIP:['PERSONALLY_OWNED','COMPANY_OWNED','UNKNOWN'],MANAGEMENT_STATE:['MANAGED','UNMANAGED','UNKNOWN'],REGISTRY_COMPARISON:['MATCH','DIFFERENT','UNKNOWN'],CALLER_STATEMENT:['UNKNOWN']};
   const sourceValid=input.kind==='REGISTRY_COMPARISON'?input.sourceType==='OPERATOR':input.kind==='CALLER_STATEMENT'?input.sourceType==='CALLER':['OPERATOR','CALLER','OTHER'].includes(input.sourceType);
