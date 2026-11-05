@@ -41,30 +41,43 @@ test.beforeEach(async()=>{
  const proposal=await c.startAssignDeviceAction(actor,{workId:joinWorkId,deviceId:ids.device,executionSummary:'デモ: 実機照合・引き渡し済み',effectiveFrom:new Date(Date.now()-60000).toISOString()});
  await c.verifyChange(actor,proposal.changeId,'デモ: 引き渡し確認済み');relationId=(await c.commitChange(actor,proposal.changeId)).id;
 });
-async function intake(page:import('@playwright/test').Page){
+async function intake(page:import('@playwright/test').Page,mode:'START'|'RECEIVE_ONLY'='RECEIVE_ONLY'){
  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'問い合わせ',exact:true}).click();
  await page.getByLabel('問い合わせ元',{exact:true}).selectOption({label:'田中 一郎'});
  await page.getByLabel('本人からの申告',{exact:true}).fill('会社PCでVPNにつながりません');
- await page.getByRole('button',{name:'問い合わせを記録',exact:true}).click();
+ await page.getByRole('button',{name:mode==='START'?'受付して対応を開始':'受付のみ',exact:true}).click();
  await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ'})).toBeVisible();
  return page.url().split('/support/')[1]!;
 }
 async function login(page:import('@playwright/test').Page){await page.goto(origin);await page.getByRole('link',{name:'Googleでログイン'}).click();await expect(page.getByRole('heading',{name:'今、進めること'})).toBeVisible();}
 
+test('HR-UI: one-click intake starts the Work and preserves Event/Evaluation boundaries',async({page})=>{
+ await page.setViewportSize({width:1366,height:768});
+ await login(page);const eventId=await intake(page,'START');
+ await expect(page.getByRole('region',{name:'対応を記録'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'対応を開始',exact:true})).toHaveCount(0);
+ const recorded=await db.admin.query('select count(*)::int n from factact.requirement_evaluations where support_event_id=$1',[eventId]);
+ expect(recorded.rows[0].n).toBe(1);
+ const work=await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[eventId]);expect(work.rows[0].n).toBe(1);
+ const sizes=await page.evaluate(()=>({body:parseFloat(getComputedStyle(document.body).fontSize),aside:parseFloat(getComputedStyle(document.querySelector('.support-context-desktop')!).fontSize)}));
+ expect(sizes.body).toBeGreaterThanOrEqual(16);expect(sizes.aside).toBeGreaterThanOrEqual(16);
+ await expect(page.getByRole('article',{name:'問い合わせ内容'})).toContainText('会社PCでVPNにつながりません');
+});
+
 test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, correction and next inquiry',async({page})=>{
  await login(page);const eventId=await intake(page);
- const context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});
+ const context=page.getByRole('complementary',{name:'対応アシスト'});
  await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('PC-0073');
  await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('未確認');
  await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('VPN利用要否: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
- await expect(page.getByRole('article',{name:'本人からの申告'}).getByText('会社PCでVPNにつながりません',{exact:true})).toBeVisible();
+ await expect(page.getByRole('article',{name:'問い合わせ内容'}).getByText('会社PCでVPNにつながりません',{exact:true})).toBeVisible();
  await expect(page.getByText('本人から聞いた内容です。技術的な障害として確認済みではありません。')).toHaveCount(0);
  await expect(page.getByRole('textbox',{name:/PC/})).toHaveCount(0);
  await context.getByRole('button',{name:'利用PCの確認元',exact:true}).click();const source=page.getByRole('dialog',{name:'利用PCの確認元'});await expect(source.getByText('管理情報へ反映済み',{exact:false})).toBeVisible();await source.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.getByRole('button',{name:'対応を開始',exact:true}).click();
  await expect(page.getByRole('region',{name:'現在の対応状況'})).toContainText('担当');
  await expect(page.getByRole('list',{name:'対応の手順'})).toHaveCount(0);
- await expect(page.getByRole('heading',{name:'確認リスト',exact:true})).toBeVisible();await expect(page.getByLabel('対応内容')).toBeVisible();await expect(page.getByLabel('対応後の状態')).toHaveValue('');
+ await expect(page.getByRole('heading',{name:'確認リスト',exact:true})).toHaveCount(0);await expect(page.getByLabel('対応内容')).toBeVisible();await expect(page.getByLabel('対応後の状態')).toHaveValue('');
  await expect(page.getByRole('region',{name:'現在の対応状況'}).getByText('開発オペレーター',{exact:true})).toBeVisible();
  await expect(page.getByText('あなたがこの対応の担当です。',{exact:true})).toHaveCount(0);
  const entryRegion=page.getByRole('region',{name:'対応を記録'}),historyRegion=page.getByRole('region',{name:'問い合わせの対応履歴'});const entryBox=await entryRegion.boundingBox(),historyBox=await historyRegion.boundingBox();expect(entryBox!.y).toBeLessThan(historyBox!.y);await page.getByText('詳細・旧形式の操作',{exact:true}).click();const updatedHistoryBox=await historyRegion.boundingBox(),stateBox=await page.getByRole('region',{name:'対応状態の操作'}).boundingBox();expect(updatedHistoryBox!.y).toBeLessThan(stateBox!.y);
@@ -107,12 +120,14 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  expect((await db.admin.query('select count(*)::int n from factact.support_decisions where work_id=$1',[w.id])).rows[0].n).toBe(0);
 });
 
-test('UX-01 uses a wide Work surface and keeps Context available as a dialog on narrow screens',async({page})=>{
+test('UX-01 resizes both panes without losing input and keeps Context as a dialog on narrow screens',async({page})=>{
  await page.setViewportSize({width:1440,height:900});await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();
- const status=page.getByRole('region',{name:'現在の対応状況'}),work=page.getByRole('region',{name:'対応を記録'}),context=page.getByRole('complementary',{name:'確認済みの現在の利用状況'});await expect(status).toContainText('次にやること');await expect(status).toContainText('次回確認予定');
+ const status=page.getByRole('region',{name:'現在の対応状況'}),work=page.getByRole('region',{name:'対応を記録'}),context=page.getByRole('complementary',{name:'対応アシスト'});await expect(status).toContainText('次にやること');await expect(status).toContainText('次回確認予定');
  const workBox=await work.boundingBox(),contextBox=await context.boundingBox();expect(workBox!.width).toBeGreaterThan(contextBox!.width*2.5);expect(workBox!.width).toBeLessThan(contextBox!.width*3.5);
- await page.setViewportSize({width:800,height:900});await expect(context).toBeHidden();const open=page.getByRole('button',{name:'参照情報',exact:true});await expect(open).toBeVisible();await open.click();await expect(page.getByRole('dialog',{name:'参照情報'})).toContainText('本人からの申告');
- await expect(page.getByRole('dialog',{name:'参照情報'}).getByRole('region',{name:'登録情報と今回の問合せ対象'})).toBeVisible();
+ const divider=page.getByRole('separator',{name:'左右ペインの幅を調整'});await expect(divider).toBeVisible();await page.getByLabel('対応内容').fill('編集中の記録');await divider.press('ArrowLeft');const newWorkBox=await work.boundingBox();expect(newWorkBox!.width).toBeLessThan(workBox!.width);
+ const dividerBox=await divider.boundingBox();await page.mouse.move(dividerBox!.x+dividerBox!.width/2,dividerBox!.y+60);await page.mouse.down();await page.mouse.move(dividerBox!.x-70,dividerBox!.y+60,{steps:5});await page.mouse.up();const draggedWorkBox=await work.boundingBox();expect(draggedWorkBox!.width).toBeLessThan(newWorkBox!.width);await expect(page.getByLabel('対応内容')).toHaveValue('編集中の記録');
+ await page.setViewportSize({width:800,height:900});await expect(context).toBeHidden();await expect(divider).toBeHidden();const open=page.getByRole('button',{name:'対応アシスト',exact:true});await expect(open).toBeVisible();await open.click();await expect(page.getByRole('dialog',{name:'対応アシスト'})).toContainText('登録情報');
+ await expect(page.getByRole('dialog',{name:'対応アシスト'}).getByRole('region',{name:'登録情報と今回の問合せ対象'})).toBeVisible();
 });
 
 test('UX-02 records consecutive actions from a fresh form and keeps both history entries',async({page})=>{
@@ -156,8 +171,8 @@ test('Active Work Anchor keeps unsaved SUPPORT input across Explore and guards a
 
 test('SUPPORT work opens Explore with an editable query without searching automatically',async({page})=>{
  const commands=new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});const source=await commands.createEvent(actor,{requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'VPN検索用'});const sourceWork=(await commands.evaluate(actor,source.id,'REQUIRED','検索用')).work!;const decision=await commands.recordResolution(actor,sourceWork.id,{mode:'GUIDANCE_ONLY',diagnosticEvidence:'VPN',rationale:'検索用',actionSummary:'VPN案内'});await commands.saveKnowledge(actor,sourceWork.id,'VPN 関連情報','検索用のナレッジ候補');
- await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();await page.getByLabel('対応内容').fill('保存しない入力');await page.getByRole('link',{name:'関連情報を探す',exact:true}).click();
- const query=page.getByLabel('検索語');await expect(query).toHaveValue('VPN');await expect(page.getByRole('heading',{name:'検索結果'})).toHaveCount(0);await query.fill('VPN');await page.getByRole('button',{name:'検索',exact:true}).click();const results=page.getByRole('region',{name:'検索結果'});await expect(results.getByText('仕事',{exact:true}).first()).toBeVisible();await expect(results.getByText('ナレッジ候補',{exact:true}).first()).toBeVisible();expect(decision).toBeTruthy();
+ await login(page);await intake(page);await page.getByRole('button',{name:'対応を開始',exact:true}).click();await page.getByLabel('対応内容').fill('保存しない入力');await page.getByRole('complementary',{name:'対応アシスト'}).getByRole('link',{name:'情報を探す',exact:true}).click();
+ const query=page.getByLabel('検索語');await expect(query).toHaveValue('');await expect(page.getByRole('heading',{name:'検索結果'})).toHaveCount(0);await query.fill('VPN');await page.getByRole('button',{name:'検索',exact:true}).click();const results=page.getByRole('region',{name:'検索結果'});await expect(results.getByText('仕事',{exact:true}).first()).toBeVisible();await expect(results.getByText('ナレッジ候補',{exact:true}).first()).toBeVisible();expect(decision).toBeTruthy();
  await page.getByRole('link',{name:'作業に戻る',exact:true}).click();await expect(page.getByLabel('対応内容')).toHaveValue('保存しない入力');
 });
 

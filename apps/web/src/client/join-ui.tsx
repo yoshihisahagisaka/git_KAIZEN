@@ -37,7 +37,7 @@ function Home({csrf,operator,revision,run,busy,view='home'}:Controls&{view?:stri
   const {value:v,error}=useData<HomeView>('/api/home',revision);
   if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;
   if(view==='people') return <><h1>対象者</h1>{v.people.map(p=><article key={p.id}><a href={`#/people/${p.id}`}>{p.displayName}さんの利用状況</a></article>)}</>;
-  if(view==='work') return <><h1>自分のやること</h1><SupportTasks operator={operator} revision={revision}/><WorkCards works={v.nextActions.filter(w=>w.workOwnerOperatorId===operator.id)} operator={operator}/><details><summary>ほかの担当者の対応を見る</summary><p>同じTenant内で参照できる対応です。Teamを示す一覧ではありません。</p><WorkCards works={v.nextActions.filter(w=>w.workOwnerOperatorId!==operator.id)} operator={operator}/></details></>;
+  if(view==='work') return <><h1>自分のやること</h1><SupportTasks operator={operator} revision={revision}/><WorkCards works={v.nextActions.filter(w=>w.workOwnerOperatorId===operator.id)} operator={operator}/><details><summary>ほかの担当者の対応を見る</summary><WorkCards works={v.nextActions.filter(w=>w.workOwnerOperatorId!==operator.id)} operator={operator}/></details></>;
   return <><h1>{view==='join'?'入社対応':'今、進めること'}</h1><p>必要な準備を確認し、担当する対応を進めましょう。</p>{view==='home'&&<section><h2>あなたの次にやること</h2><SupportTasks operator={operator} revision={revision}/><WorkCards works={v.nextActions.filter(w=>w.workOwnerOperatorId===operator.id)} operator={operator}/></section>}
     <section className="card"><h2>入社予定を登録</h2><p>登録した後に必要な準備を確認します。この操作だけでPC準備は開始されません。</p><form onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void run(async()=>{
       const person=v.people.find(p=>p.id===form.get('personId'))!;
