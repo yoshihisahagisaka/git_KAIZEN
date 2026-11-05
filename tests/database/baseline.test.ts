@@ -35,7 +35,7 @@ beforeAll(async () => {
   const port = await freePort();
   embedded = new EmbeddedPostgres({ databaseDir: directory, user: 'postgres', password: 'test-admin', port,
     persistent: true, createPostgresUser: false, initdbFlags: ['--encoding=UTF8', '--locale=C'],
-    postgresFlags: ['-c', 'listen_addresses=127.0.0.1'], onLog: () => {}, onError: () => {},
+    postgresFlags: ['-c', 'listen_addresses=127.0.0.1', '-c', 'unix_socket_directories='], onLog: () => {}, onError: () => {},
   });
   await embedded.initialise();
   await embedded.start();

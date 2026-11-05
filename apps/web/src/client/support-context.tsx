@@ -34,11 +34,38 @@ function PreviousSupport({id,revision}:{id:string;revision:number}){
  if(error)return <p role="alert">参照情報を取得できませんでした。閉じて開き直してください。</p>;if(!v)return <p>確認しています…</p>;
  return <><SupportHistory view={v}/><SupportAudit view={v}/></>;
 }
-function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision:number;target?:ReactNode}){const comparisonLabel={MATCH:'一致',DIFFERENT:'異なる',UNCONFIRMED:'未確認'}[v.deviceComparison.result],sourceLabel=v.deviceComparison.target?.source==='CALLER'?'本人からの申告':v.deviceComparison.target?.source==='OPERATOR'?'担当者が確認':'その他の確認元';return <><article className="notice" aria-label="本人からの申告"><h3>本人からの申告</h3><p>{v.observation.contentText}</p></article><section className="device-comparison" aria-label="登録情報と今回の問合せ対象"><h3>登録情報と今回の問合せ対象</h3><div className="device-comparison-grid"><div><span>登録情報</span><strong>{v.deviceComparison.registry?.assetTag??'未確認'}</strong><small>{v.deviceComparison.registry?`Registry / ${time(v.deviceComparison.registry.verifiedAt)}`:'登録済みの確認情報はありません'}</small></div><div><span>今回の問合せ対象</span><strong>{v.deviceComparison.target?.assetTag??(v.deviceComparison.targetUnidentified?'未特定として記録':'未確認（未記録）')}</strong><small>{v.deviceComparison.target?`${sourceLabel} / ${time(v.deviceComparison.target.recordedAt)}`:v.deviceComparison.targetUnidentified&&v.currentDeviceContext?`${v.currentDeviceContext.confirmationSource==='CALLER'?'本人からの申告':v.currentDeviceContext.confirmationSource==='OPERATOR'?'担当者が確認':'その他の確認元'} / ${time(v.currentDeviceContext.recordedAt)}`:'今回の対象として有効な記録はありません'}</small></div><div><span>比較</span><strong className={`comparison-${v.deviceComparison.result.toLowerCase()}`}>{comparisonLabel}</strong><small>端末IDの照合結果</small></div></div>{v.deviceComparison.result==='DIFFERENT'&&<p className="notice">登録情報では【{v.deviceComparison.registry!.assetTag}】ですが、今回の対象は【{v.deviceComparison.target!.assetTag}】です。会社から貸与されているPCでお間違いないですか。最近交換・一時借用などはありましたか？</p>}<p className="comparison-note">この表示は確認のための比較です。閲覧だけでは登録情報や今回の対象を変更しません。</p></section>{target}
- <ContextDialog title="対象者の現在の利用状況"><PersonContext id={v.person.id} revision={revision}/></ContextDialog>
- {v.deviceFact&&<ContextDialog title="利用PCの確認元"><JoinSource id={v.deviceFact.sourceChange.workId} revision={revision}/></ContextDialog>}
- <details><summary>未確認の管理情報</summary><ul>{v.unknowns.map(x=><li key={x}>{x}: 未確認</li>)}</ul><p>未確認は「なし」ではありません。今回の確認記録は管理情報を自動変更しません。</p></details>
- <ContextDialog title="過去の関連する対応"><section aria-label="過去の関連する対応"><p>同じ人・同じサービスの完了した対応です。今回の原因や推奨対応を意味しません。</p>{!v.previousWork.length&&<p>該当する対応はまだありません。</p>}{v.previousWork.map(h=><article key={h.work.id}><h3>{time(h.work.closedAt!)} — {v.person.displayName}さんの問い合わせ</h3><p>本人の申告: {h.observation?.contentText}</p>{h.record?.kind==='RESPONSE'?<p>対応内容: {h.record.notes.responseText} / 状態: {h.record.notes.disposition}</p>:h.record&&isLegacySupportRecord(h.record)?<Notes notes={h.record.notes}/>:<><p>行ったこと: {h.action?.resultSummary}</p><p>確認・結果の記録: {h.evidence?.contentText}</p></>}{h.record?.kind==='CORRECTION'&&<p>訂正後の記録</p>}<details><summary>対応の詳しい履歴と監査</summary><PreviousSupport id={h.eventId} revision={revision}/></details></article>)}</section></ContextDialog>
- <ContextDialog title="参考知識を見る"><p>参考候補です。承認済みの手順・ルールではありません。</p>{!v.relatedKnowledge.length&&<p>このサービスの候補はまだありません。</p>}{v.relatedKnowledge.map(k=><article key={k.id}><h3>{k.title}</h3><p>参考知識の候補 / 未承認 — 適用ルールではありません</p><p>{k.contentText}</p><details className="audit-detail"><summary>元の対応・確認根拠</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}</ContextDialog>
- </>}
-export function SupportContext({view:v,revision,target}:{view:SupportDetailView;revision:number;target?:ReactNode}){return <><aside className="support-context-desktop" aria-label="確認済みの現在の利用状況"><h2>参照情報</h2><SupportContextContent v={v} revision={revision} target={target}/></aside><div className="support-context-mobile"><ContextDialog title="参照情報"><SupportContextContent v={v} revision={revision} target={target}/></ContextDialog></div></>;}
+function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision:number;target?:ReactNode}){
+ const comparisonLabel={MATCH:'一致',DIFFERENT:'異なる',UNCONFIRMED:'未確認'}[v.deviceComparison.result];
+ const sourceLabel=v.deviceComparison.target?.source==='CALLER'?'本人からの申告':v.deviceComparison.target?.source==='OPERATOR'?'担当者が確認':'その他の確認元';
+ const targetSource=v.currentDeviceContext?.confirmationSource==='CALLER'?'本人からの申告':v.currentDeviceContext?.confirmationSource==='OPERATOR'?'担当者が確認':'その他の確認元';
+ return <>
+  <section className="support-assist-group" aria-label="確認事項・登録情報">
+   <h3>確認事項・登録情報</h3>
+   <ContextDialog title="対象者の現在の利用状況"><PersonContext id={v.person.id} revision={revision}/></ContextDialog>
+   <section className="device-comparison" aria-label="登録情報と今回の問合せ対象">
+    <h4>登録PCと今回の対象</h4>
+    <div className="device-comparison-grid">
+     <div><span>登録情報</span><strong>{v.deviceComparison.registry?.assetTag??'未確認'}</strong><small>{v.deviceComparison.registry?`Registry / ${time(v.deviceComparison.registry.verifiedAt)}`:'登録済みの確認情報はありません'}</small></div>
+     <div><span>今回の問合せ対象</span><strong>{v.deviceComparison.target?.assetTag??(v.deviceComparison.targetUnidentified?'未特定として記録':'未確認（未記録）')}</strong><small>{v.deviceComparison.target?`${sourceLabel} / ${time(v.deviceComparison.target.recordedAt)}`:v.deviceComparison.targetUnidentified&&v.currentDeviceContext?`${targetSource} / ${time(v.currentDeviceContext.recordedAt)}`:'今回の対象として有効な記録はありません'}</small></div>
+     <div><span>比較</span><strong className={`comparison-${v.deviceComparison.result.toLowerCase()}`}>{comparisonLabel}</strong><small>端末IDの照合結果</small></div>
+    </div>
+    {v.deviceComparison.result==='DIFFERENT'&&<p className="notice">登録情報では【{v.deviceComparison.registry!.assetTag}】ですが、今回の対象は【{v.deviceComparison.target!.assetTag}】です。会社から貸与されているPCでお間違いないですか。最近交換・一時借用などはありましたか？</p>}
+    <p className="comparison-note">登録情報と今回の対象を比較しています。変更は明示的な記録操作で行います。</p>
+   </section>
+   {target}
+   {v.deviceFact&&<ContextDialog title="利用PCの確認元"><JoinSource id={v.deviceFact.sourceChange.workId} revision={revision}/></ContextDialog>}
+   <details><summary>未確認の管理情報</summary><ul>{v.unknowns.map(x=><li key={x}>{x}: 未確認</li>)}</ul><p>未確認は「なし」ではありません。今回の確認記録は管理情報を自動変更しません。</p></details>
+  </section>
+  <section className="support-assist-group" aria-label="手順・ナレッジ">
+   <h3>手順・ナレッジ</h3>
+   <p>参考知識は未承認の候補です。正式な手順書・FAQの検索は今後の拡張対象です。</p>
+   <ContextDialog title="参考知識を見る"><p>参考候補です。承認済みの手順・ルールではありません。</p>{!v.relatedKnowledge.length&&<p>このサービスの候補はまだありません。</p>}{v.relatedKnowledge.map(k=><article key={k.id}><h3>{k.title}</h3><p>参考知識の候補 / 未承認 — 適用ルールではありません</p><p>{k.contentText}</p><details className="audit-detail"><summary>元の対応・確認根拠</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}</ContextDialog>
+   <p><a href="#/explore">情報を探す</a></p>
+  </section>
+  <section className="support-assist-group" aria-label="過去の対応">
+   <h3>過去の対応</h3>
+   <ContextDialog title="過去の関連する対応"><section aria-label="過去の関連する対応"><p>同じ人・同じサービスの完了した対応です。今回の原因や推奨対応を意味しません。</p>{!v.previousWork.length&&<p>該当する対応はまだありません。</p>}{v.previousWork.map(h=><article key={h.work.id}><h3>{time(h.work.closedAt!)} — {v.person.displayName}さんの問い合わせ</h3><p>本人の申告: {h.observation?.contentText}</p>{h.record?.kind==='RESPONSE'?<p>対応内容: {h.record.notes.responseText} / 状態: {h.record.notes.disposition}</p>:h.record&&isLegacySupportRecord(h.record)?<Notes notes={h.record.notes}/>:<><p>行ったこと: {h.action?.resultSummary}</p><p>確認・結果の記録: {h.evidence?.contentText}</p></>}{h.record?.kind==='CORRECTION'&&<p>訂正後の記録</p>}<details><summary>対応の詳しい履歴と監査</summary><PreviousSupport id={h.eventId} revision={revision}/></details></article>)}</section></ContextDialog>
+  </section>
+ </>;
+}
+export function SupportContext({view:v,revision,target}:{view:SupportDetailView;revision:number;target?:ReactNode}){return <><aside className="support-context-desktop" aria-label="対応アシスト"><h2>対応アシスト</h2><SupportContextContent v={v} revision={revision} target={target}/></aside><div className="support-context-mobile"><ContextDialog title="対応アシスト"><SupportContextContent v={v} revision={revision} target={target}/></ContextDialog></div></>;}
