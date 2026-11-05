@@ -34,6 +34,26 @@ function PreviousSupport({id,revision}:{id:string;revision:number}){
  if(error)return <p role="alert">参照情報を取得できませんでした。閉じて開き直してください。</p>;if(!v)return <p>確認しています…</p>;
  return <><SupportHistory view={v}/><SupportAudit view={v}/></>;
 }
+function AssistSearch({view:v}:{view:SupportDetailView}){
+ const [text,setText]=useState(''),[searched,setSearched]=useState(''),[error,setError]=useState('');
+ const matches=(value:string|undefined|null)=>value?.normalize('NFKC').toLocaleLowerCase().includes(searched)??false;
+ const knowledge=searched?v.relatedKnowledge.filter(k=>matches(k.title)||matches(k.contentText)||matches(k.topic)):[];
+ const previous=searched?v.previousWork.filter(h=>matches(h.work.title)||matches(h.observation?.contentText)||matches(h.action?.resultSummary)||matches(h.evidence?.contentText)||(h.record?.kind==='RESPONSE'&&matches(h.record.notes.responseText))):[];
+ return <ContextDialog title="参考情報を検索">
+  <p>このサービスの参考知識候補と、同じ方・同じサービスの過去対応を検索します。正式な手順書・FAQはまだ検索対象ではありません。</p>
+  <form onSubmit={e=>{e.preventDefault();const next=text.trim().normalize('NFKC').toLocaleLowerCase();if(!next){setSearched('');setError('検索語を入力してください。');return;}setError('');setSearched(next);}}>
+   <label htmlFor="support-assist-search">検索語</label><input id="support-assist-search" value={text} onChange={e=>setText(e.target.value)} maxLength={200} placeholder="例: VPN、接続できない"/>
+   <button type="submit">検索</button>
+  </form>
+  {error&&<p role="alert">{error}</p>}
+  {searched&&<section aria-label="参考情報の検索結果">
+   <h3>検索結果</h3><p>{knowledge.length+previous.length}件（参考知識候補 {knowledge.length}件・過去対応 {previous.length}件）</p>
+   {!knowledge.length&&!previous.length&&<p>該当する情報は見つかりませんでした。対象範囲以外は「情報を探す」から全体検索できます。</p>}
+   {knowledge.map(k=><article key={`knowledge-${k.id}`}><h4>{k.title}</h4><p className="badge">未承認の参考知識候補</p><p>{k.contentText}</p><details><summary>出典を確認</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}
+   {previous.map(h=><article key={`work-${h.work.id}`}><h4>{h.work.title}</h4><p className="badge">同じ方・同じサービスの過去対応</p><p>{h.observation?.contentText}</p>{h.record?.kind==='RESPONSE'&&<p>対応内容: {h.record.notes.responseText}</p>}{h.action&&<p>実施結果: {h.action.resultSummary}</p>}<small>対応終了: {time(h.work.closedAt!)}</small></article>)}
+  </section>}
+ </ContextDialog>;
+}
 function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision:number;target?:ReactNode}){
  const comparisonLabel={MATCH:'一致',DIFFERENT:'異なる',UNCONFIRMED:'未確認'}[v.deviceComparison.result];
  const sourceLabel=v.deviceComparison.target?.source==='CALLER'?'本人からの申告':v.deviceComparison.target?.source==='OPERATOR'?'担当者が確認':'その他の確認元';
@@ -59,6 +79,7 @@ function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision
   <section className="support-assist-group" aria-label="手順・ナレッジ">
    <h3>手順・ナレッジ</h3>
    <p>参考知識は未承認の候補です。正式な手順書・FAQの検索は今後の拡張対象です。</p>
+   <AssistSearch view={v}/>
    <ContextDialog title="参考知識を見る"><p>参考候補です。承認済みの手順・ルールではありません。</p>{!v.relatedKnowledge.length&&<p>このサービスの候補はまだありません。</p>}{v.relatedKnowledge.map(k=><article key={k.id}><h3>{k.title}</h3><p>参考知識の候補 / 未承認 — 適用ルールではありません</p><p>{k.contentText}</p><details className="audit-detail"><summary>元の対応・確認根拠</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}</ContextDialog>
    <p><a href="#/explore">情報を探す</a></p>
   </section>
