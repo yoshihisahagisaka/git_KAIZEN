@@ -97,6 +97,9 @@ describe('explicit actor-neutral access: fail closed', () => {
     expect(check({ grants: [{ ...grant, operations: undefined as never }] })).toBe(false);
     expect(check({ grants: [{ ...grant, scope: { kind: 'SERVICE', serviceRecipientId: 'recipient-A' } as never }] })).toBe(false);
     expect(check({ grants: [null as never] })).toBe(false);
+    expect(check({ grants: undefined as never })).toBe(false);
+    expect(check({ target: null as never })).toBe(false);
+    expect(check({ contractIsEffective: 'true' as never })).toBe(false);
   });
 
   it('requires a correctly scoped grant even when some grants in the set are valid elsewhere', () => {

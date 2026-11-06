@@ -87,9 +87,10 @@ const allowedOperations: readonly ScopedOperation[] = ['READ', 'CREATE', 'UPDATE
 
 /** Default deny. No role, affiliation, ownership or Caller-based implicit allow. */
 export function isExplicitlyAuthorized(request: ScopedAccessRequest): boolean {
+  if (!request || typeof request !== 'object' || !request.target || !Array.isArray(request.grants)) return false;
   const { actorId, contractIsEffective, target, grants } = request;
   const at = Date.parse(request.at);
-  if (!contractIsEffective || !Number.isFinite(at) || !validIdentifier(actorId)) return false;
+  if (contractIsEffective !== true || !Number.isFinite(at) || !validIdentifier(actorId)) return false;
   if (!validIdentifier(target.tenantId) || !validIdentifier(target.serviceId) ||
       !validIdentifier(target.contractProfileId) || !validScope(target.scope) ||
       !allowedKinds.includes(target.objectKind) || !allowedOperations.includes(target.operation)) return false;
