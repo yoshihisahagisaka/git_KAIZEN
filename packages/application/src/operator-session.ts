@@ -4,13 +4,23 @@ export interface Identity { issuer: string; subject: string }
 export interface OperatorRef { tenantId: string; operatorId: string }
 export interface LoginTransaction { state: string; nonce: string; verifier: string }
 export interface SessionRef extends OperatorRef { csrfToken: string }
+export interface SessionContext extends OperatorRef {
+  tenantName: string;
+  operatorDisplayName: string;
+  isLoginDefault: boolean;
+  isCurrent: boolean;
+}
+export interface RotatedSessionContext extends OperatorRef { expiresAt: Date }
 
 export interface IdentityStore {
   beginLogin(hash: string, login: LoginTransaction): Promise<void>;
   consumeLogin(hash: string): Promise<LoginTransaction | null>;
   resolveIdentity(identity: Identity): Promise<OperatorRef | null>;
   createSession(hash: string, ref: OperatorRef, csrfToken: string): Promise<void>;
+  createVerifiedSession(hash: string, ref: OperatorRef, csrfToken: string, identity: Identity): Promise<void>;
   readSession(hash: string): Promise<SessionRef | null>;
+  listSessionContexts(hash: string): Promise<SessionContext[]>;
+  switchSessionContext(oldHash: string, newHash: string, targetTenantId: string, csrfToken: string): Promise<RotatedSessionContext | null>;
   revokeSession(hash: string): Promise<void>;
   loadActiveOperator(ref: OperatorRef): Promise<Operator | null>;
 }

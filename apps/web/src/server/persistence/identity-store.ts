@@ -1,12 +1,15 @@
 import type { Pool } from 'pg';
 import { z } from 'zod';
-import type { Identity, IdentityStore, LoginTransaction, OperatorRef, SessionRef } from '../../../../../packages/application/src/operator-session.js';
+import type { Identity, IdentityStore, LoginTransaction, OperatorRef, RotatedSessionContext, SessionContext, SessionRef } from '../../../../../packages/application/src/operator-session.js';
 import type { Operator } from '../../../../../packages/domain/src/operator.js';
 import { withTenant } from './database.js';
 
 const refSchema = z.object({ tenant_id: z.uuid(), operator_id: z.uuid() });
 const rolesSchema = z.array(z.enum(['ADMIN', 'OPERATOR', 'REVIEWER']));
 const contextSchema = refSchema.extend({ is_login_default: z.boolean() });
+const sessionContextSchema = contextSchema.extend({
+  tenant_name: z.string(), operator_display_name: z.string(), is_current: z.boolean(),
+});
 
 export interface VerifiedActorContext {
   tenantId: string;
@@ -44,11 +47,33 @@ export class PgIdentityStore implements IdentityStore {
   async createSession(hash: string, ref: OperatorRef, csrfToken: string): Promise<void> {
     await this.pool.query('select factact_private.create_session($1,$2,$3,$4)', [hash, ref.tenantId, ref.operatorId, csrfToken]);
   }
+  async createVerifiedSession(hash: string, ref: OperatorRef, csrfToken: string, identity: Identity): Promise<void> {
+    await this.pool.query('select factact_private.create_verified_session($1,$2,$3,$4,$5,$6)',
+      [hash, ref.tenantId, ref.operatorId, csrfToken, identity.issuer, identity.subject]);
+  }
   async readSession(hash: string): Promise<SessionRef | null> {
     const { rows } = await this.pool.query('select * from factact_private.read_session($1)', [hash]);
     if (!rows[0]) return null;
     const row = refSchema.extend({ csrf_token: z.string() }).parse(rows[0]);
     return { tenantId: row.tenant_id, operatorId: row.operator_id, csrfToken: row.csrf_token };
+  }
+  async listSessionContexts(hash: string): Promise<SessionContext[]> {
+    const { rows } = await this.pool.query('select * from factact_private.list_session_contexts($1)', [hash]);
+    return rows.map(raw => {
+      const row = sessionContextSchema.parse(raw);
+      return {
+        tenantId: row.tenant_id, operatorId: row.operator_id,
+        tenantName: row.tenant_name, operatorDisplayName: row.operator_display_name,
+        isLoginDefault: row.is_login_default, isCurrent: row.is_current,
+      };
+    });
+  }
+  async switchSessionContext(oldHash: string, newHash: string, targetTenantId: string, csrfToken: string): Promise<RotatedSessionContext | null> {
+    const { rows } = await this.pool.query('select * from factact_private.switch_session_context($1,$2,$3,$4)',
+      [oldHash, newHash, targetTenantId, csrfToken]);
+    if (!rows[0]) return null;
+    const row = refSchema.extend({ expires_at: z.date() }).parse(rows[0]);
+    return { tenantId: row.tenant_id, operatorId: row.operator_id, expiresAt: row.expires_at };
   }
   async revokeSession(hash: string): Promise<void> {
     await this.pool.query('select factact_private.revoke_session($1)', [hash]);
