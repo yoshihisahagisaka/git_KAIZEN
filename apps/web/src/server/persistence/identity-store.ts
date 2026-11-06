@@ -6,6 +6,13 @@ import { withTenant } from './database.js';
 
 const refSchema = z.object({ tenant_id: z.uuid(), operator_id: z.uuid() });
 const rolesSchema = z.array(z.enum(['ADMIN', 'OPERATOR', 'REVIEWER']));
+const contextSchema = refSchema.extend({ is_login_default: z.boolean() });
+
+export interface VerifiedActorContext {
+  tenantId: string;
+  operatorId: string;
+  isLoginDefault: boolean;
+}
 
 export class PgIdentityStore implements IdentityStore {
   constructor(private readonly pool: Pool) {}
@@ -21,6 +28,18 @@ export class PgIdentityStore implements IdentityStore {
     if (!rows[0]) return null;
     const row = refSchema.parse(rows[0]);
     return { tenantId: row.tenant_id, operatorId: row.operator_id };
+  }
+  /**
+   * Login-time candidates for an OIDC-verified (issuer, subject).
+   * Never call this with identity claims copied from a browser request.
+   * This does not select a Tenant or grant any business read/write authority.
+   */
+  async verifiedIdentityContexts(identity: Identity): Promise<VerifiedActorContext[]> {
+    const { rows } = await this.pool.query('select * from factact_private.resolve_identity_contexts($1,$2)', [identity.issuer, identity.subject]);
+    return rows.map(raw => {
+      const row=contextSchema.parse(raw);
+      return {tenantId:row.tenant_id,operatorId:row.operator_id,isLoginDefault:row.is_login_default};
+    });
   }
   async createSession(hash: string, ref: OperatorRef, csrfToken: string): Promise<void> {
     await this.pool.query('select factact_private.create_session($1,$2,$3,$4)', [hash, ref.tenantId, ref.operatorId, csrfToken]);

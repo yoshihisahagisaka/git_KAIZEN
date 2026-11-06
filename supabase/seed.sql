@@ -8,7 +8,8 @@ insert into factact.operator_roles values
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','ADMIN'),
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','OPERATOR'),
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','REVIEWER');
-insert into factact_private.operator_identities values
+insert into factact_private.operator_identities
+  (issuer,subject,tenant_id,operator_id) values
 ('https://seed.example.invalid','development-operator','10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001');
 insert into factact.organizations (id,tenant_id,name,status,created_at,updated_at) values
 ('30000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','Example株式会社','ACTIVE','2026-09-09Z','2026-09-09Z');

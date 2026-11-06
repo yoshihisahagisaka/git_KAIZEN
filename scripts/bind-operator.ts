@@ -30,7 +30,7 @@ try {
   // Do not silently replace an existing real identity binding or transfer another user's identity.
   const { rows } = await client.query(`select 1 from factact_private.operator_identities where operator_id=$1 and issuer <> 'https://seed.example.invalid'`, [operatorId]);
   if (rows.length) throw new Error('Operator already has a real identity binding; explicit administrative review is required');
-  await client.query('insert into factact_private.operator_identities (issuer,subject,tenant_id,operator_id) values ($1,$2,$3,$4)', [env.OIDC_ISSUER, env.OPERATOR_SUBJECT, tenantId, operatorId]);
+  await client.query('insert into factact_private.operator_identities (issuer,subject,tenant_id,operator_id,is_login_default) values ($1,$2,$3,$4,true)', [env.OIDC_ISSUER, env.OPERATOR_SUBJECT, tenantId, operatorId]);
   await client.query("delete from factact_private.operator_identities where operator_id=$1 and issuer='https://seed.example.invalid'", [operatorId]);
   await client.query(`insert into factact.audit_events (id,tenant_id,aggregate_type,aggregate_id,event_type,metadata_json)
     values (gen_random_uuid(),$1,'OPERATOR',$2,'OPERATOR_IDENTITY_BOUND','{"source":"local administrative binding"}')`, [tenantId, operatorId]);
