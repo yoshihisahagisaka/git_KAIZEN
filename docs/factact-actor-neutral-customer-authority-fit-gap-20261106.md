@@ -1,6 +1,6 @@
 # FACTACT｜顧客・社内・外部運用Actorの認証／権限 Fit/Gap（2026-11-06）
 
-Status: **Read-only Fit/Gap / Implementation decision pending.** 本書は既定のBusiness Decisionを再設計せず、現行Git（SUPPORT共通受付 Draft PR #23 相当）との具体的差分を記録する。外部ユーザーへの権限付与、Migration、デプロイは本書の対象外。
+Status: **Read-only Fit/Gap / Initial-release scope clarified; implementation contracts pending.** 本書は既定のBusiness Decisionを再設計せず、現行Git（SUPPORT共通受付 Draft PR #23 相当）との具体的差分を記録する。権限付与、Migration、デプロイは本書の対象外。
 
 ## 1. 既に確定している前提（再決定しない）
 
@@ -10,13 +10,15 @@ Status: **Read-only Fit/Gap / Implementation decision pending.** 本書は既定
 4. **顧客間分離**：顧客に開く画面・データ・検索・参照・書き込みは、許可された自社情報（および明示的に権限付与された範囲）のみに制限する。他社の存在・内容を検索結果等からも漏らさない。
 5. **サービス別の特別設計はしない**：SONIX固有のロール、会員フラグでの受付拒否、サービスごとに異なるWork/権限エンジンは作らない。サービス／契約は共通の権限制御のContextであり、利用者の認証とは別概念。
 
-### 提供順序の確認（2026-11-06）
+### 初期リリースの完成範囲（2026-11-06 最新確認）
 
-**初期提供（SONIX先行）**：先に開始するSONIX案件では、まず**atLIB社員が認証済み内部OperatorとしてFACTACTを利用**し、電話等の問い合わせを代理入力し、対応と履歴を記録する。この段階で顧客情シス担当者・外部ベンダーへのFACTACTログイン権限を提供することは、初期稼働の前提条件としない。問い合わせ者自身の属性（会員・社員・ベンダー等）を受付制限するという意味でもない。
+**DECIDED — 初期リリースで作り切る。** SONIX案件の開始は2026年12月以降の見込みであり、残り期間を利用して、**atLIB社員だけでなく権限を持つ顧客担当者・外部委託先も利用できる共通の認証／認可・閲覧／入力／編集機能を初期リリースの完成条件とする**。同時に、顧客が他社情報へアクセスできないことも受け入れ条件とする。
 
-**将来の拡張（既定の到達点）**：顧客担当者・外部の認可された実施者が、自らの許可された顧客・サービス・Work・管理表・手順書等を閲覧／記録／更新できる状態を維持する。顧客間分離・Actor Neutrality・共通Service設計は**初期提供によって撤回／変更されない**。初期リリースの都合で「atLIB社員専用」が商品・権限モデルの恒久仕様にならないようにする。
+**SONIX現場の利用者配置は別の話**：SONIXの運用開始時に実際の問い合わせ対応をまずatLIB社員が担うという運用方針は維持できるが、**「atLIB社員しか利用できないシステムを先にリリースし、外部利用は後日開発する」という工程分割は行わない**。完成した外部利用機能を、どの顧客・誰にいつ有効化するかは個別の運用開始・権限付与判断であり、開発完了条件の後倒しとは区別する。
 
-したがって本書のGapは**初期稼働を阻止する項目**と**外部利用を開放する前に必ず解消する項目**を区別する。外部公開STOPは「SONIXのatLIB社員運用を停止する」という意味ではなく、将来の顧客ログイン・外部ベンダーログインへの適用を止めるGateである。初期稼働でも既存のOperator認証、Service/Contract Authority、Tenant分離は引き続き必須。
+**初期リリースで必須の共通機能**：①電話と並ぶ問い合わせフォーム入口、②atLIB／許可された顧客・外部Actorの対応内容閲覧／記録／編集、③許可された管理表・手順書等の確認／更新、④顧客・サービス・機能・操作対象ごとの権限判定、⑤顧客間分離（一覧・検索・直接ID参照・更新を含む）、⑥監査と権限失効の検証。既存Object・UI・契約の実装範囲を確認して不足部分だけを補う。SONIX専用のモデルや分岐は作らない。
+
+この変更は**リリースScope／優先順位のDecision**であって、既定のActor Neutrality・Core semanticsを変えない。現行の内部Operator向けRead Authority v1は外部利用に使えないため、**AC-01〜AC-12とAUTH-G1〜G5のうち初期リリースに関係するGapを、開発と受け入れテストの対象**とする。12月以降は開始見込みであり、具体的な本番日・承認Gateの完了を本書では確約しない。
 
 既存Coreは`Service Owner`、`Work Owner`、`Assignee`、`Next Action Owner`を区別し、`Authority is scoped, not global`とする（`docs/02-domain-model.md`）。`docs/support-round3-phase2-implementation-contract.md` §7は、チーム参加やベンダー所属それ自体では閲覧・Action権限を与えず、明示的な対象範囲／Contract Authorityにより判定する方針を記載済み。これらは新規の権限思想ではない。
 
@@ -69,10 +71,11 @@ SONIXの会員リストにない所属からの問い合わせを受け付けら
 
 ## 5. 次の技術作業と受け入れ条件（提案、未実施）
 
-1. **SONIX初期稼働へ向けた範囲**：現在の内部Operator認証・有効Service/Contract・Tenant RLS・問い合わせ受付→対応記録・Auditを確認する。顧客／外部ログイン機能を初期稼働の必須項目として持ち込まない。実際の本番移行は既存の別Gateに従う。
-2. **並行して将来互換性を確認**：AUTH-G1〜G5をGit/Canonical/ADRと突き合わせ、既存定義で足りる項目をCloseする。未決定部分だけを具体的Review／Decisionにする。現行機能へサービス固有ロールやatLIB専用という永続制約を加えない。
-3. **顧客・外部Actor開放前の実装Gate**：既存認証・Tenant RLSを維持しつつ、許可された顧客ContextだけでQuery／Command／検索／文書更新できる層を、既存Coreを用いて実装する。少なくとも`Customer A`と`Customer B`の完全分離（**別Tenantと同Tenant別Organizationの双方**）、直接ID指定でのB閲覧・更新拒否、横断検索・KnowledgeでBが露出しないこと、顧客Aの許可Action実行、外部ベンダーの**明示的委任の有無**、atLIBの複数顧客Context切替、受付CallerとOperatorの区別、Role失効・委任失効・監査を検証する。SONIXなどのService固有権限分岐は作らない。
-4. 既存の内部Operator向けSUPPORT／JOINのGolden動作とAuditを維持する。テストがない機能・管理表は先に現状を棚卸しする。**顧客／外部利用の公開は初期SONIX稼働とは別の承認Gate**とする。
+1. **初期リリースの実装Contract確定**：AUTH-G1〜G5をGit/Canonical/ADR／Decision Logと照合し、既定の内容で足りる項目をCloseする。残る論点だけを具体的Review／Decisionにする。管理表・手順書・フォーム等の実装棚卸しも併行する。
+2. **認証と顧客Context**：既存OIDC／Sessionを活かし、顧客・外部ActorとatLIB担当者に許可された顧客／Service Contextを解決する。サービス選択自体はログイン認証の代用としない。複数顧客に関わるatLIB担当者も、許可された範囲を明示して操作する。
+3. **Query／Command／横断検索／文書**：既存のTenant RLSを維持したまま、対象顧客・Service・Work・対象文書への許可を実際のQuery／Command境界で判定する。内部Operator v1のTenant内横断閲覧を外部利用者へ流用せず、既存Coreに接続する。SONIXなどのService固有分岐は作らない。
+4. **初期リリースのE2E受け入れ**：atLIB社員による問い合わせ受付→対応記録、顧客・外部Actorの許可された閲覧／記録／編集、問い合わせフォームの入口、管理表・手順書の権限内更新、`Customer A`と`Customer B`の分離（**別Tenantと同Tenant別Organization**）、直接ID指定・検索・KnowledgeでのB露出／更新拒否、外部ベンダーの明示的委任、atLIB複数顧客切替、CallerとOperatorの区別、Role・委任失効、Auditを検証する。
+5. 既存内部Operator向けSUPPORT／JOINのGolden動作・Auditを維持する。**必要機能の実装・負例検証を初期リリース完了条件とし、本番デプロイ・実顧客への権限付与は別途承認Gate**とする。
 
 ## 6. 今回の変更範囲
 
