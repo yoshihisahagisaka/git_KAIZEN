@@ -7,8 +7,12 @@ export interface JoinRepository {
   service(id: string): Promise<Service | null>;
   effectiveContracts(serviceId: string, at: string): Promise<Contract[]>;
   contract(id: string): Promise<Contract | null>;
+  /** Person recipient for JOIN and existing SUPPORT flows. Not the Caller role. */
   ensureRecipient(id: string, serviceId: string, personId: string): Promise<string>;
   recipientPerson(recipientId: string): Promise<Person | null>;
+  /** Explicit Organization recipient for services delivered to companies. */
+  ensureOrganizationRecipient(id: string, serviceId: string, organizationId: string): Promise<string>;
+  recipientOrganization(recipientId: string): Promise<{ id: string; name: string } | null>;
   insertEvent(event: JoinEvent): Promise<void>;
   event(id: string, lock?: boolean): Promise<JoinEvent | null>;
   evaluations(eventId: string): Promise<Evaluation[]>;
