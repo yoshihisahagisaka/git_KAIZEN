@@ -1,6 +1,6 @@
 # FACTACT｜顧客・社内・外部運用Actorの認証／権限 Fit/Gap（2026-11-06）
 
-Status: **Read-only Fit/Gap / Initial-release scope clarified; implementation contracts pending.** 本書は既定のBusiness Decisionを再設計せず、現行Git（SUPPORT共通受付 Draft PR #23 相当）との具体的差分を記録する。権限付与、Migration、デプロイは本書の対象外。
+Status: **Read-only Fit/Gap / Initial-release scope clarified; Canonical and code reconciled.** 本書は既定のBusiness Decisionを再設計せず、現行Git（SUPPORT共通受付 Draft PR #23 相当）との具体的差分を記録する。権限付与、Migration、デプロイは本書の対象外。
 
 ## 1. 既に確定している前提（再決定しない）
 
@@ -9,6 +9,7 @@ Status: **Read-only Fit/Gap / Initial-release scope clarified; implementation co
 3. **対応の実施・閲覧・記録は権限で決まる**：atLIB運用者だけでなく、権限ある顧客情シス担当者や外部実施者も担える。管理表・手順書等も、権限ある利用者による閲覧・入力・修正が必要。利用者の雇用先だけで一律の機能制限を決めない。
 4. **顧客間分離**：顧客に開く画面・データ・検索・参照・書き込みは、許可された自社情報（および明示的に権限付与された範囲）のみに制限する。他社の存在・内容を検索結果等からも漏らさない。
 5. **サービス別の特別設計はしない**：SONIX固有のロール、会員フラグでの受付拒否、サービスごとに異なるWork/権限エンジンは作らない。サービス／契約は共通の権限制御のContextであり、利用者の認証とは別概念。
+6. **Tenantと顧客企業は同義ではない**：`docs/99-ai-development-context.md` §§12, 15は、Tenantをセキュリティ分離境界、SONIX配下の数百の会員企業をService Recipientと定義する。顧客・会員企業の数だけTenantを作る設計は既定ではない。`Tenant → Organization → Service → Contract Profile → Service Recipient`を維持し、汎用の`customer_id`への置換は行わない。
 
 ### 初期リリースの完成範囲（2026-11-06 最新確認）
 
@@ -48,9 +49,9 @@ SONIXの会員リストにない所属からの問い合わせを受け付けら
 | AC-06 | 横断検索 | Exploreはactive Role確認後にOrganization、Person、Device、Service、Work、Knowledge Candidateを同Tenant内検索（`packages/application/src/explore-queries.ts`） | 顧客・外部Actor向けの結果件数、本文、存在推測を含む対象範囲フィルタがない。詳細画面だけを制限しても不足 | **GAP / 外部公開STOP** |
 | AC-07 | SUPPORT更新 | active ADMIN/OPERATOR、active Service/Contract、`support.executeRoles`、Audit等が存在（`packages/application/src/support-commands.ts`） | `executeRoles`は契約に記載したRole条件であり、当該顧客・Service・Workへの本人の委任や他顧客アクセス防止は別途必要 | **PARTIAL** |
 | AC-08 | Caller登録／入口 | 共通のService→所属（既存・新規）→Person（既存・新規）→問い合わせ、ベンダーを含む受付とUNVERIFIED記録がDraft PR #23で実装 | 現行UIの受付はOperator経由。顧客向けのWeb問い合わせフォーム入口や、外部送信者をOperator扱いしない入口は**このスライスでは未実装** | **PARTIAL** |
-| AC-09 | Caller／情報対象の分離 | `callerInputSnapshot`、未検証Observationなどで申告を保存 | `ServiceRecipient`はV1ではCaller Personの技術的リンク。Caller所属を「データ対象顧客」「Service適格者」「閲覧対象」の代用にできない。外部ベンダー申告のWork対象が確実に識別されるか要確認 | **GAP** |
+| AC-09 | Caller／情報対象の分離 | `callerInputSnapshot`、未検証Observationなどで申告を保存 | `ServiceRecipient`は現行DDLで`recipient_type='PERSON'`のみ、`ensureRecipient`はCaller Personの技術的リンク。既定のSONIX会員企業（Organization）というサービス提供対象を、そのまま表現できない。Caller所属／Caller Recipientを「実際の対象企業」「契約対象」「閲覧許可範囲」の代用にできない | **確認済みGAP／基盤依存** |
 | AC-10 | Workと責任の分離 | Domain／implementation contractはOwnerとAction Actorの非同一性を規定。SUPPORTにはWork、recordedBy、Audit履歴あり | 現行の`workOwnerOperatorId`等はTenant内Operatorを前提とし、顧客／外部Actorへの委任・引継ぎ・個別Action権限のE2E証跡は見つからない | **PARTIAL** |
-| AC-11 | 管理表・手順書・知識 | Registry／Knowledge Candidate等の基盤概念とSupport Knowledge Candidateの保存処理は存在 | 今回照合したSUPPORT／Explore／JOINスライスに、顧客が共有管理表・手順書を権限内で編集するE2E画面／APIの証跡なし。全Repository未実装との断定ではなく、対象機能の棚卸しが必要 | **UNVERIFIED / GAP候補** |
+| AC-11 | 管理表・手順書・知識 | Registry／Knowledge Candidate等の基盤概念とSupport Knowledge Candidateの保存処理は存在 | 現行`apps/web/src/client/support-context.tsx`のProcedureは静的デモであり、正式な手順書／FAQ検索は将来拡張と明記されている。現行のSUPPORT／Explore／JOIN UI/APIには、権限を持つ顧客・外部Actorが共有手順書を閲覧／編集するE2E機能がない。Registry／Knowledgeの既存資産を再利用し、操作対象と公開範囲を実装する必要がある | **確認済みGAP** |
 | AC-12 | 回帰・監査 | 既存テストにはTenant横断拒否、Roleなし拒否、SUPPORT操作Audit等がある | 顧客Aが顧客Bを見られないこと、同TenantにA/B、外部ベンダー参加、複数Tenantに関わるatLIB担当者、検索／直接ID指定の拒否の結合テスト不足 | **GAP** |
 
 **重大な境界**：現行の「内部Operator向けTenant内横断閲覧」へ顧客アカウントを登録するだけの実装は、同一Tenantの他社データ漏えいにつながり得る。外部アクセス公開前に、UIだけでなくQuery／Command／検索／Repositoryでfail-closedの許可判定が必要。
@@ -61,7 +62,7 @@ SONIXの会員リストにない所属からの問い合わせを受け付けら
 
 | ID | 確認が必要な具体事項 | 確認理由／既定の制約 |
 | --- | --- | --- |
-| AUTH-G1 | `Customer Workspace`、`Tenant`、`Organization`、`Service`、対象Workのデータ帰属をどう対応付けるか | 1 Tenantに複数所属（例：顧客企業・会員企業・ベンダー）が存在するため、Callerの`organization_id`で顧客の所有範囲を決めない。既存Concept/Decisionとの整合だけを確認する |
+| AUTH-G1 | `Tenant`／`Organization`／`Service`／`Contract Profile`／`Service Recipient`／Workの帰属を、既定のCoreに沿って物理表現する | **概念上の対応はCanonicalで解決済み**。`docs/99` §§12,15によりTenant≠顧客、SONIX会員企業はService Recipient。残GapはV1の`PERSON`専用DDL、Caller Personとの同一化、受益企業・対象Work・閲覧範囲を正しく結ぶ物理実装。サービス固有の別モデルは作らない |
 | AUTH-G2 | atLIB担当者／顧客担当者／委託先の、所属先と委任先Contextの解決・選択方法 | 現行の1 Operator＝1 Tenantログインを跨ぐ必要がある場合がある。認証（誰か）と許可（どの顧客・サービス・機能か）を区別する |
 | AUTH-G3 | 「閲覧／受付／対応記録／更新／レビュー／管理表・手順書修正」ごとの対象範囲 | Roleだけでなく、サービス・契約・Work／文書への許可範囲を明示する。`executeRoles`をRead権限に流用しない |
 | AUTH-G4 | 電話代理入力と外部問い合わせフォームの識別・Audit | CallerをログインOperatorに昇格させない。無認証の問い合わせ入口が内部データ参照権限を持たないようにする |
@@ -69,13 +70,36 @@ SONIXの会員リストにない所属からの問い合わせを受け付けら
 
 必要となる判断は、上記を既存Canonical・ADR・Decision Logの記録と照合して**実装可能な契約へ明文化すること**に限る。既存のものがあればそのまま採用し、未確定部分だけDecisionとして起票する。
 
+### 4.1 照合によってCloseした内容と、未決定の実装契約
+
+| 内容 | 照合結果 | 実装上の意味 |
+| --- | --- | --- |
+| Tenantを顧客企業数で分割するか | **既存Canonicalで解決**：Tenantは顧客企業と同義ではなく、SONIX会員企業はService Recipient | 同一Tenant・同一Service配下でも会員企業間を分離。Tenant RLSだけでは足りない |
+| Callerが情報対象・権限付与先か | **既存Canonicalで解決**：Caller、Service Recipient、Operator、Work Owner、Action Actorは別概念 | 外部ベンダーの電話・フォーム送信でも、その所属にデータ権限を推定付与しない |
+| ActorがatLIBに限られるか | **既存Business Decisionで解決**：Actor Neutrality | 顧客情シス・既存ベンダー・他社委託先が権限に応じ実施／閲覧／更新できることを初期リリースで検証 |
+| 外部ActorのRead Authority | **未決定の実装契約**：ADR 0002のRead Authority v1は内部Operatorのみ、明示的に外部を未決定とする。`support-round3-phase2-implementation-contract.md` §7はService/Contractおよび明示的に認可されたグループ範囲を要求 | 「自社のみ」の対象範囲と、サービス全体／個別Work／文書を明示的に委任する範囲の表現・失効・契約有効性検証を確定。既存Roleを外部へ流用しない |
+| 複数Tenantを扱う同一実施者 | **未決定の技術契約**：ADR 0002は初期Operator＝単一Tenantとし、複数Tenant所属／選択を後続Decisionに留保 | Google OIDCの厳格なIdentity bindingを維持しながら、明示的に付与されたTenant／ServiceのContext選択を設計・検証する |
+| サービス提供対象の組織表現 | **確認済み物理GAP**：`20260909000200_join_slice.sql`はService Recipientを`PERSON`に限定。SUPPORTもCaller Personを結ぶ | 企業単位の情報境界と実際の提供対象を、既存CoreのService Recipient意味に沿って表現可能にする。既存JOIN/SUPPORTのPerson結合は後方互換を守る |
+| 管理表／手順書編集 | **確認済み機能GAP**：静的デモProcedureとKnowledge Candidateはあるが、権限付きの正式文書／管理表E2Eではない | 既存Registry／Knowledgeの使える部分を確認し、Read/UpdateとAuditを完成させる |
+
+**依存関係上のSTOP**：上記二つの「未決定の実装契約」を、内部Operator向けRoleから推測してコードに固定しない。これは初期リリースの開発を延期する判断ではなく、誤った権限を作らず先行して実装・テストを進めるためのGateである。現行の内部向けQueryを顧客アカウントへ開放することは禁止する。
+
+### 4.2 初期リリースの具体的な負例（先にテスト契約化）
+
+1. **同一Tenant・同一Serviceの会員企業A/B**：A担当者によるBの一覧、検索、件数、直接ID取得、Work履歴、Knowledge／文書、変更をすべて拒否する。AのCallerがB所属ベンダーでも、Caller所属を根拠にBへの権限を与えない。
+2. **権限を持つサービス提供会社の担当者**：明示的な委任によりService全体を扱える場合と、会員企業・Work単位で委任される場合を分ける。権限未付与の同一Tenant内Serviceにはアクセスできない。
+3. **複数顧客を扱うatLIB／外部委託先**：認証済み本人が許可されたContextだけを選択でき、未許可Tenant／ServiceへContextを書き換えても通らない。1人のActorが複数者のWorkを実施してもOwnerは変更されない。
+4. **申告者と受益者が異なる問い合わせ**：電話代理入力とフォーム送信を区別し、申告の所属・メールアドレス・会員名簿照合のみでは内部システムへのアクセスを一切付与しない。
+5. **権限の変更・失効**：Role、委任、契約失効、所属変更の後、既存Sessionによる再読込／直接ID／更新が拒否され、許可範囲外の存在も推測できない。
+6. **文書・管理表と監査**：許可された担当者のみ共有範囲内の更新ができ、無許可者の読み／書きは拒否される。実施Actor、委任Context、更新前後の履歴、時刻を追跡できる。
+
 ## 5. 次の技術作業と受け入れ条件（提案、未実施）
 
-1. **初期リリースの実装Contract確定**：AUTH-G1〜G5をGit/Canonical/ADR／Decision Logと照合し、既定の内容で足りる項目をCloseする。残る論点だけを具体的Review／Decisionにする。管理表・手順書・フォーム等の実装棚卸しも併行する。
-2. **認証と顧客Context**：既存OIDC／Sessionを活かし、顧客・外部ActorとatLIB担当者に許可された顧客／Service Contextを解決する。サービス選択自体はログイン認証の代用としない。複数顧客に関わるatLIB担当者も、許可された範囲を明示して操作する。
-3. **Query／Command／横断検索／文書**：既存のTenant RLSを維持したまま、対象顧客・Service・Work・対象文書への許可を実際のQuery／Command境界で判定する。内部Operator v1のTenant内横断閲覧を外部利用者へ流用せず、既存Coreに接続する。SONIXなどのService固有分岐は作らない。
-4. **初期リリースのE2E受け入れ**：atLIB社員による問い合わせ受付→対応記録、顧客・外部Actorの許可された閲覧／記録／編集、問い合わせフォームの入口、管理表・手順書の権限内更新、`Customer A`と`Customer B`の分離（**別Tenantと同Tenant別Organization**）、直接ID指定・検索・KnowledgeでのB露出／更新拒否、外部ベンダーの明示的委任、atLIB複数顧客切替、CallerとOperatorの区別、Role・委任失効、Auditを検証する。
-5. 既存内部Operator向けSUPPORT／JOINのGolden動作・Auditを維持する。**必要機能の実装・負例検証を初期リリース完了条件とし、本番デプロイ・実顧客への権限付与は別途承認Gate**とする。
+1. **物理対象／帰属の解決（先行）**：既存Canonicalの`Tenant → Organization → Service → Contract Profile → Service Recipient`を実装Contractへ落とし、Person専用RecipientとCallerの結合を解消できる後方互換変更範囲を確定。SONIX会員企業をTenant数で表現しない。
+2. **認証と明示的Context／Read Scope**：ADR 0002の留保二点（外部Read Authority、複数Tenant所属／選択）を狭い技術Decisionとして解決し、Google OIDC／Sessionの既存安全境界を保ったまま、各Actorの許可されたTenant／Service／対象範囲／操作の評価を実装する。
+3. **Query／Command／横断検索を閉じる**：既存のTenant RLSを維持し、対象組織／Service Recipient／Work／文書への許可をQuery結果・件数・個別ID・関連データ・Commandの全経路で評価する。内部Operator v1のTenant内横断閲覧を外部利用者へ流用せず、サービス固有分岐は作らない。
+4. **フォームと共同運用機能**：電話代理入力と分離した問い合わせフォーム、顧客／外部ActorのSUPPORT閲覧・記録・修正、管理表・正式手順書の権限内参照・更新、AuditをE2Eで実装する。未検証のCaller申告は認証・契約適格性の根拠にしない。
+5. **初期リリースのE2E受け入れ**：§4.2の負例、別Tenantの拒否、atLIB社員の受付→対応記録、既存JOIN/SUPPORTのGolden動作・Auditを検証する。**必要機能の実装・負例検証を初期リリース完了条件とし、本番デプロイ・実顧客への権限付与は別途承認Gate**とする。
 
 ## 6. 今回の変更範囲
 
