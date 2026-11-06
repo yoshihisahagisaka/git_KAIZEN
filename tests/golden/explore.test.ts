@@ -94,17 +94,17 @@ describe('Explore-01 read search',()=>{
   it('searches Work by exact UUID and title but not Observation or Evidence text',async()=>{
     const fixture=await supportKnowledge();
     expect((await queries.search(actor,{query:fixture.work.id,types:['WORK'],limit:20})).results[0]).toMatchObject({resultType:'WORK',entityId:fixture.work.id});
-    expect((await queries.search(actor,{query:'VPN接続',types:['WORK'],limit:20})).results.some(x=>x.entityId===fixture.work.id)).toBe(true);
+    expect((await queries.search(actor,{query:'さんからの問い合わせ',types:['WORK'],limit:20})).results.some(x=>x.entityId===fixture.work.id)).toBe(true);
     expect((await queries.search(actor,{query:'OBSERVATION-ONLY-TOKEN',types:['WORK'],limit:20})).results).toEqual([]);
     expect((await queries.search(actor,{query:'EVIDENCE-ONLY-TOKEN',types:['WORK'],limit:20})).results).toEqual([]);
   });
 
   it('searches Knowledge Candidate title, content and topic without changing its meaning',async()=>{
     const fixture=await supportKnowledge();
-    for(const term of ['接続前','content-only-token','vpn_guidance']) {
+    for(const term of ['接続前','content-only-token','general_support']) {
       const result=(await queries.search(actor,{query:term,types:['KNOWLEDGE_CANDIDATE'],limit:20})).results[0];
       expect(result).toMatchObject({resultType:'KNOWLEDGE_CANDIDATE',entityId:fixture.knowledge.id});
-      expect(result?.metadata).toMatchObject({topic:'VPN_GUIDANCE',sourceWorkId:fixture.work.id});
+      expect(result?.metadata).toMatchObject({topic:'GENERAL_SUPPORT',sourceWorkId:fixture.work.id});
     }
   });
 

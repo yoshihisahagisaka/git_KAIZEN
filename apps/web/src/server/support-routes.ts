@@ -10,7 +10,8 @@ export function supportRoutes({commands:c,queries:q}:SupportServices){
  r.get('/support',async(_req,res)=>res.json({ok:true,data:await q.list(actor(res.locals))}));
  r.get('/support-responsibility',async(_req,res)=>res.json({ok:true,data:await q.responsibility(actor(res.locals))}));
  r.get('/support/:id',async(req,res)=>res.json({ok:true,data:await q.detail(actor(res.locals),id.parse(req.params.id))}));
- r.post('/support',async(req,res)=>{const input=z.strictObject({requestId:id,personId:id,serviceId:id,symptom:text}).parse(req.body);res.status(201).json({ok:true,data:await c.createEvent(actor(res.locals),input)});});
+ const caller=z.discriminatedUnion('kind',[z.strictObject({kind:z.literal('EXISTING'),personId:id}),z.strictObject({kind:z.literal('NEW'),organizationId:id.optional(),organizationName:z.string().trim().max(200).optional(),displayName:z.string().trim().min(1).max(200),email:z.email().optional(),distinctPersonConfirmed:z.boolean()})]);
+ r.post('/support',async(req,res)=>{const input=z.strictObject({requestId:id,personId:id.optional(),caller:caller.optional(),serviceId:id,symptom:text}).refine(x=>!!x.personId!==!!x.caller,'問い合わせ者を指定してください。').parse(req.body);res.status(201).json({ok:true,data:await c.createEvent(actor(res.locals),input)});});
  r.post('/support/:id/evaluate',async(req,res)=>{const input=z.strictObject({decision:z.enum(['REQUIRED','NOT_APPLICABLE']),reason:z.string().trim().max(4000).default('')}).parse(req.body);res.json({ok:true,data:await c.evaluate(actor(res.locals),id.parse(req.params.id),input.decision,input.reason)});});
  const note=z.string().max(1000);
  r.post('/support-work/:id/records',async(req,res)=>{
