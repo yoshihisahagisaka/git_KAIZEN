@@ -21,6 +21,8 @@ beforeEach(() => {
     beginLogin: vi.fn().mockResolvedValue(undefined), consumeLogin: vi.fn().mockResolvedValue(login),
     resolveIdentity: vi.fn().mockResolvedValue({ tenantId: operator.tenantId, operatorId: operator.id }),
     createSession: vi.fn().mockResolvedValue(undefined), readSession: vi.fn().mockResolvedValue({ tenantId: operator.tenantId, operatorId: operator.id, csrfToken: 'csrf' }),
+    createVerifiedSession: vi.fn().mockResolvedValue(undefined), listSessionContexts: vi.fn().mockResolvedValue([]),
+    switchSessionContext: vi.fn().mockResolvedValue({ tenantId: operator.tenantId, operatorId: operator.id, expiresAt: new Date(Date.now() + 60_000) }),
     revokeSession: vi.fn().mockResolvedValue(undefined), loadActiveOperator: vi.fn().mockResolvedValue(operator),
   };
   provider = { authorizationUrl: vi.fn().mockReturnValue('https://accounts.google.com/authorize'), verifyCallback: vi.fn().mockResolvedValue({ issuer: config.issuer, subject: 'external-subject' }) };
@@ -64,19 +66,46 @@ describe('authentication boundary', () => {
   it('protocol rejection cannot create a session', async () => {
     vi.mocked(provider.verifyCallback).mockRejectedValue(new Error('bad state/nonce/token'));
     await request(app()).get('/auth/callback?state=bad').set('Cookie', 'factact_login=flow').expect(401);
-    expect(store.createSession).not.toHaveBeenCalled();
+    expect(store.createVerifiedSession).not.toHaveBeenCalled();
   });
   it('verified identity maps to an internal Operator; session is rotated and hashed', async () => {
     const res = await request(app()).get('/auth/callback?code=code&state=expected-state').set('Cookie', ['factact_login=flow', 'factact_session=old']).expect(302);
     expect(store.consumeLogin).toHaveBeenCalledWith(tokenHash('flow'));
     expect(store.resolveIdentity).toHaveBeenCalledWith({ issuer: config.issuer, subject: 'external-subject' });
     expect(store.revokeSession).toHaveBeenCalledWith(tokenHash('old'));
-    expect(vi.mocked(store.createSession).mock.calls[0]?.[0]).toHaveLength(64);
+    expect(vi.mocked(store.createVerifiedSession).mock.calls[0]?.[0]).toHaveLength(64);
+    expect(vi.mocked(store.createVerifiedSession).mock.calls[0]?.[3]).toEqual({ issuer: config.issuer, subject: 'external-subject' });
     expect(String(res.headers['set-cookie'])).not.toContain('external-subject');
   });
   it('forged tenant input cannot change the session Operator', async () => {
     const res = await request(app()).get('/api/session?tenant_id=other').set('Cookie', 'factact_session=token').set('x-tenant-id', 'other').expect(200);
     expect(res.body.data.operator.tenantId).toBe(operator.tenantId);
+  });
+  it('offers context candidates only after authentication', async () => {
+    await request(app()).get('/api/session/contexts').expect(401);
+    const res = await request(app()).get('/api/session/contexts').set('Cookie', 'factact_session=token').expect(200);
+    expect(res.body.data.contexts).toEqual([]);
+    expect(store.listSessionContexts).toHaveBeenCalledWith(tokenHash('token'));
+  });
+  it('context switch is CSRF protected, accepts tenantId only, and rotates the token', async () => {
+    const server = app();
+    const body = { tenantId: operator.tenantId };
+    await request(server).post('/api/session/context').set('Cookie', 'factact_session=token').send(body).expect(403);
+    await request(server).post('/api/session/context').set('Cookie', 'factact_session=token').set('Origin',config.origin).set('x-csrf-token','csrf').send({ ...body, operatorId: operator.id }).expect(400);
+    await request(server).post('/api/session/context').set('Cookie', 'factact_session=token').set('Origin',config.origin).set('x-csrf-token','csrf').send(body).expect(200);
+    expect(store.switchSessionContext).toHaveBeenCalledTimes(1);
+    const args = vi.mocked(store.switchSessionContext).mock.calls[0]!;
+    expect(args[0]).toBe(tokenHash('token'));
+    expect(args[1]).toHaveLength(64);
+    expect(args[2]).toBe(operator.tenantId);
+    expect(args[3]).not.toBe('csrf');
+  });
+  it('forbidden context does not set a replacement session cookie', async () => {
+    vi.mocked(store.switchSessionContext).mockResolvedValue(null);
+    const res = await request(app()).post('/api/session/context')
+      .set('Cookie','factact_session=token').set('Origin',config.origin).set('x-csrf-token','csrf')
+      .send({tenantId:operator.tenantId}).expect(403);
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
   it('logout requires both exact origin and CSRF token, then revokes session', async () => {
     const server = app();
