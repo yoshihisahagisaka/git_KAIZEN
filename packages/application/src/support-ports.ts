@@ -2,6 +2,10 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision } from '../../domain/src/support.js';
 export interface SupportRepository {
+ organizations():Promise<{id:string;name:string;status:string}[]>;
+ insertCallerOrganization(id:string,name:string):Promise<void>;
+ insertCallerPerson(id:string,organizationId:string,name:string,email:string|null):Promise<void>;
+ lockCallerKey(key:string):Promise<void>;
  managementRows():Promise<SupportManagementRow[]>;
  deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
  insertDeviceContext(context:import('../../domain/src/support.js').SupportDeviceContext):Promise<void>;

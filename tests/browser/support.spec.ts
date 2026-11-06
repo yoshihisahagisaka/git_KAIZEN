@@ -44,7 +44,7 @@ test.beforeEach(async()=>{
 async function intake(page:import('@playwright/test').Page,mode:'START'|'RECEIVE_ONLY'='RECEIVE_ONLY'){
  await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'問い合わせ',exact:true}).click();
  await page.getByLabel('問い合わせ元',{exact:true}).selectOption({label:'田中 一郎'});
- await page.getByLabel('本人からの申告',{exact:true}).fill('会社PCでVPNにつながりません');
+ await page.getByRole('textbox',{name:'問い合わせ内容'}).fill('会社PCでVPNにつながりません');
  await page.getByRole('button',{name:mode==='START'?'受付して対応を開始':'受付のみ',exact:true}).click();
  await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ'})).toBeVisible();
  return page.url().split('/support/')[1]!;
@@ -64,12 +64,33 @@ test('HR-UI: one-click intake starts the Work and preserves Event/Evaluation bou
  await expect(page.getByRole('article',{name:'問い合わせ内容'})).toContainText('会社PCでVPNにつながりません');
 });
 
+test('service-first: unlisted company and new caller can start a normal Work',async({page})=>{
+ await login(page);
+ await page.getByRole('navigation',{name:'メインナビゲーション'}).getByRole('link',{name:'問い合わせ',exact:true}).click();
+ await page.getByLabel('所属・企業').selectOption('NEW');
+ await page.getByLabel('新しい所属・企業名').fill('会員リスト未掲載のお客様');
+ await page.getByLabel('問い合わせ者のお名前').fill('初回 問合');
+ await page.getByRole('textbox',{name:'問い合わせ内容'}).fill('サポート窓口を教えてください');
+ await page.getByRole('button',{name:'受付して対応を開始'}).click();
+ await expect(page.getByRole('heading',{name:'初回 問合さんからの問い合わせ'})).toBeVisible();
+ await expect(page.getByRole('region',{name:'対応を記録'})).toBeVisible();
+ await expect(page.getByRole('article',{name:'問い合わせ内容'})).toContainText('受付時はリスト外・新規入力');
+ await page.getByLabel('対応内容').fill('問い合わせへの回答を完了');
+ await page.getByLabel('対応後の状態').selectOption('COMPLETED');
+ await page.getByRole('button',{name:'対応を記録',exact:true}).click();
+ const confirm=page.getByRole('dialog',{name:'対応完了の確認'});
+ await confirm.getByLabel('終了理由').fill('回答済み');
+ await confirm.getByLabel(/残る回答待ち/).check();
+ await confirm.getByRole('button',{name:'確認して対応を終了'}).click();
+ await expect(page.getByRole('status')).toHaveText('確認・案内の対応を完了しました');
+});
+
 test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, correction and next inquiry',async({page})=>{
  await login(page);const eventId=await intake(page);
  const context=page.getByRole('complementary',{name:'対応アシスト'});
  await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('PC-0073');
  await expect(context.getByRole('region',{name:'登録情報と今回の問合せ対象'})).toContainText('未確認');
- await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('VPN利用要否: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
+ await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('困っていることの詳細: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
  await expect(page.getByRole('article',{name:'問い合わせ内容'}).getByText('会社PCでVPNにつながりません',{exact:true})).toBeVisible();
  await expect(page.getByText('本人から聞いた内容です。技術的な障害として確認済みではありません。')).toHaveCount(0);
  await expect(page.getByRole('textbox',{name:/PC/})).toHaveCount(0);
@@ -110,7 +131,7 @@ test('SUPPORT V2 Golden Human Review: JOIN context, draft/back/review, outcome, 
  expect((await db.admin.query('select count(*)::int as n from factact.knowledge_candidates')).rows[0].n).toBe(0);
  expect((await db.admin.query('select count(*)::int as n from factact.changes where work_id=$1',[w.id])).rows[0].n).toBe(0);
  expect((await db.admin.query("select id from factact.relations where status='ACTIVE'")).rows[0].id).toBe(relationId);
- await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('VPN利用要否: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
+ await context.getByText('未確認の管理情報',{exact:true}).click();await expect(context.getByText('困っていることの詳細: 未確認',{exact:true})).toBeVisible();await context.getByText('未確認の管理情報',{exact:true}).click();
  const businessHistory=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(businessHistory.getByText('対応を記録しました',{exact:true}).first()).toBeVisible();const newest=await businessHistory.locator('li strong').allTextContents();
  await businessHistory.getByLabel('対応履歴の表示順').selectOption('oldest');expect(await businessHistory.locator('li strong').allTextContents()).toEqual([...newest].reverse());
  await intake(page);await page.getByRole('button',{name:'過去の関連する対応',exact:true}).click();
@@ -205,10 +226,10 @@ test('A2 saves explicit comparison and caller statement without changing Registr
  const panel=page.getByRole('region',{name:'今回の対応対象'}),record=panel.getByRole('region',{name:'登録情報と今回の対象の確認記録'}),beforeRelations=(await db.admin.query('select * from factact.relations')).rows;
  type Attempt={requestId:string;kind:string;value:string;detail:string};const attempts:Attempt[]=[];let loseComparison=true,loseCaller=true;await page.route('**/api/support-work/*/context-target/observations',async route=>{const body=route.request().postDataJSON() as Attempt;attempts.push(body);if((body.kind==='REGISTRY_COMPARISON'&&loseComparison)||(body.kind==='CALLER_STATEMENT'&&loseCaller)){if(body.kind==='REGISTRY_COMPARISON')loseComparison=false;else loseCaller=false;const saved=await route.fetch();expect(saved.ok()).toBe(true);await new Promise(resolve=>setTimeout(resolve,100));await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,error:{message:'応答を受信できませんでした'}})});return;}await route.continue();});
  await record.getByLabel('比較判断').selectOption('MATCH');const comparisonButton=record.getByRole('button',{name:'比較判断を記録'});await comparisonButton.dblclick();await expect(page.getByRole('alert')).toHaveText('応答を受信できませんでした');const failedComparisonAttempts=attempts.filter(x=>x.kind==='REGISTRY_COMPARISON');expect(new Set(failedComparisonAttempts.map(x=>x.requestId)).size).toBe(1);await expect(record.getByLabel('比較判断')).toHaveValue('MATCH');await comparisonButton.click();await expect(page.getByRole('region',{name:'問い合わせの対応履歴'}).getByText('登録情報との比較判断を記録しました',{exact:true})).toBeVisible();const comparisonAttempts=attempts.filter(x=>x.kind==='REGISTRY_COMPARISON');expect(new Set(comparisonAttempts.map(x=>x.requestId)).size).toBe(1);await expect(record.getByLabel('比較判断')).toHaveValue('UNKNOWN');
- await record.getByLabel('本人から聞いた内容').fill('昨日、貸与PCを交換したと本人が申告');const callerButton=record.getByRole('button',{name:'本人の申告を記録'});await callerButton.dblclick();await expect(page.getByRole('alert')).toHaveText('応答を受信できませんでした');const failedCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(new Set(failedCallerAttempts.map(x=>x.requestId)).size).toBe(1);await expect(record.getByLabel('本人から聞いた内容')).toHaveValue('昨日、貸与PCを交換したと本人が申告');await callerButton.click();await expect(record.getByLabel('本人から聞いた内容')).toHaveValue('');const firstCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(new Set(firstCallerAttempts.map(x=>x.requestId)).size).toBe(1);
- await record.getByLabel('本人から聞いた内容').fill('交換日は昨日と本人が補足');await callerButton.click();await expect(record.getByLabel('本人から聞いた内容')).toHaveValue('');const allCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(allCallerAttempts).toHaveLength(3);expect(allCallerAttempts[2]!.requestId).not.toBe(allCallerAttempts[1]!.requestId);await page.unroute('**/api/support-work/*/context-target/observations');
- await panel.getByText('対象の記録履歴を見る',{exact:true}).click();await expect(panel.getByText(/登録情報との比較判断: 一致/)).toBeVisible();await expect(panel.getByText(/本人からの申告（未検証）: 未確認（昨日、貸与PCを交換したと本人が申告）/)).toBeVisible();
- const history=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(history.getByText('登録情報との比較判断を記録しました',{exact:true})).toBeVisible();await expect(history.getByText('本人から聞いた内容を記録しました',{exact:true})).toHaveCount(2);await expect(history.getByText('本人からの申告（未検証）',{exact:false}).first()).toBeVisible();
+ await record.getByLabel('問い合わせ者から聞いた内容').fill('昨日、貸与PCを交換したと本人が申告');const callerButton=record.getByRole('button',{name:'申告を記録'});await callerButton.dblclick();await expect(page.getByRole('alert')).toHaveText('応答を受信できませんでした');const failedCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(new Set(failedCallerAttempts.map(x=>x.requestId)).size).toBe(1);await expect(record.getByLabel('問い合わせ者から聞いた内容')).toHaveValue('昨日、貸与PCを交換したと本人が申告');await callerButton.click();await expect(record.getByLabel('問い合わせ者から聞いた内容')).toHaveValue('');const firstCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(new Set(firstCallerAttempts.map(x=>x.requestId)).size).toBe(1);
+ await record.getByLabel('問い合わせ者から聞いた内容').fill('交換日は昨日と本人が補足');await callerButton.click();await expect(record.getByLabel('問い合わせ者から聞いた内容')).toHaveValue('');const allCallerAttempts=attempts.filter(x=>x.kind==='CALLER_STATEMENT');expect(allCallerAttempts).toHaveLength(3);expect(allCallerAttempts[2]!.requestId).not.toBe(allCallerAttempts[1]!.requestId);await page.unroute('**/api/support-work/*/context-target/observations');
+ await panel.getByText('対象の記録履歴を見る',{exact:true}).click();await expect(panel.getByText(/登録情報との比較判断: 一致/)).toBeVisible();await expect(panel.getByText(/問い合わせ者からの申告（未検証）: 未確認（昨日、貸与PCを交換したと本人が申告）/)).toBeVisible();
+ const history=page.getByRole('region',{name:'問い合わせの対応履歴'});await expect(history.getByText('登録情報との比較判断を記録しました',{exact:true})).toBeVisible();await expect(history.getByText('問い合わせ者から聞いた内容を記録しました',{exact:true})).toHaveCount(2);await expect(history.getByText('問い合わせ者からの申告（未検証）',{exact:false}).first()).toBeVisible();
  expect((await db.admin.query('select * from factact.relations')).rows).toEqual(beforeRelations);expect((await db.admin.query('select count(*)::int n from factact.support_work_target_observations where work_id=$1',[workId])).rows[0].n).toBe(3);
 });
 

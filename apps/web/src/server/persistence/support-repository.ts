@@ -9,6 +9,10 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
 class PgSupportRepository implements SupportRepository {
+ organizations(){return this.many<{id:string;name:string;status:string}>("select id,name,status from factact.organizations where status='ACTIVE' order by name,id");}
+ insertCallerOrganization(id:string,name:string){return this.insert('organizations',{id,tenantId:this.tenant,name,status:'ACTIVE'});}
+ insertCallerPerson(id:string,organizationId:string,name:string,email:string|null){return this.insert('people',{id,tenantId:this.tenant,organizationId,displayName:name,email,lifecycleStatus:'ACTIVE'});}
+ async lockCallerKey(key:string){await this.db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[this.tenant+':caller:'+key]);}
  managementRows(){return this.many<import('../../../../../packages/application/src/support-ports.js').SupportManagementRow>(`select w.*,e.id as support_event_id,p.display_name as person_name,s.name as service_name,
   o.display_name as owner_name,o.status as owner_status
   from factact.work w
