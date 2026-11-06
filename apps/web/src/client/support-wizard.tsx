@@ -24,6 +24,7 @@ export function SupportDetail(props:Props&{id:string}){
  {v.work&&<section className="work-status-bar" aria-label="現在の対応状況"><div><span>状態</span><strong>{v.currentResponseState?.label??'対応中'}</strong></div><div><span>担当者</span><strong>{v.owner?.displayName??'確認が必要です'}</strong></div><div className="work-status-next"><span>次にやること</span><strong>{v.work.nextAction||'確認が必要です'}</strong></div><div><span>次回確認予定</span><strong>{v.work.followUpAt?time(v.work.followUpAt):v.work.waiting?'未設定':'なし'}</strong>{v.needsFollowUp&&<small>確認が必要です</small>}</div></section>}
  <div ref={workspace} className="workspace support-workspace" style={{'--support-main-fr':`${paneRatio}fr`,'--support-side-fr':`${100-paneRatio}fr`} as import('react').CSSProperties}><section aria-label="今の対応">
  <article className="support-inquiry-summary" aria-label="問い合わせ内容"><h2>問い合わせ内容</h2><p>所属・企業: {v.organization.name}{v.affiliationWasNewAtIntake&&<strong>（受付時はリスト外・新規入力）</strong>}</p><p>{v.observation.contentText}</p><small>問い合わせ者からの申告（未検証）</small></article>
+ <BeneficiaryPanel {...props} view={v} allowed={allowed}/>
  {!v.evaluation&&<section className="next-action"><h2>次にやること</h2><p>問い合わせの確認・対応を始めます。あなたの担当として記録します。</p><button disabled={props.busy||!allowed} onClick={()=>void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'REQUIRED'});})}>対応を開始</button><details><summary>対応せずに受付を閉じる</summary><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void props.run(async()=>{await api(`/api/support/${v.event.id}/evaluate`,props.csrf,{decision:'NOT_APPLICABLE',reason:f.get('reason')});});}}><label>対応しない理由<textarea name="reason" required maxLength={4000}/></label><button disabled={props.busy||!allowed}>理由を残して受付を閉じる</button></form></details></section>}
  {v.evaluation&&!v.work&&<article><h2>対応は作成していません</h2><p>{v.evaluation.basisSummary}</p></article>}
  {v.work&&<>{v.work.status!=='COMPLETED'&&<Wizard key={v.work.id} {...props} view={v} allowed={allowed}/>}
@@ -41,6 +42,24 @@ export function SupportDetail(props:Props&{id:string}){
 }
 
 type EditorProps=Props&{view:SupportDetailView;allowed:boolean};
+function BeneficiaryPanel({view:v,csrf,busy,run,allowed}:EditorProps){
+ const [organizationId,setOrganizationId]=useState(v.beneficiary?.id??''),[reason,setReason]=useState(''),requestId=useRef(crypto.randomUUID());
+ const change=()=>{requestId.current=crypto.randomUUID();};
+ const submit=(kind:'CONFIRMED'|'CLEARED')=>void run(async()=>{
+  await api(`/api/support/${v.event.id}/beneficiary`,csrf,{kind,requestId:requestId.current,expectedRevision:v.beneficiaryDecision?.revision??0,...(kind==='CONFIRMED'?{organizationId}:{}),reason});
+  requestId.current=crypto.randomUUID();setReason('');
+ });
+ return <section className="card" aria-label="支援対象企業の確認"><h2>今回の支援対象企業</h2>
+  <p>現在: <strong>{v.beneficiary?.name??'未確認'}</strong></p>
+  <p>問い合わせ者の所属と、実際に支援を受ける企業は異なる場合があります。所属から自動確定せず、確認した根拠を記録してください。</p>
+  <fieldset disabled={busy||!allowed}>
+   <label>確認した企業<select value={organizationId} onChange={e=>{setOrganizationId(e.target.value);change();}}><option value="">選択してください</option>{v.beneficiaryOrganizations.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+   <label>確認根拠・訂正／解除理由<textarea value={reason} onChange={e=>{setReason(e.target.value);change();}} maxLength={1000} required/></label>
+   <div className="form-actions"><button type="button" disabled={!organizationId||!reason.trim()} onClick={()=>submit('CONFIRMED')}>支援対象企業として確認・記録</button>{v.beneficiary&&<button type="button" className="secondary" disabled={!reason.trim()} onClick={()=>submit('CLEARED')}>確認を解除して未確認に戻す</button>}</div>
+  </fieldset>
+  <small>これは今回の問い合わせの対象企業に関する担当者の記録です。契約適格性や他社情報の閲覧・操作権限は付与しません。</small>
+ </section>;
+}
 const closeOutcomeLabel:Record<NonNullable<import('../../../../packages/domain/src/support.js').SupportWork['outcome']>,string>={COMPLETED:'確認・案内の対応を完了しました',NO_ACTION_REQUIRED:'調査完了・追加対応不要',RESOLVED:'解決として対応を終了しました',WITHDRAWN:'取り下げとして対応を終了しました',NOT_ELIGIBLE:'対象外として対応を終了しました',FORMALLY_TRANSFERRED:'正式移管として対応を終了しました',OTHER_RESPONSIBILITY_ENDED:'責任終了として対応を終了しました'};
 function ReopenPanel({view:v,csrf,busy,run,allowed}:EditorProps){const dialog=useRef<HTMLDialogElement>(null),button=useRef<HTMLButtonElement>(null),request=useRef(crypto.randomUUID()),submitting=useRef(false),[sending,setSending]=useState(false),[reason,setReason]=useState(''),[disposition,setDisposition]=useState<Exclude<ResponseDisposition,'COMPLETED'>>('INVESTIGATING'),[followUp,setFollowUp]=useState('');const changed=()=>{request.current=crypto.randomUUID();};const submit=()=>void(async()=>{if(submitting.current)return;submitting.current=true;setSending(true);let succeeded=false;await run(async()=>{await api(`/api/support-work/${v.work!.id}/reopen`,csrf,{requestId:request.current,expectedLifecycleRevision:v.work!.lifecycleRevision,expectedCloseDecisionId:v.closeDecision?.id??null,reason,disposition,followUpAt:new Date(followUp).toISOString()});succeeded=true;});submitting.current=false;setSending(false);if(succeeded)dialog.current?.close();})();return <section className="card" aria-label="対応中に戻す"><h2>対応終了の記録</h2><p>{closeOutcomeLabel[v.work!.outcome!]??v.closeDecision?.outcome} / {v.closeDecision?.closeReason}</p><button ref={button} disabled={busy||!allowed} onClick={()=>dialog.current?.showModal()}>対応中に戻す</button><dialog ref={dialog} aria-label="対応中に戻す確認" className="context-dialog" onClose={()=>button.current?.focus()}><header><h3>同じ対応の続きとして対応中に戻す</h3></header><fieldset disabled={sending}><label>再開理由<textarea autoFocus value={reason} onChange={e=>{setReason(e.target.value);changed();}} required maxLength={1000}/></label><label>再開後の状態<select value={disposition} onChange={e=>{setDisposition(e.target.value as typeof disposition);changed();}}><option value="CUSTOMER_WAIT">顧客対応・回答待ち</option><option value="INVESTIGATING">要調査</option><option value="MONITORING">様子見</option></select></label><label>次回確認予定<input type="datetime-local" value={followUp} onChange={e=>{setFollowUp(e.target.value);changed();}} required/></label><button type="button" className="secondary" onClick={()=>dialog.current?.close()}>キャンセル</button><button type="button" disabled={!reason.trim()||!followUp||sending} onClick={submit}>確認して対応中に戻す</button></fieldset></dialog></section>}
 function LifecyclePanel({view:v,csrf,busy,run,allowed}:EditorProps){

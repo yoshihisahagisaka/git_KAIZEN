@@ -1,6 +1,13 @@
 ﻿import type { Work, Evaluation, Evidence, Audit } from './join.js';
 export interface SupportEvent {id:string;tenantId:string;requestId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;createdByOperatorId:string;createdAt:string;callerInputSnapshot?:Record<string,unknown>|null}
 export type SupportCallerInput = {kind:'EXISTING';personId:string} | {kind:'NEW';organizationId?:string|undefined;organizationName?:string|undefined;displayName:string;email?:string|undefined;distinctPersonConfirmed:boolean};
+// Confirmed beneficiary is separate from the caller's unverified affiliation.
+// This is a human attribution record, not proof of contract eligibility or Read Authority.
+export interface SupportBeneficiaryDecision {
+ id:string;tenantId:string;supportEventId:string;serviceId:string;requestId:string;revision:number;
+ kind:'CONFIRMED'|'CLEARED';serviceRecipientId:string|null;recipientType:'ORGANIZATION';reason:string;
+ recordedByOperatorId:string;recordedAt:string;organizationName?:string|null;
+}
 export type SupportCloseOutcome='RESOLVED'|'NOT_ELIGIBLE'|'WITHDRAWN'|'FORMALLY_TRANSFERRED'|'OTHER_RESPONSIBILITY_ENDED';
 export interface SupportWork extends Omit<Work,'sourceEventId'|'outcome'> {supportEventId:string;outcome:'COMPLETED'|'NO_ACTION_REQUIRED'|SupportCloseOutcome|null;lifecycleVersion:number;waiting:boolean;waitingParty:string|null;waitingReason:string|null;nextActionOpen:boolean;followUpAt:string|null;lifecycleRevision:number}
 export interface SupportEvaluation extends Omit<Evaluation,'eventId'|'requirementCode'|'basisSnapshot'> {supportEventId:string;requirementCode:'SUPPORT_ASSISTANCE';basisSnapshot:{contractProfileId:string;contractProfileVersion:number;triageReason:string;decision:'REQUIRED'|'NOT_APPLICABLE'}}
