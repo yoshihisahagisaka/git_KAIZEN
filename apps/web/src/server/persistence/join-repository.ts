@@ -52,7 +52,26 @@ export class PgJoinRepository implements JoinRepository {
     if (!found) throw new DomainError('RECIPIENT_INACTIVE','サービス対象者が無効です。');
     return found.id;
   }
-  recipientPerson(recipientId: string) { return this.one<Person>("select p.* from factact.people p join factact.service_recipients r on r.recipient_id=p.id and r.tenant_id=p.tenant_id where r.id=$1 and r.status='ACTIVE'",[recipientId]); }
+  recipientPerson(recipientId: string) { return this.one<Person>("select p.* from factact.people p join factact.service_recipients r on r.recipient_id=p.id and r.tenant_id=p.tenant_id where r.id=$1 and r.recipient_type='PERSON' and r.status='ACTIVE'",[recipientId]); }
+  async ensureOrganizationRecipient(id: string, serviceId: string, organizationId: string) {
+    const organization = await this.one<{id:string}>("select id from factact.organizations where id=$1 and status='ACTIVE'", [organizationId]);
+    if (!organization) throw new DomainError('ORGANIZATION_INACTIVE','サービス提供対象の企業が無効です。');
+    await this.db.query(`insert into factact.service_recipients
+      (id,tenant_id,service_id,recipient_type,recipient_id,recipient_organization_id)
+      values ($1,$2,$3,'ORGANIZATION',null,$4)
+      on conflict (tenant_id,service_id,recipient_organization_id) where recipient_type='ORGANIZATION' do nothing`,
+      [id,this.tenantId,serviceId,organizationId]);
+    const found = await this.one<{id:string}>(`select id from factact.service_recipients
+      where service_id=$1 and recipient_type='ORGANIZATION' and recipient_organization_id=$2 and status='ACTIVE'`,
+      [serviceId,organizationId]);
+    if (!found) throw new DomainError('RECIPIENT_INACTIVE','サービス提供対象の企業が無効です。');
+    return found.id;
+  }
+  recipientOrganization(recipientId: string) {
+    return this.one<{id:string;name:string}>(`select o.id,o.name from factact.organizations o
+      join factact.service_recipients r on r.tenant_id=o.tenant_id and r.recipient_organization_id=o.id
+      where r.id=$1 and r.recipient_type='ORGANIZATION' and r.status='ACTIVE' and o.status='ACTIVE'`,[recipientId]);
+  }
   insertEvent(event: JoinEvent) { return this.insert('join_events',{...event, occurredAt: event.createdAt, receivedAt: event.createdAt}); }
   event(id: string, lock=false) { return this.one<JoinEvent>(`select * from factact.join_events where id=$1 ${lock?'for update':''}`,[id]); }
   evaluations(eventId: string) { return this.many<Evaluation>('select * from factact.requirement_evaluations where event_id=$1 order by evaluated_at,id',[eventId]); }
