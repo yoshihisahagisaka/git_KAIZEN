@@ -10,6 +10,14 @@ Status: **Read-only Fit/Gap / Implementation decision pending.** 本書は既定
 4. **顧客間分離**：顧客に開く画面・データ・検索・参照・書き込みは、許可された自社情報（および明示的に権限付与された範囲）のみに制限する。他社の存在・内容を検索結果等からも漏らさない。
 5. **サービス別の特別設計はしない**：SONIX固有のロール、会員フラグでの受付拒否、サービスごとに異なるWork/権限エンジンは作らない。サービス／契約は共通の権限制御のContextであり、利用者の認証とは別概念。
 
+### 提供順序の確認（2026-11-06）
+
+**初期提供（SONIX先行）**：先に開始するSONIX案件では、まず**atLIB社員が認証済み内部OperatorとしてFACTACTを利用**し、電話等の問い合わせを代理入力し、対応と履歴を記録する。この段階で顧客情シス担当者・外部ベンダーへのFACTACTログイン権限を提供することは、初期稼働の前提条件としない。問い合わせ者自身の属性（会員・社員・ベンダー等）を受付制限するという意味でもない。
+
+**将来の拡張（既定の到達点）**：顧客担当者・外部の認可された実施者が、自らの許可された顧客・サービス・Work・管理表・手順書等を閲覧／記録／更新できる状態を維持する。顧客間分離・Actor Neutrality・共通Service設計は**初期提供によって撤回／変更されない**。初期リリースの都合で「atLIB社員専用」が商品・権限モデルの恒久仕様にならないようにする。
+
+したがって本書のGapは**初期稼働を阻止する項目**と**外部利用を開放する前に必ず解消する項目**を区別する。外部公開STOPは「SONIXのatLIB社員運用を停止する」という意味ではなく、将来の顧客ログイン・外部ベンダーログインへの適用を止めるGateである。初期稼働でも既存のOperator認証、Service/Contract Authority、Tenant分離は引き続き必須。
+
 既存Coreは`Service Owner`、`Work Owner`、`Assignee`、`Next Action Owner`を区別し、`Authority is scoped, not global`とする（`docs/02-domain-model.md`）。`docs/support-round3-phase2-implementation-contract.md` §7は、チーム参加やベンダー所属それ自体では閲覧・Action権限を与えず、明示的な対象範囲／Contract Authorityにより判定する方針を記載済み。これらは新規の権限思想ではない。
 
 ## 2. 運用上の役割とシステム権限を混同しない
@@ -61,10 +69,10 @@ SONIXの会員リストにない所属からの問い合わせを受け付けら
 
 ## 5. 次の技術作業と受け入れ条件（提案、未実施）
 
-1. AUTH-G1〜G5をGit/Canonical/ADRと突き合わせ、既存の定義で足りる項目をCloseする。残項目のみ具体的なReview／Decisionにする。
-2. 既存認証・Tenant RLSを維持しつつ、許可された顧客ContextでだけQuery／Command／検索／文書更新が可能な層を、既存Coreを用いて実装する。SONIXなどのService固有権限分岐を作らない。
-3. 少なくとも次を自動検証する：`Customer A`と`Customer B`の完全分離（**別Tenantと同Tenant別Organizationの双方**）、顧客Aの直接ID指定によるB閲覧・更新拒否、横断検索・KnowledgeでBが露出しないこと、顧客Aの許可Action実行、外部ベンダーの**明示的委任の有無**、atLIBの複数顧客Context切替、受付CallerとOperatorの区別、Role失効・委任失効・監査。
-4. 既存の内部Operator向けSUPPORT／JOINのGolden動作とAuditを維持する。テストがない機能・管理表は先に現状を棚卸しする。外部顧客への公開／本番移行は別の承認Gateとする。
+1. **SONIX初期稼働へ向けた範囲**：現在の内部Operator認証・有効Service/Contract・Tenant RLS・問い合わせ受付→対応記録・Auditを確認する。顧客／外部ログイン機能を初期稼働の必須項目として持ち込まない。実際の本番移行は既存の別Gateに従う。
+2. **並行して将来互換性を確認**：AUTH-G1〜G5をGit/Canonical/ADRと突き合わせ、既存定義で足りる項目をCloseする。未決定部分だけを具体的Review／Decisionにする。現行機能へサービス固有ロールやatLIB専用という永続制約を加えない。
+3. **顧客・外部Actor開放前の実装Gate**：既存認証・Tenant RLSを維持しつつ、許可された顧客ContextだけでQuery／Command／検索／文書更新できる層を、既存Coreを用いて実装する。少なくとも`Customer A`と`Customer B`の完全分離（**別Tenantと同Tenant別Organizationの双方**）、直接ID指定でのB閲覧・更新拒否、横断検索・KnowledgeでBが露出しないこと、顧客Aの許可Action実行、外部ベンダーの**明示的委任の有無**、atLIBの複数顧客Context切替、受付CallerとOperatorの区別、Role失効・委任失効・監査を検証する。SONIXなどのService固有権限分岐は作らない。
+4. 既存の内部Operator向けSUPPORT／JOINのGolden動作とAuditを維持する。テストがない機能・管理表は先に現状を棚卸しする。**顧客／外部利用の公開は初期SONIX稼働とは別の承認Gate**とする。
 
 ## 6. 今回の変更範囲
 
