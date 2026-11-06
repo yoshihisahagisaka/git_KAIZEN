@@ -1,9 +1,25 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
 import {assertRole,found,requireCondition} from '../../domain/src/join.js';
-import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,ResponseDisposition,SupportResponseDraftNotes,SupportResponseNotes} from '../../domain/src/support.js';
+import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,ResponseDisposition,SupportResponseDraftNotes,SupportResponseNotes,SupportBeneficiaryDecision} from '../../domain/src/support.js';
 import {supportActionLabels,supportResultLabels,type SupportNotes,type SupportRecord} from '../../domain/src/support.js';
 import type {SupportRepository,SupportRuntime,SupportUnitOfWork} from './support-ports.js';
 export class SupportCommands {
+ recordBeneficiary(actor:Operator,eventId:string,input:{requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string}){return this.run(actor,async(r,a)=>{
+  // Lock the parent: revisions for the same inquiry serialize in the same transaction.
+  const event=found(await r.event(eventId,true));await this.context(r,a,event);
+  const history=await r.beneficiaryDecisions(eventId),old=history.find(x=>x.requestId===input.requestId);
+  const reason=input.reason.trim();
+  if(old){const originalOrg=old.serviceRecipientId?await r.core.recipientOrganization(old.serviceRecipientId):null;
+   requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&originalOrg?.id===(input.organizationId??undefined)&&old.reason===reason&&old.revision===input.expectedRevision+1,'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(history.length===(input.expectedRevision)&& (history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','支援対象企業の確認記録が更新されています。');
+  requireCondition(reason.length>=1&&reason.length<=1000,'REASON_REQUIRED','支援対象企業の確認根拠・解除理由を入力してください。',400);
+  requireCondition(input.kind==='CONFIRMED'?!!input.organizationId:input.organizationId===null,'INVALID_INPUT','支援対象企業の指定を確認してください。',400);
+  const recipientId=input.organizationId?await r.core.ensureOrganizationRecipient(this.runtime.id(),event.serviceId,input.organizationId):null;
+  const decision:SupportBeneficiaryDecision={id:this.runtime.id(),tenantId:a.tenantId,supportEventId:event.id,serviceId:event.serviceId,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,serviceRecipientId:recipientId,recipientType:'ORGANIZATION',reason,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  await r.insertBeneficiaryDecision(decision);
+  await this.audit(r,a,event.id,'SUPPORT_BENEFICIARY_'+input.kind,{decisionId:decision.id,serviceRecipientId:recipientId,reason,revision:decision.revision});
+  return decision;
+ });}
  recordSupportResponse(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedRecordRevision:number;responseText:string;disposition:ResponseDisposition;followUpAt:string|null;close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
   const records=await r.records(workId),events=await r.lifecycleEvents(workId),followUps=await r.followUps(workId),closeDecisions=await r.closeDecisions(workId),old=records.find(x=>x.requestId===input.requestId),requestEvent=events.find(x=>x.requestId===input.requestId),requestFollowUp=followUps.find(x=>x.requestId===input.requestId),requestClose=closeDecisions.find(x=>x.requestId===input.requestId)??null;
