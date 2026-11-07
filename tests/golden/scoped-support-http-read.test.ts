@@ -56,6 +56,9 @@ const getPage=(query='')=>request(app).get(`/api/scoped/support-work${query}`).s
 const getHistory=(id:string,query='')=>request(app).get(`/api/scoped/support-work/${id}/history${query}`).set('Cookie',sessionCookie);
 const postScopedResponse=(id:string,body:object)=>request(app).post(`/api/scoped/support-work/${id}/responses`)
  .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+const postCorrection=(id:string,recordId:string,body:object)=>request(app)
+ .post(`/api/scoped/support-work/${id}/responses/${recordId}/corrections`)
+ .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
 async function recordResponse(id:string,text:string,expectedLifecycleRevision=0,expectedRecordRevision=0){
  return commands.recordSupportResponse(internal,id,{requestId:randomUUID(),
   expectedLifecycleRevision,expectedRecordRevision,responseText:text,
@@ -446,6 +449,153 @@ describe('scoped SUPPORT response HTTP boundary (Draft; not deployed)',()=>{
   await postScopedResponse(workA,payload()).expect(404);
   const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
   expect(records.rows).toHaveLength(1);
+ });
+});
+
+describe('scoped SUPPORT text-only response correction (Draft; not deployed)',()=>{
+ const actor:Operator={id:scopedActor,tenantId:ids.tenant,displayName:'Scoped contributor',
+  tenantName:'Development',roles:[]};
+ const response=()=>({requestId:randomUUID(),expectedLifecycleRevision:0,
+  expectedRecordRevision:0,responseText:'Original external response',
+  disposition:'MONITORING' as const,followUpAt:'2026-11-08T00:00:00.000Z'});
+ const correction=(supersedesRecordId:string,expectedRecordRevision:number)=>({
+  requestId:randomUUID(),supersedesRecordId,expectedRecordRevision,
+  responseText:'Corrected response text',correctionReason:'Recorded wording was inaccurate',
+ });
+
+ it('adds a linked correction without replaying an Action, disposition, Follow-up or lifecycle',async()=>{
+  await db.admin.query('delete from factact.operator_roles where operator_id=$1',[scopedActor]);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const original=await scopedCommands.recordScopedSupportResponse(actor,workA,response());
+  const payload=correction(original.id,1);
+  const first=await scopedCommands.correctScopedSupportResponse(actor,workA,payload);
+  expect(first).toMatchObject({kind:'RESPONSE_CORRECTION',revision:2,workId:workA,
+   recordedByOperatorId:scopedActor,notes:{supersedesRecordId:original.id,
+    responseText:'Corrected response text'},correctionReason:payload.correctionReason});
+  const retry=await scopedCommands.correctScopedSupportResponse(actor,workA,payload);
+  expect(retry.id).toBe(first.id);
+  const second=await scopedCommands.correctScopedSupportResponse(actor,workA,{
+   ...correction(first.id,2),responseText:'Revised correction'});
+  expect(second.notes).toMatchObject({supersedesRecordId:first.id,responseText:'Revised correction'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   {...correction(original.id,3),responseText:'Wrong stale branch'}))
+   .rejects.toMatchObject({code:'STALE_REVISION'});
+  const records=await db.admin.query<{kind:string;notes:{responseText:string}}>(
+   'select kind,notes from factact.support_work_records where work_id=$1 order by revision',[workA]);
+  expect(records.rows.map(x=>x.kind)).toEqual(['RESPONSE','RESPONSE_CORRECTION','RESPONSE_CORRECTION']);
+  expect(records.rows[0]?.notes.responseText).toBe('Original external response');
+  const events=await db.admin.query('select id from factact.support_work_lifecycle_events where work_id=$1',[workA]);
+  const follows=await db.admin.query('select id from factact.support_work_follow_ups where work_id=$1',[workA]);
+  const closes=await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA]);
+  expect(events.rows).toHaveLength(1);
+  expect(follows.rows).toHaveLength(1);
+  expect(closes.rows).toHaveLength(0);
+  const work=await db.admin.query<{lifecycle_revision:number;status:string}>(
+   'select lifecycle_revision,status from factact.work where id=$1',[workA]);
+  expect(work.rows[0]).toMatchObject({lifecycle_revision:1,status:'IN_PROGRESS'});
+  const audit=await db.admin.query<{actor_operator_id:string;metadata_json:{supersedesRecordId:string}}>(
+   "select actor_operator_id,metadata_json from factact.audit_events where aggregate_id=$1 and event_type='SUPPORT_RESPONSE_CORRECTED' order by occurred_at,id",[eventA]);
+  expect(audit.rows).toHaveLength(2);
+  expect(audit.rows.map(x=>x.actor_operator_id)).toEqual([scopedActor,scopedActor]);
+  expect(audit.rows.map(x=>x.metadata_json.supersedesRecordId).sort())
+   .toEqual([original.id,first.id].sort());
+  await getHistory(workA).expect(404); // UPDATE is not READ.
+  await grant('WORK',recipientA,workA);
+  const history=(await getHistory(workA).expect(200)).body.data.entries;
+  expect(history).toEqual(expect.arrayContaining([
+   expect.objectContaining({id:original.id,kind:'RESPONSE',responseText:'Original external response'}),
+   expect.objectContaining({id:first.id,kind:'RESPONSE_CORRECTION',
+    supersedesRecordId:original.id,correctionReason:payload.correctionReason,
+    responseText:'Corrected response text',disposition:null}),
+   expect.objectContaining({id:second.id,kind:'RESPONSE_CORRECTION',
+    supersedesRecordId:first.id,responseText:'Revised correction'}),
+  ]));
+  expect(JSON.stringify(history)).not.toContain('recordedByOperatorId');
+ });
+
+ it('rejects foreign source, other author, completed response, invalid reason, and stale revisions',async()=>{
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  const external=await scopedCommands.recordScopedSupportResponse(actor,workA,response());
+  const other=await recordResponse(workB,'Another customer response');
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(other.id,1))).rejects.toMatchObject({code:'NOT_FOUND'});
+  const internalResponse=await recordResponse(workA,'Internal operator response',1,1);
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(internalResponse.id,2))).rejects.toMatchObject({code:'INVALID_CORRECTION_TARGET'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(external.id,1))).rejects.toMatchObject({code:'STALE_REVISION'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   {...correction(external.id,2),correctionReason:'  '}))
+   .rejects.toMatchObject({code:'INVALID_INPUT'});
+  const rows=await db.admin.query("select id from factact.support_work_records where kind='RESPONSE_CORRECTION'");
+  expect(rows.rows).toHaveLength(0);
+ });
+
+ it('cannot amend a completed response or Close provenance even when its author has scoped UPDATE',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  // This seeded internal command represents a pre-existing Close authored by
+  // the same Actor; scoped UPDATE must still never become Close correction.
+  await db.admin.query("update factact.operators set read_authority_mode='INTERNAL_V1' where id=$1",[scopedActor]);
+  const closed=await commands.recordSupportResponse(actor,workA,{
+   requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,
+   responseText:'Final internal response',disposition:'COMPLETED',followUpAt:null,
+   close:{outcome:'RESOLVED',closeReason:'Responsibility ended',
+    confirmsOutstandingResponsibilityEnded:true},
+  });
+  await db.admin.query("update factact.operators set read_authority_mode='SCOPED' where id=$1",[scopedActor]);
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,correction(closed.id,1)))
+   .rejects.toMatchObject({code:'SCOPED_CLOSE_NOT_AUTHORIZED'});
+  const closes=await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA]);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  expect(closes.rows).toHaveLength(1);
+  expect(records.rows).toHaveLength(1);
+ });
+
+ it('requires session, Origin/CSRF and UPDATE; rejects forged fields and does not leak B',async()=>{
+  const original=await recordResponse(workA,'Internal text');
+  const input={requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Attempted correction',correctionReason:'Wrong statement'};
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .send(input).expect(401);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .set('Cookie',sessionCookie).set('Origin','https://evil.invalid')
+   .set('x-csrf-token','csrf').send(input).expect(403);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .set('Cookie',sessionCookie).set('Origin',config.origin).send(input).expect(403);
+  await grant('WORK',recipientA,workA); // READ only
+  await postCorrection(workA,original.id,input).expect(404);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const forbidden=await postCorrection(workB,original.id,input).expect(404);
+  const missing=await postCorrection(randomUUID(),original.id,input).expect(404);
+  expect(forbidden.body.error).toEqual(missing.body.error);
+  await postCorrection(workA,original.id,{...input,actorId:scopedActor}).expect(400);
+  await postCorrection(workA,original.id,{...input,disposition:'COMPLETED'}).expect(400);
+  await postCorrection(workA,original.id,{...input,followUpAt:'2026-11-10T00:00:00.000Z'}).expect(400);
+  const audit=await db.admin.query("select id from factact.audit_events where event_type='SUPPORT_RESPONSE_CORRECTED'");
+  expect(audit.rows).toHaveLength(0);
+ });
+
+ it('exposes a correction via HTTP then denies revoked UPDATE and reassigned beneficiary',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const original=(await postScopedResponse(workA,response()).expect(200)).body.data;
+  const payload={requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Replaced wording',correctionReason:'Original phrasing wrong'};
+  const first=await postCorrection(workA,original.id,payload).expect(200);
+  const retry=await postCorrection(workA,original.id,payload).expect(200);
+  expect(retry.body.data.id).toBe(first.body.data.id);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='Access withdrawn' where id=$1`,
+   [grantId,now,ids.operator]);
+  await postCorrection(workA,first.body.data.id,{...payload,requestId:randomUUID(),expectedRecordRevision:2})
+   .expect(404);
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'支援対象変更'});
+  await confirm(eventA,companyB,2);
+  await postCorrection(workA,first.body.data.id,{...payload,requestId:randomUUID(),expectedRecordRevision:2})
+   .expect(404);
+  const rows=await db.admin.query("select id from factact.support_work_records where kind='RESPONSE_CORRECTION'");
+  expect(rows.rows).toHaveLength(1);
  });
 });
 

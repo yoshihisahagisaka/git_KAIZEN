@@ -29,12 +29,15 @@ export interface SupportNotes {
 }
 export type ResponseDisposition='CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED';
 export interface SupportResponseNotes {responseText:string;disposition:ResponseDisposition}
+/** An attestation correcting only the text of one earlier response (or its latest correction). */
+export interface SupportResponseCorrectionNotes {supersedesRecordId:string;responseText:string}
 export interface SupportResponseDraftNotes {form:'SIMPLE_RESPONSE';responseText:string;disposition:ResponseDisposition|null;followUpAt:string|null}
 interface SupportRecordBase {id:string;tenantId:string;workId:string;requestId:string;revision:number;correctionReason:string;recordedByOperatorId:string;recordedAt:string}
 export type SupportRecord=
  | SupportRecordBase&{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION';notes:SupportNotes}
  | SupportRecordBase&{kind:'DRAFT';notes:SupportNotes|SupportResponseDraftNotes}
- | SupportRecordBase&{kind:'RESPONSE';notes:SupportResponseNotes};
+ | SupportRecordBase&{kind:'RESPONSE';notes:SupportResponseNotes}
+ | SupportRecordBase&{kind:'RESPONSE_CORRECTION';notes:SupportResponseCorrectionNotes};
 export const isLegacySupportRecord=(record:SupportRecord):record is Extract<SupportRecord,{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION'}>=>['COMPLETION','CORRECTION','CONTINUATION'].includes(record.kind);
 export const isLegacySupportNotes=(notes:SupportRecord['notes']):notes is SupportNotes=>'checks' in notes;
 // Deliberate Work Context, not a Registry fact and not diagnostic evidence of a cause.
