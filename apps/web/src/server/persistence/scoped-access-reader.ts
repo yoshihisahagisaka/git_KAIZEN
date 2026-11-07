@@ -34,6 +34,7 @@ export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
 export interface ScopedSupportHistoryEntry {
  id:string;revision:number;kind:string;occurredAt:string;
  responseText:string|null;disposition:'CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED'|null;
+ supersedesRecordId?:string;correctionReason?:string;
 }
 export interface ScopedSupportWorkHistory {
  work:ScopedSupportWorkSummary;entries:ScopedSupportHistoryEntry[];nextCursor:string|null;
@@ -42,6 +43,7 @@ export interface ScopedSupportWorkHistory {
 interface StoredSupportHistoryEntry {
  id:string;revision:number;kind:string;occurred_at:Date;
  response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
+ supersedes_record_id:string|null;correction_reason:string|null;
 }
 
 /**
@@ -113,7 +115,8 @@ export class PgScopedAccessReader {
     closeDecisions:id=>{assertWork(id);return repository.closeDecisions(workId);},
     insertRecord:row=>{
      assertRecord(row);
-     if(row.kind!=='RESPONSE')throw Error('SCOPED_UPDATE_RECORD_KIND_MISMATCH');
+     if(row.kind!=='RESPONSE'&&row.kind!=='RESPONSE_CORRECTION')
+      throw Error('SCOPED_UPDATE_RECORD_KIND_MISMATCH');
      return repository.insertRecord(row);
     },
     insertLifecycleEvent:row=>{
@@ -166,7 +169,7 @@ export class PgScopedAccessReader {
   },true);
  }
 
- /** Only Work-local recorded responses and metadata-only state transitions.
+ /** Only Work-local recorded responses/corrections and metadata-only state transitions.
   * Drafts, raw command payloads, operator identities and other Work are excluded.
   * Authorization and history projection share one read-only tenant snapshot. */
  async supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
@@ -182,24 +185,35 @@ export class PgScopedAccessReader {
    const {rows}=await db.query<StoredSupportHistoryEntry>(`
     with entries as (
      select r.id,r.revision,'RESPONSE'::text as kind,r.recorded_at as occurred_at,
-      r.notes->>'responseText' as response_text,r.notes->>'disposition' as disposition
+      r.notes->>'responseText' as response_text,r.notes->>'disposition' as disposition,
+      null::text as supersedes_record_id,null::text as correction_reason
      from factact.support_work_records r
      where r.tenant_id=$2 and r.work_id=$1 and r.kind='RESPONSE'
       and jsonb_typeof(r.notes->'responseText')='string'
       and r.notes->>'disposition' in ('CUSTOMER_WAIT','INVESTIGATING','MONITORING','COMPLETED')
      union all
-     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text
+     select r.id,r.revision,'RESPONSE_CORRECTION'::text,r.recorded_at,
+      r.notes->>'responseText',null::text,r.notes->>'supersedesRecordId',r.correction_reason
+     from factact.support_work_records r
+     where r.tenant_id=$2 and r.work_id=$1 and r.kind='RESPONSE_CORRECTION'
+      and jsonb_typeof(r.notes->'responseText')='string'
+      and jsonb_typeof(r.notes->'supersedesRecordId')='string'
+     union all
+     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text,null::text,null::text
      from factact.support_work_lifecycle_events e
      where e.tenant_id=$2 and e.work_id=$1
       and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED')
     )
-    select id,revision,kind,occurred_at,response_text,disposition from entries
+    select id,revision,kind,occurred_at,response_text,disposition,
+     supersedes_record_id,correction_reason from entries
     where ($3::timestamptz is null or (occurred_at,id)<($3::timestamptz,$4::uuid))
     order by occurred_at desc,id desc limit $5`,
     [workId,tenantId,cursor?.occurredAt??null,cursor?.id??null,limit]);
    const entries:ScopedSupportHistoryEntry[]=rows.map(row=>({
     id:row.id,revision:row.revision,kind:row.kind,occurredAt:row.occurred_at.toISOString(),
     responseText:row.response_text,disposition:row.disposition,
+    ...(row.kind==='RESPONSE_CORRECTION'?{
+     supersedesRecordId:row.supersedes_record_id!,correctionReason:row.correction_reason!}:{}),
    }));
    const last=entries.at(-1);
    const nextCursor=entries.length===limit&&last
