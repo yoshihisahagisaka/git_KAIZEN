@@ -87,16 +87,6 @@ export class PgScopedAccessReader {
   return withTenant(this.pool,tenantId,async db=>{
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
    if(!work)return null;
-   // A later reassignment to another Organization cannot retroactively
-   // classify older response text as safe for the newly confirmed beneficiary.
-   // History remains unavailable pending explicit human record review.
-   const priorOtherBeneficiary=await db.query(`select 1
-    from factact.support_event_beneficiary_decisions d
-    join factact.work w on w.tenant_id=d.tenant_id and w.support_event_id=d.support_event_id
-    where w.id=$1 and d.tenant_id=$2 and d.kind='CONFIRMED'
-     and d.service_recipient_id<>$3 limit 1`,
-    [workId,tenantId,work.confirmed_recipient_id]);
-   if(priorOtherBeneficiary.rowCount)return null;
    const {rows}=await db.query<StoredSupportHistoryEntry>(`
     with entries as (
      select r.id,r.revision,'RESPONSE'::text as kind,r.recorded_at as occurred_at,
@@ -141,7 +131,13 @@ export class PgScopedAccessReader {
       where d.tenant_id=w.tenant_id and d.support_event_id=w.support_event_id
       order by d.revision desc limit 1
     ) beneficiary on true
-    where w.id=$1 and w.lane='SUPPORT'`,[workId]);
+    where w.id=$1 and w.lane='SUPPORT'
+      and not exists (
+       select 1 from factact.support_event_beneficiary_decisions prior
+       where prior.tenant_id=w.tenant_id and prior.support_event_id=w.support_event_id
+        and prior.kind='CONFIRMED'
+        and prior.service_recipient_id is distinct from beneficiary.service_recipient_id
+      )`,[workId]);
    const work=rows[0];
    if(!work||work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)return null;
    const target:ResolvedAccessTarget={
@@ -192,6 +188,14 @@ export class PgScopedAccessReader {
     join factact.organizations org
       on org.id=recipient.recipient_organization_id and org.tenant_id=w.tenant_id and org.status='ACTIVE'
     where w.lane='SUPPORT'
+      -- Authorization and data projection must deny previously reassigned
+      -- Work BEFORE LIMIT, not trim an already paginated tenant-wide result.
+      and not exists (
+       select 1 from factact.support_event_beneficiary_decisions prior
+       where prior.tenant_id=w.tenant_id and prior.support_event_id=w.support_event_id
+        and prior.kind='CONFIRMED'
+        and prior.service_recipient_id is distinct from beneficiary.service_recipient_id
+      )
       and ($3::timestamptz is null or (w.updated_at,w.id)<($3::timestamptz,$4::uuid))
       and exists (
        select 1 from factact.scoped_actor_grants g
