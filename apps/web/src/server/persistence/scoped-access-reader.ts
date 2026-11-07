@@ -1,6 +1,9 @@
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
 import {withTenant} from './database.js';
+import {PgSupportRepository} from './support-repository.js';
+import type {SupportWork} from '../../../../../packages/domain/src/support.js';
+import {randomUUID} from 'node:crypto';
 import {isExplicitlyAuthorized,type ExplicitAccessGrant,type ExplicitAccessScope,type ResolvedAccessTarget} from '../../../../../packages/domain/src/scoped-access.js';
 
 interface StoredGrant {
@@ -11,7 +14,7 @@ interface StoredGrant {
 }
 
 interface StoredSupportWorkSummary {
- work_id:string;service_id:string;contract_profile_id:string;
+ work_id:string;service_id:string;contract_profile_id:string;support_event_id:string;
  title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';next_action:string;
  waiting:boolean;follow_up_at:Date|null;updated_at:Date;
  beneficiary_kind:'CONFIRMED'|'CLEARED'|null;confirmed_recipient_id:string|null;
@@ -34,13 +37,23 @@ export interface ScopedSupportWorkHistory {
  work:ScopedSupportWorkSummary;entries:ScopedSupportHistoryEntry[];nextCursor:string|null;
 }
 
+/** Narrow, trusted application port. It cannot fetch, write or audit a second
+ * Work and never takes its Actor, Event or Tenant identity from an HTTP body.
+ * Domain transition validation belongs in the subsequent command integration. */
+export interface ScopedSupportWorkUpdateContext {
+ work():Promise<SupportWork|null>;
+ progress(work:SupportWork):Promise<void>;
+ audit(eventType:string,metadata:Record<string,unknown>):Promise<void>;
+}
+
 interface StoredSupportHistoryEntry {
  id:string;revision:number;kind:string;occurred_at:Date;
  response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
 }
 
 /**
- * A tenant-scoped, read-only bridge to the pure scoped-access policy.
+ * A tenant-scoped bridge to the pure scoped-access policy. Public reads are
+ * read-only; the internal update boundary deliberately uses a write transaction.
  * No API route may accept actorId or a resolved target from a Caller body.
  * The HTTP/session resolver must establish the Actor and target IDs separately.
  */
@@ -56,6 +69,43 @@ export class PgScopedAccessReader {
      (target.scope.kind!=='SERVICE'&&!z.uuid().safeParse(target.scope.serviceRecipientId).success)||
      (target.scope.kind==='WORK'&&!z.uuid().safeParse(target.scope.workId).success))return false;
   return withTenant(this.pool,target.tenantId,db=>this.authorizedInTransaction(db,actorId,target,at),true);
+ }
+
+ /** Internal-only UPDATE transaction boundary. No HTTP write route calls this
+  * yet. The beneficiary, effective grant and Actor are resolved from the DB,
+  * under the same transaction as the future mutation and Audit write.
+  * An unauthorized Work is never passed to the callback. */
+ async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
+  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
+   if(!work)return null;
+   const repository=new PgSupportRepository(db,tenantId);
+   const context:ScopedSupportWorkUpdateContext={
+    work:()=>repository.work(workId,true),
+    progress:async updated=>{
+     if(updated.id!==workId||updated.tenantId!==tenantId||
+        updated.serviceId!==work.service_id||updated.contractProfileId!==work.contract_profile_id||
+        updated.supportEventId!==work.support_event_id)
+      throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
+     await repository.progress(updated);
+    },
+    audit:async(eventType,metadata)=>repository.audit({
+     id:randomUUID(),tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:work.support_event_id,
+     eventType,actorOperatorId:actorId,occurredAt:this.clock.now(),metadataJson:metadata,
+    }),
+   };
+   const result=await mutation(context);
+   // Runtime cannot row-lock the privileged Grant/Actor tables. A final
+   // READ COMMITTED check catches revocations committed during the mutation.
+   // Grant issuance/revocation must eventually coordinate its own race gate.
+   if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE'))
+    throw Error('SCOPED_UPDATE_AUTHORITY_CHANGED');
+   return result;
+  });
  }
 
  /**
@@ -118,9 +168,19 @@ export class PgScopedAccessReader {
  }
 
  private async authorizedSupportWork(db:PoolClient,tenantId:string,actorId:string,
-  workId:string,at:string):Promise<StoredSupportWorkSummary|null>{
+  workId:string,at:string,operation:'READ'|'UPDATE'='READ',lockWork=false):Promise<StoredSupportWorkSummary|null>{
+   if(lockWork){
+    // Beneficiary decisions lock the parent Event FOR UPDATE. Pin it FOR SHARE
+    // before locking Work to prevent a concurrent reassignment during mutation.
+    const {rows:events}=await db.query<{support_event_id:string}>(
+     "select support_event_id from factact.work where id=$1 and lane='SUPPORT'",[workId]);
+    if(!events[0]?.support_event_id)return null;
+    const parent=await db.query('select 1 from factact.support_events where id=$1 for share',
+     [events[0].support_event_id]);
+    if(!parent.rowCount)return null;
+   }
    const {rows}=await db.query<StoredSupportWorkSummary>(`
-    select w.id as work_id,w.service_id,w.contract_profile_id,w.title,w.status,
+    select w.id as work_id,w.service_id,w.contract_profile_id,w.support_event_id,w.title,w.status,
       w.next_action,w.waiting,w.follow_up_at,w.updated_at,
       beneficiary.kind as beneficiary_kind,
       beneficiary.service_recipient_id as confirmed_recipient_id
@@ -137,13 +197,13 @@ export class PgScopedAccessReader {
        where prior.tenant_id=w.tenant_id and prior.support_event_id=w.support_event_id
         and prior.kind='CONFIRMED'
         and prior.service_recipient_id is distinct from beneficiary.service_recipient_id
-      )`,[workId]);
+      ) ${lockWork?'for update of w':''}`,[workId]);
    const work=rows[0];
    if(!work||work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)return null;
    const target:ResolvedAccessTarget={
     tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id,workId},
-    objectKind:'SUPPORT',operation:'READ',
+    objectKind:'SUPPORT',operation,
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
    return work;
@@ -163,7 +223,7 @@ export class PgScopedAccessReader {
   if(!Number.isFinite(Date.parse(at)))return {items:[],nextCursor:null};
   return withTenant(this.pool,tenantId,async db=>{
    const {rows}=await db.query<StoredSupportWorkSummary>(`
-    select w.id as work_id,w.service_id,w.contract_profile_id,w.title,w.status,
+    select w.id as work_id,w.service_id,w.contract_profile_id,w.support_event_id,w.title,w.status,
       w.next_action,w.waiting,w.follow_up_at,w.updated_at,
       beneficiary.kind as beneficiary_kind,
       beneficiary.service_recipient_id as confirmed_recipient_id

@@ -192,6 +192,118 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
  });
 });
 
+describe('scoped SUPPORT UPDATE transaction boundary (not HTTP-exposed)',()=>{
+ const update=(id:string,fn:(r:import('../../apps/web/src/server/persistence/scoped-access-reader.js').ScopedSupportWorkUpdateContext)=>Promise<string>)=>
+  reader.runSupportWorkUpdate(ids.tenant,scopedActor,id,fn);
+
+ it('fails closed without UPDATE, for another recipient, wrong kind, wrong Work, and invalid IDs',async()=>{
+  let callbacks=0;
+  const callback=async()=>{callbacks++;return 'executed';};
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA);
+  expect(await update(workA,callback)).toBeNull(); // READ is not UPDATE
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE'],objectKind:'KNOWLEDGE'});
+  expect(await update(workA,callback)).toBeNull();
+  await grant('WORK',recipientA,workB,{operations:['UPDATE']});
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  expect(await update(workB,callback)).toBeNull();
+  expect(await update(randomUUID(),callback)).toBeNull();
+  expect(await reader.runSupportWorkUpdate(ids.tenant,'not-a-uuid',workA,callback)).toBeNull();
+  expect(callbacks).toBe(0);
+  expect(await update(workA,callback)).toBe('executed');
+  expect(callbacks).toBe(1);
+ });
+
+ it('checks revocation and current active Actor on every UPDATE attempt',async()=>{
+  const id=await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  const callback=async()=> 'executed';
+  expect(await update(workA,callback)).toBe('executed');
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason=$4 where id=$1`,
+   [id,now,ids.operator,'権限を失効']);
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  await db.admin.query('update factact.operators set status=$2 where id=$1',[scopedActor,'INACTIVE']);
+  expect(await update(workA,callback)).toBeNull();
+ });
+
+ it('denies cleared and historically reassigned beneficiaries even with a Service-wide UPDATE grant',async()=>{
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  const callback=async()=> 'executed';
+  expect(await update(workA,callback)).toBe('executed');
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'受益企業の再確認待ち'});
+  expect(await update(workA,callback)).toBeNull();
+  await confirm(eventA,companyB,2);
+  expect(await update(workA,callback)).toBeNull();
+  expect(await update(workB,callback)).toBe('executed');
+ });
+
+ it('rejects replacing the authorized Work identity before persisting',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const before=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workB]);
+  await expect(update(workA,async tx=>{
+   const work=await tx.work();
+   if(!work)throw Error('Work missing');
+   work.id=workB;
+   work.nextAction='cross-customer mutation';
+   await tx.progress(work);
+   return 'unexpected';
+  })).rejects.toThrow('SCOPED_UPDATE_TARGET_MISMATCH');
+  const after=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workB]);
+  expect(after.rows[0]?.next_action).toBe(before.rows[0]?.next_action);
+ });
+
+ it('commits a permitted Work update and Audit together and rolls both back on error',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const apply=async(nextAction:string,shouldFail=false)=>update(workA,async r=>{
+   const work=await r.work();
+   if(!work)throw Error('Work missing after authorization');
+   work.nextAction=nextAction;
+   work.updatedAt=now;
+   await r.progress(work);
+   await r.audit('SCOPED_UPDATE_BOUNDARY_TEST',{workId:workA,nextAction});
+   if(shouldFail)throw Error('rollback marker');
+   return nextAction;
+  });
+  expect(await apply('authorized transition')).toBe('authorized transition');
+  await expect(apply('must roll back',true)).rejects.toThrow('rollback marker');
+  const work=await db.admin.query<{next_action:string}>('select next_action from factact.work where id=$1',[workA]);
+  expect(work.rows[0]?.next_action).toBe('authorized transition');
+  const audit=await db.admin.query<{metadata_json:{nextAction:string}}>(`select metadata_json from factact.audit_events
+   where event_type='SCOPED_UPDATE_BOUNDARY_TEST' and aggregate_id=$1`,[eventA]);
+  expect(audit.rows).toHaveLength(1);
+  expect(audit.rows[0]?.metadata_json.nextAction).toBe('authorized transition');
+ });
+
+ it('rolls back the Work and Audit when a Grant is revoked during the transaction',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const before=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workA]);
+  await expect(update(workA,async r=>{
+   const work=await r.work();
+   if(!work)throw Error('Work missing');
+   work.nextAction='must never commit after revocation';
+   await r.progress(work);
+   await r.audit('SCOPED_REVOKED_UPDATE_TEST',{workId:workA});
+   // Privileged Grant lifecycle is separate from the runtime transaction.
+   await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='権限を失効' where id=$1`,
+    [grantId,now,ids.operator]);
+   return 'not committed';
+  })).rejects.toThrow('SCOPED_UPDATE_AUTHORITY_CHANGED');
+  const after=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workA]);
+  expect(after.rows[0]?.next_action).toBe(before.rows[0]?.next_action);
+  const audit=await db.admin.query(`select id from factact.audit_events
+   where event_type='SCOPED_REVOKED_UPDATE_TEST' and aggregate_id=$1`,[eventA]);
+  expect(audit.rows).toHaveLength(0);
+ });
+});
+
 describe('scoped SUPPORT Work authorized list and pagination',()=>{
  it('returns no tenant-wide records, count or continuation without a grant, despite ADMIN Role',async()=>{
   const response=await getPage().expect(200);
