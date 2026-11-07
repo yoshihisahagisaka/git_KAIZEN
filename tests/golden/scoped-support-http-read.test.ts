@@ -158,7 +158,7 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await get(workA).expect(404);
  });
 
- it('denies the Work when latest beneficiary is cleared or changed, even with a stored grant',async()=>{
+ it('denies reassigned Work even after granting its latest beneficiary, until content review',async()=>{
   await grant('SERVICE_RECIPIENT',recipientA);
   await get(workA).expect(200);
   await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
@@ -167,6 +167,16 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await confirm(eventA,companyB,2);
   await get(workA).expect(404);
   await grant('SERVICE_RECIPIENT',recipientB);
+  await get(workA).expect(404);
+ });
+
+ it('restores summary only when cleared beneficiary is reconfirmed for the SAME Organization',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'一時解除'});
+  await get(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
   await get(workA).expect(200);
  });
 
@@ -242,6 +252,41 @@ describe('scoped SUPPORT Work authorized list and pagination',()=>{
   await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
    [ids.contract,'2026-11-06T00:00:00.000Z']);
   expect((await getPage().expect(200)).body.data.items).toEqual([]);
+ });
+
+ it('filters reassigned Work before pagination, even with a Service-wide READ grant',async()=>{
+  const stable=await createWork('A stable case');
+  await confirm(stable.eventId,ids.organization);
+  await grant('SERVICE');
+  const before=(await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId);
+  expect(before.sort()).toEqual([workA,workB,stable.workId].sort());
+  await confirm(eventA,companyB,1);
+  await get(workA).expect(404);
+  const seen:string[]=[];
+  let cursor:string|null=null;
+  for(let n=0;n<4;n++){
+   const page:{body:{data:{items:{workId:string;title:string}[];nextCursor:string|null}}}=
+    await getPage(`?limit=1${cursor?`&cursor=${cursor}`:''}`).expect(200);
+   if(!page.body.data.items.length)break;
+   seen.push(page.body.data.items[0]!.workId);
+   cursor=page.body.data.nextCursor;
+   if(!cursor)break;
+  }
+  expect(seen.sort()).toEqual([workB,stable.workId].sort());
+  expect(seen).not.toContain(workA);
+  const all=(await getPage().expect(200)).body.data;
+  expect(JSON.stringify(all)).not.toContain('A customer detail');
+  expect(all).not.toHaveProperty('total');
+ });
+
+ it('does not revive A/B-reassigned summary after returning beneficiary back to A',async()=>{
+  await grant('SERVICE');
+  await confirm(eventA,companyB,1);
+  await get(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId))
+   .toEqual([workB]);
  });
 
  it('rejects malformed paging inputs without exposing SQL or target details',async()=>{
@@ -342,9 +387,10 @@ describe('scoped SUPPORT Work detail and bounded activity history',()=>{
   await recordResponse(workA,'A private response before reassignment');
   await grant('SERVICE_RECIPIENT',recipientB);
   await confirm(eventA,companyB,1);
-  // Summary uses the latest beneficiary, but prior Work history is not
-  // automatically approved for newly assigned customer B.
-  await get(workA).expect(200);
+  // Summary, list and history now apply the SAME deny-on-reassignment gate.
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId))
+   .toEqual([workB]);
   const denied=await getHistory(workA).expect(404);
   expect(JSON.stringify(denied.body)).not.toContain('A private response');
  });
