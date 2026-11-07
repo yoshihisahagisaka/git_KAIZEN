@@ -23,6 +23,9 @@ export interface ScopedSupportWorkSummary {
  waiting:boolean;followUpAt:string|null;updatedAt:string;
 }
 
+export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
+export interface ScopedSupportWorkCursor {updatedAt:string;workId:string}
+
 /**
  * A tenant-scoped, read-only bridge to the pure scoped-access policy.
  * No API route may accept actorId or a resolved target from a Caller body.
@@ -74,13 +77,86 @@ export class PgScopedAccessReader {
     objectKind:'SUPPORT',operation:'READ',
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
-   return {
-    workId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
-    serviceRecipientId:work.confirmed_recipient_id,title:work.title,
-    status:work.status,nextAction:work.next_action,waiting:work.waiting,
-    followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString(),
-   };
+   return this.projectSupportWork(work);
   },true);
+ }
+
+ /**
+  * Paged list of AUTHORIZED Work only. SQL filters grants/beneficiary before
+  * LIMIT and the same policy kernel rechecks each projected Work. No total
+  * tenant count or unauthorized candidate count leaves the transaction.
+  */
+ async supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>{
+  if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
+     !Number.isInteger(limit)||limit<1||limit>50||
+     (cursor&&(!z.uuid().safeParse(cursor.workId).success||!Number.isFinite(Date.parse(cursor.updatedAt)))))
+   return {items:[],nextCursor:null};
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return {items:[],nextCursor:null};
+  return withTenant(this.pool,tenantId,async db=>{
+   const {rows}=await db.query<StoredSupportWorkSummary>(`
+    select w.id as work_id,w.service_id,w.contract_profile_id,w.title,w.status,
+      w.next_action,w.waiting,w.follow_up_at,w.updated_at,
+      beneficiary.kind as beneficiary_kind,
+      beneficiary.service_recipient_id as confirmed_recipient_id
+    from factact.work w
+    join factact.operators actor on actor.tenant_id=w.tenant_id and actor.id=$1 and actor.status='ACTIVE'
+    join factact.tenants t on t.id=w.tenant_id and t.status='ACTIVE'
+    join factact.services s on s.id=w.service_id and s.tenant_id=w.tenant_id and s.status='ACTIVE'
+    join factact.contract_profiles c on c.id=w.contract_profile_id
+      and c.tenant_id=w.tenant_id and c.service_id=w.service_id and c.status='ACTIVE'
+      and c.effective_from<=$2::timestamptz
+      and (c.effective_to is null or c.effective_to>$2::timestamptz)
+    join lateral (
+      select d.kind,d.service_recipient_id
+      from factact.support_event_beneficiary_decisions d
+      where d.tenant_id=w.tenant_id and d.support_event_id=w.support_event_id
+      order by d.revision desc limit 1
+    ) beneficiary on beneficiary.kind='CONFIRMED'
+    join factact.service_recipients recipient
+      on recipient.id=beneficiary.service_recipient_id and recipient.tenant_id=w.tenant_id
+      and recipient.service_id=w.service_id and recipient.recipient_type='ORGANIZATION'
+      and recipient.status='ACTIVE'
+    join factact.organizations org
+      on org.id=recipient.recipient_organization_id and org.tenant_id=w.tenant_id and org.status='ACTIVE'
+    where w.lane='SUPPORT'
+      and ($3::timestamptz is null or (w.updated_at,w.id)<($3::timestamptz,$4::uuid))
+      and exists (
+       select 1 from factact.scoped_actor_grants g
+       where g.tenant_id=w.tenant_id and g.actor_operator_id=$1
+        and g.service_id=w.service_id and g.contract_profile_id=w.contract_profile_id
+        and g.object_kind='SUPPORT' and 'READ'=any(g.operations)
+        and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
+        and (g.effective_until is null or g.effective_until>$2::timestamptz)
+        and (g.scope_kind='SERVICE'
+          or (g.scope_kind='SERVICE_RECIPIENT' and g.service_recipient_id=recipient.id)
+          or (g.scope_kind='WORK' and g.service_recipient_id=recipient.id and g.work_id=w.id))
+      )
+    order by w.updated_at desc,w.id desc limit $5`,
+    [actorId,at,cursor?.updatedAt??null,cursor?.workId??null,limit]);
+   const items:ScopedSupportWorkSummary[]=[];
+   for(const work of rows){
+    if(work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)continue;
+    const target:ResolvedAccessTarget={tenantId,serviceId:work.service_id,
+     contractProfileId:work.contract_profile_id,
+     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id,workId:work.work_id},
+     objectKind:'SUPPORT',operation:'READ'};
+    if(await this.authorizedInTransaction(db,actorId,target,at))items.push(this.projectSupportWork(work));
+   }
+   // No hasMore/total: pagination metadata cannot reveal hidden candidates.
+   const last=items.at(-1);
+   const nextCursor=items.length===limit&&last
+    ?Buffer.from(JSON.stringify({updatedAt:last.updatedAt,workId:last.workId})).toString('base64url')
+    :null;
+   return {items,nextCursor};
+  },true);
+ }
+
+ private projectSupportWork(work:StoredSupportWorkSummary):ScopedSupportWorkSummary{
+  return {workId:work.work_id,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+   serviceRecipientId:work.confirmed_recipient_id!,title:work.title,status:work.status,
+   nextAction:work.next_action,waiting:work.waiting,
+   followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString()};
  }
 
  private async authorizedInTransaction(db:PoolClient,actorId:string,target:ResolvedAccessTarget,at:string):Promise<boolean>{
