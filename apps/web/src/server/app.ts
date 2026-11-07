@@ -15,8 +15,9 @@ import { joinRoutes, type JoinServices } from './join-routes.js';
 import { DomainError } from '../../../../packages/domain/src/join.js';
 import { ZodError } from 'zod';
 import { exploreRoutes, type ExploreServices } from './explore-routes.js';
+import { scopedSupportRoutes, type ScopedSupportReader } from './scoped-support-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -34,6 +35,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (join) app.use('/api',joinRoutes(join));
   if (support) app.use('/api',supportRoutes(support));
   if (explore) app.use('/api',exploreRoutes(explore));
+  if (scopedSupport) app.use('/api',scopedSupportRoutes(scopedSupport));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
