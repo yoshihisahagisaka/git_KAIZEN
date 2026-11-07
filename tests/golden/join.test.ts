@@ -62,6 +62,8 @@ describe('document 15 Golden Tests',()=>{
     const p=await committed(),tenant=randomUUID(),operatorId=randomUUID();
     await db.admin.query("insert into factact.tenants(id,name,status) values($1,'Other','ACTIVE')",[tenant]);
     await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'other@example.invalid','Other','ACTIVE')",[operatorId,tenant]);
+    // Preserve the historical internal v1 actor so this tests cross-Tenant isolation.
+    await db.admin.query("update factact.operators set read_authority_mode='INTERNAL_V1' where id=$1",[operatorId]);
     for(const role of actor.roles) await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[tenant,operatorId,role]);
     const other={...actor,id:operatorId,tenantId:tenant};
     for(const op of [()=>q.personContext(other,ids.person),()=>q.workDetail(other,p.workId),()=>q.joinWorkspace(other,p.eventId),()=>c.verifyChange(other,p.changeId,'forged'),()=>c.commitChange(other,p.changeId),()=>c.completeWork(other,p.workId,'COMPLETED'),()=>c.takeWorkOwnership(other,p.workId)]) await expect(op()).rejects.toMatchObject({code:'NOT_FOUND'});

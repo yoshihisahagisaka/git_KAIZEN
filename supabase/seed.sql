@@ -8,6 +8,19 @@ insert into factact.operator_roles values
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','ADMIN'),
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','OPERATOR'),
 ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','REVIEWER');
+-- This fixture also runs against the baseline-only migration in regression tests.
+-- In the full schema explicitly mark only the known development Operator as
+-- INTERNAL_V1; the default for every other newly enrolled Actor remains SCOPED.
+do $development_authority$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='factact' and table_name='operators' and column_name='read_authority_mode'
+  ) then
+    execute 'update factact.operators set read_authority_mode=''INTERNAL_V1''
+      where id=''20000000-0000-4000-8000-000000000001''';
+  end if;
+end $development_authority$;
 insert into factact_private.operator_identities
   (issuer,subject,tenant_id,operator_id) values
 ('https://seed.example.invalid','development-operator','10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001');
