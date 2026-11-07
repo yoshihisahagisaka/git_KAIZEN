@@ -2,11 +2,13 @@ import {Router} from 'express';
 import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
  supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>;
+ supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
+  cursor:ScopedSupportHistoryCursor|null):Promise<ScopedSupportWorkHistory|null>;
 }
 
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
@@ -28,6 +30,23 @@ export function scopedSupportRoutes(reader:ScopedSupportReader){
   }
   const actor=(res.locals.session as {operator:Operator}).operator;
   res.json({ok:true,data:await reader.supportWorkPage(actor.tenantId,actor.id,query.limit,cursor)});
+ });
+ const historyCursorInput=z.strictObject({occurredAt:z.string().datetime({offset:true}),id:z.uuid()});
+ router.get('/scoped/support-work/:id/history',async(req,res)=>{
+  const workId=z.uuid().parse(req.params.id);
+  const query=listInput.parse(req.query);
+  let cursor:ScopedSupportHistoryCursor|null=null;
+  if(query.cursor){
+   try {
+    const decoded=JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown;
+    const parsed=historyCursorInput.safeParse(decoded);
+    if(!parsed.success)throw new Error('Invalid cursor');
+    cursor=parsed.data;
+   } catch {throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+  }
+  const actor=(res.locals.session as {operator:Operator}).operator;
+  const history=found(await reader.supportWorkHistory(actor.tenantId,actor.id,workId,query.limit,cursor));
+  res.json({ok:true,data:history});
  });
  router.get('/scoped/support-work/:id',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);

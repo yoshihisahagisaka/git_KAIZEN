@@ -52,6 +52,12 @@ async function grant(scope:'SERVICE'|'SERVICE_RECIPIENT'|'WORK',recipientId:stri
 }
 const get=(id:string)=>request(app).get(`/api/scoped/support-work/${id}`).set('Cookie',sessionCookie);
 const getPage=(query='')=>request(app).get(`/api/scoped/support-work${query}`).set('Cookie',sessionCookie);
+const getHistory=(id:string,query='')=>request(app).get(`/api/scoped/support-work/${id}/history${query}`).set('Cookie',sessionCookie);
+async function recordResponse(id:string,text:string,expectedLifecycleRevision=0,expectedRecordRevision=0){
+ return commands.recordSupportResponse(internal,id,{requestId:randomUUID(),
+  expectedLifecycleRevision,expectedRecordRevision,responseText:text,
+  disposition:'MONITORING',followUpAt:'2026-11-08T00:00:00.000Z'});
+}
 
 beforeAll(async()=>{
  db=await testDatabase();
@@ -243,5 +249,121 @@ describe('scoped SUPPORT Work authorized list and pagination',()=>{
   await getPage('?limit=51').expect(400);
   await getPage('?cursor=not-a-cursor').expect(400);
   await getPage(`?serviceRecipientId=${recipientB}`).expect(400);
+ });
+});
+
+describe('scoped SUPPORT Work detail and bounded activity history',()=>{
+ it('returns indistinguishable 404 for missing, ungranted A and ungranted B Work',async()=>{
+  await recordResponse(workA,'A response');
+  await recordResponse(workB,'B confidential response');
+  const a=await getHistory(workA).expect(404);
+  const b=await getHistory(workB).expect(404);
+  const missing=await getHistory(randomUUID()).expect(404);
+  expect(a.body.error).toEqual(missing.body.error);
+  expect(b.body.error).toEqual(missing.body.error);
+  expect(JSON.stringify(a.body)).not.toContain('response');
+  await request(app).get(`/api/scoped/support-work/${workA}/history`).expect(401);
+ });
+
+ it('returns only authorized A Work responses and sanitized lifecycle, never drafts or B records',async()=>{
+  await commands.recordWork(internal,workA,{requestId:randomUUID(),expectedRevision:0,kind:'DRAFT',
+   correctionReason:'',notes:{form:'SIMPLE_RESPONSE',responseText:'A internal draft secret',
+    disposition:'MONITORING',followUpAt:null}});
+  await commands.setWaiting(internal,workA,{requestId:randomUUID(),expectedRevision:0,
+   party:'A',reason:'Private internal waiting reason',nextAction:'Next step'});
+  await recordResponse(workA,'A recorded response',1,1);
+  await recordResponse(workB,'B confidential response');
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const response=await getHistory(workA).expect(200);
+  const data=response.body.data;
+  expect(data.work).toMatchObject({workId:workA,serviceRecipientId:recipientA});
+  expect(data.entries.map((e:{kind:string})=>e.kind).sort()).toEqual(['RESPONSE','WAITING_SET']);
+  expect(data.entries.find((e:{kind:string})=>e.kind==='RESPONSE')).toMatchObject({
+   responseText:'A recorded response',disposition:'MONITORING',revision:2,
+  });
+  expect(data.entries.find((e:{kind:string})=>e.kind==='WAITING_SET')).toMatchObject({
+   responseText:null,disposition:null,
+  });
+  expect(Object.keys(data.entries[0]).sort()).toEqual([
+   'disposition','id','kind','occurredAt','responseText','revision',
+  ]);
+  const serialized=JSON.stringify(response.body);
+  for(const secret of ['A internal draft secret','Private internal waiting reason','B confidential response',
+   'commandPayload','recordedByOperatorId','Company B confidential'])expect(serialized).not.toContain(secret);
+  await getHistory(workB).expect(404);
+ });
+
+ it('paginates authorized Work-local events and rechecks revocation on an existing session',async()=>{
+  await commands.setWaiting(internal,workA,{requestId:randomUUID(),expectedRevision:0,
+   party:'A',reason:'Waiting',nextAction:'Resume'});
+  await commands.resumeWork(internal,workA,{requestId:randomUUID(),expectedRevision:1,
+   nextAction:'Continue'});
+  await recordResponse(workA,'A response',2);
+  await recordResponse(workB,'B response');
+  const grantId=await grant('WORK',recipientA,workA);
+  const seen:string[]=[];
+  let cursor:string|null=null;
+  for(let n=0;n<4;n++){
+   const page:{body:{data:{entries:{kind:string}[];nextCursor:string|null}}}=
+    await getHistory(workA,`?limit=1${cursor?`&cursor=${cursor}`:''}`).expect(200);
+   if(!page.body.data.entries.length)break;
+   expect(page.body.data.entries).toHaveLength(1);
+   seen.push(page.body.data.entries[0]!.kind);
+   cursor=page.body.data.nextCursor;
+   if(!cursor)break;
+  }
+  expect(seen.sort()).toEqual(['RESPONSE','RESUMED','WAITING_SET']);
+  expect(JSON.stringify(seen)).not.toContain('B response');
+  await getHistory(workB).expect(404);
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='revoked'
+   where id=$1`,[grantId,now,ids.operator]);
+  await getHistory(workA).expect(404);
+ });
+
+ it('requires correct READ grant, active beneficiary and effective contract for every page',async()=>{
+  await recordResponse(workA,'A response');
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'KNOWLEDGE'});
+  await getHistory(workA).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await getHistory(workA).expect(200);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'受益先解除'});
+  await getHistory(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
+  await getHistory(workA).expect(200);
+  await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
+   [ids.contract,'2026-11-06T00:00:00.000Z']);
+  await getHistory(workA).expect(404);
+ });
+
+ it('does not retroactively expose A response history after reassignment to beneficiary B',async()=>{
+  await recordResponse(workA,'A private response before reassignment');
+  await grant('SERVICE_RECIPIENT',recipientB);
+  await confirm(eventA,companyB,1);
+  // Summary uses the latest beneficiary, but prior Work history is not
+  // automatically approved for newly assigned customer B.
+  await get(workA).expect(200);
+  const denied=await getHistory(workA).expect(404);
+  expect(JSON.stringify(denied.body)).not.toContain('A private response');
+ });
+
+ it('permits Service-wide access to each Work without joining the other Work history',async()=>{
+  await recordResponse(workA,'A own response');
+  await recordResponse(workB,'B own response');
+  await grant('SERVICE');
+  const a=await getHistory(workA).expect(200);
+  const b=await getHistory(workB).expect(200);
+  expect(a.body.data.entries.map((e:{responseText:string|null})=>e.responseText)).toEqual(['A own response']);
+  expect(b.body.data.entries.map((e:{responseText:string|null})=>e.responseText)).toEqual(['B own response']);
+ });
+
+ it('rejects untrusted history pagination and recipient arguments',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await getHistory(workA,'?limit=0').expect(400);
+  await getHistory(workA,'?limit=51').expect(400);
+  await getHistory(workA,'?cursor=not-a-cursor').expect(400);
+  await getHistory(workA,`?serviceRecipientId=${recipientB}`).expect(400);
  });
 });

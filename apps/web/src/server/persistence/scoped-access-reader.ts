@@ -25,6 +25,19 @@ export interface ScopedSupportWorkSummary {
 
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
 export interface ScopedSupportWorkCursor {updatedAt:string;workId:string}
+export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
+export interface ScopedSupportHistoryEntry {
+ id:string;revision:number;kind:string;occurredAt:string;
+ responseText:string|null;disposition:'CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED'|null;
+}
+export interface ScopedSupportWorkHistory {
+ work:ScopedSupportWorkSummary;entries:ScopedSupportHistoryEntry[];nextCursor:string|null;
+}
+
+interface StoredSupportHistoryEntry {
+ id:string;revision:number;kind:string;occurred_at:Date;
+ response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
+}
 
 /**
  * A tenant-scoped, read-only bridge to the pure scoped-access policy.
@@ -46,7 +59,7 @@ export class PgScopedAccessReader {
  }
 
  /**
-  * The only scoped HTTP read projection in this slice. Resolve the Work and
+  * Resolve the Work and
   * latest confirmed beneficiary from the database, then authorize and project
   * inside the SAME repeatable-read tenant transaction. Never accept client-
   * supplied Service/Contract/Recipient/Grant context for this lookup.
@@ -56,6 +69,66 @@ export class PgScopedAccessReader {
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
   return withTenant(this.pool,tenantId,async db=>{
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   return work?this.projectSupportWork(work):null;
+  },true);
+ }
+
+ /** Only Work-local recorded responses and metadata-only state transitions.
+  * Drafts, raw command payloads, operator identities and other Work are excluded.
+  * Authorization and history projection share one read-only tenant snapshot. */
+ async supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
+  cursor:ScopedSupportHistoryCursor|null):Promise<ScopedSupportWorkHistory|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success)||
+     !Number.isInteger(limit)||limit<1||limit>50||
+     (cursor&&(!z.uuid().safeParse(cursor.id).success||!Number.isFinite(Date.parse(cursor.occurredAt)))))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   if(!work)return null;
+   // A later reassignment to another Organization cannot retroactively
+   // classify older response text as safe for the newly confirmed beneficiary.
+   // History remains unavailable pending explicit human record review.
+   const priorOtherBeneficiary=await db.query(`select 1
+    from factact.support_event_beneficiary_decisions d
+    join factact.work w on w.tenant_id=d.tenant_id and w.support_event_id=d.support_event_id
+    where w.id=$1 and d.tenant_id=$2 and d.kind='CONFIRMED'
+     and d.service_recipient_id<>$3 limit 1`,
+    [workId,tenantId,work.confirmed_recipient_id]);
+   if(priorOtherBeneficiary.rowCount)return null;
+   const {rows}=await db.query<StoredSupportHistoryEntry>(`
+    with entries as (
+     select r.id,r.revision,'RESPONSE'::text as kind,r.recorded_at as occurred_at,
+      r.notes->>'responseText' as response_text,r.notes->>'disposition' as disposition
+     from factact.support_work_records r
+     where r.tenant_id=$2 and r.work_id=$1 and r.kind='RESPONSE'
+      and jsonb_typeof(r.notes->'responseText')='string'
+      and r.notes->>'disposition' in ('CUSTOMER_WAIT','INVESTIGATING','MONITORING','COMPLETED')
+     union all
+     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text
+     from factact.support_work_lifecycle_events e
+     where e.tenant_id=$2 and e.work_id=$1
+      and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED')
+    )
+    select id,revision,kind,occurred_at,response_text,disposition from entries
+    where ($3::timestamptz is null or (occurred_at,id)<($3::timestamptz,$4::uuid))
+    order by occurred_at desc,id desc limit $5`,
+    [workId,tenantId,cursor?.occurredAt??null,cursor?.id??null,limit]);
+   const entries:ScopedSupportHistoryEntry[]=rows.map(row=>({
+    id:row.id,revision:row.revision,kind:row.kind,occurredAt:row.occurred_at.toISOString(),
+    responseText:row.response_text,disposition:row.disposition,
+   }));
+   const last=entries.at(-1);
+   const nextCursor=entries.length===limit&&last
+    ?Buffer.from(JSON.stringify({occurredAt:last.occurredAt,id:last.id})).toString('base64url')
+    :null;
+   return {work:this.projectSupportWork(work),entries,nextCursor};
+  },true);
+ }
+
+ private async authorizedSupportWork(db:PoolClient,tenantId:string,actorId:string,
+  workId:string,at:string):Promise<StoredSupportWorkSummary|null>{
    const {rows}=await db.query<StoredSupportWorkSummary>(`
     select w.id as work_id,w.service_id,w.contract_profile_id,w.title,w.status,
       w.next_action,w.waiting,w.follow_up_at,w.updated_at,
@@ -77,8 +150,7 @@ export class PgScopedAccessReader {
     objectKind:'SUPPORT',operation:'READ',
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
-   return this.projectSupportWork(work);
-  },true);
+   return work;
  }
 
  /**
