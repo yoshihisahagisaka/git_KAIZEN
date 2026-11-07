@@ -8,7 +8,7 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  constructor(private pool:Pool){}
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
-class PgSupportRepository implements SupportRepository {
+export class PgSupportRepository implements SupportRepository {
  beneficiaryDecisions(eventId:string){return this.many<SupportBeneficiaryDecision>(`select d.*,o.name as organization_name
   from factact.support_event_beneficiary_decisions d
   left join factact.service_recipients r on r.tenant_id=d.tenant_id and r.id=d.service_recipient_id
