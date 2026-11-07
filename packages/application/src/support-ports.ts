@@ -52,4 +52,22 @@ export interface SupportManagementRow extends SupportWork {
  ownerStatus:'ACTIVE'|'INACTIVE'|null;
 }
 export interface SupportUnitOfWork {run<T>(tenantId:string,fn:(r:SupportRepository)=>Promise<T>,readOnly?:boolean):Promise<T>}
+/** Only operations needed by the existing response command, bound to one Work
+ * by the persistence adapter for an external Actor. */
+export type SupportResponseRepository=Pick<SupportRepository,
+ 'work'|'event'|'records'|'lifecycleEvents'|'followUps'|'closeDecisions'|
+ 'insertRecord'|'insertLifecycleEvent'|'insertFollowUp'|'insertCloseDecision'|
+ 'verificationItems'|'progress'|'audit'> & {
+ core:Pick<JoinRepository,'service'|'contract'>;
+};
+export interface ScopedSupportWorkUpdateContext {
+ work():Promise<SupportWork|null>;
+ progress(work:SupportWork):Promise<void>;
+ audit(eventType:string,metadata:Record<string,unknown>):Promise<void>;
+ response:SupportResponseRepository;
+}
+export interface ScopedSupportUpdateBoundary {
+ runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
+  mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>;
+}
 export type SupportRuntime=JoinRuntime;
