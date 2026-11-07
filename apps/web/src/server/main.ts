@@ -14,6 +14,7 @@ import { JoinQueries } from '../../../../packages/application/src/join-queries.j
 import { randomUUID } from 'node:crypto';
 import { PgExploreSearchUnitOfWork } from './persistence/explore-repository.js';
 import { ExploreQueries } from '../../../../packages/application/src/explore-queries.js';
+import { PgScopedAccessReader } from './persistence/scoped-access-reader.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -26,7 +27,7 @@ async function main() {
     const uow = new PgJoinUnitOfWork(pool);
     const supportUow = new PgSupportUnitOfWork(pool);
     const exploreUow = new PgExploreSearchUnitOfWork(pool);
-    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) }, {commands:new SupportCommands(supportUow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})}, {queries:new ExploreQueries(exploreUow)});
+    const app = createApp(config, new PgIdentityStore(pool), provider, logger, { commands: new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}), queries: new JoinQueries(uow) }, {commands:new SupportCommands(supportUow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})}, {queries:new ExploreQueries(exploreUow)},new PgScopedAccessReader(pool));
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void pool.end(); });

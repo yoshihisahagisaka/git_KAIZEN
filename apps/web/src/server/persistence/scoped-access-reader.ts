@@ -10,6 +10,19 @@ interface StoredGrant {
  status:ExplicitAccessGrant['status'];effective_from:Date;effective_until:Date|null;
 }
 
+interface StoredSupportWorkSummary {
+ work_id:string;service_id:string;contract_profile_id:string;
+ title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';next_action:string;
+ waiting:boolean;follow_up_at:Date|null;updated_at:Date;
+ beneficiary_kind:'CONFIRMED'|'CLEARED'|null;confirmed_recipient_id:string|null;
+}
+
+export interface ScopedSupportWorkSummary {
+ workId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;
+ title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';nextAction:string;
+ waiting:boolean;followUpAt:string|null;updatedAt:string;
+}
+
 /**
  * A tenant-scoped, read-only bridge to the pure scoped-access policy.
  * No API route may accept actorId or a resolved target from a Caller body.
@@ -26,7 +39,51 @@ export class PgScopedAccessReader {
      ![actorId,target.tenantId,target.serviceId,target.contractProfileId].every(id=>z.uuid().safeParse(id).success)||
      (target.scope.kind!=='SERVICE'&&!z.uuid().safeParse(target.scope.serviceRecipientId).success)||
      (target.scope.kind==='WORK'&&!z.uuid().safeParse(target.scope.workId).success))return false;
-  return withTenant(this.pool,target.tenantId,async db=>{
+  return withTenant(this.pool,target.tenantId,db=>this.authorizedInTransaction(db,actorId,target,at),true);
+ }
+
+ /**
+  * The only scoped HTTP read projection in this slice. Resolve the Work and
+  * latest confirmed beneficiary from the database, then authorize and project
+  * inside the SAME repeatable-read tenant transaction. Never accept client-
+  * supplied Service/Contract/Recipient/Grant context for this lookup.
+  */
+ async supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const {rows}=await db.query<StoredSupportWorkSummary>(`
+    select w.id as work_id,w.service_id,w.contract_profile_id,w.title,w.status,
+      w.next_action,w.waiting,w.follow_up_at,w.updated_at,
+      beneficiary.kind as beneficiary_kind,
+      beneficiary.service_recipient_id as confirmed_recipient_id
+    from factact.work w
+    left join lateral (
+      select d.kind,d.service_recipient_id
+      from factact.support_event_beneficiary_decisions d
+      where d.tenant_id=w.tenant_id and d.support_event_id=w.support_event_id
+      order by d.revision desc limit 1
+    ) beneficiary on true
+    where w.id=$1 and w.lane='SUPPORT'`,[workId]);
+   const work=rows[0];
+   if(!work||work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)return null;
+   const target:ResolvedAccessTarget={
+    tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+    scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id,workId},
+    objectKind:'SUPPORT',operation:'READ',
+   };
+   if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
+   return {
+    workId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+    serviceRecipientId:work.confirmed_recipient_id,title:work.title,
+    status:work.status,nextAction:work.next_action,waiting:work.waiting,
+    followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString(),
+   };
+  },true);
+ }
+
+ private async authorizedInTransaction(db:PoolClient,actorId:string,target:ResolvedAccessTarget,at:string):Promise<boolean>{
    if(!await this.targetIsCurrent(db,actorId,target,at))return false;
    const {rows}=await db.query<StoredGrant>(`select actor_operator_id,tenant_id,service_id,contract_profile_id,
       scope_kind,service_recipient_id,work_id,object_kind,operations,status,effective_from,effective_until
@@ -40,7 +97,6 @@ export class PgScopedAccessReader {
     status:row.status,effectiveFrom:row.effective_from.toISOString(),effectiveUntil:row.effective_until?.toISOString()??null,
    }));
    return isExplicitlyAuthorized({actorId,contractIsEffective:true,target,grants,at});
-  },true);
  }
 
  private scope(g:StoredGrant):ExplicitAccessScope{
