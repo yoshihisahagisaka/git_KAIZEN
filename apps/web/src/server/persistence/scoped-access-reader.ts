@@ -3,8 +3,10 @@ import {z} from 'zod';
 import {withTenant} from './database.js';
 import {PgSupportRepository} from './support-repository.js';
 import type {SupportWork} from '../../../../../packages/domain/src/support.js';
+import type {ScopedSupportWorkUpdateContext,SupportResponseRepository} from '../../../../../packages/application/src/support-ports.js';
 import {randomUUID} from 'node:crypto';
 import {isExplicitlyAuthorized,type ExplicitAccessGrant,type ExplicitAccessScope,type ResolvedAccessTarget} from '../../../../../packages/domain/src/scoped-access.js';
+export type {ScopedSupportWorkUpdateContext} from '../../../../../packages/application/src/support-ports.js';
 
 interface StoredGrant {
  actor_operator_id:string;tenant_id:string;service_id:string;contract_profile_id:string;
@@ -35,15 +37,6 @@ export interface ScopedSupportHistoryEntry {
 }
 export interface ScopedSupportWorkHistory {
  work:ScopedSupportWorkSummary;entries:ScopedSupportHistoryEntry[];nextCursor:string|null;
-}
-
-/** Narrow, trusted application port. It cannot fetch, write or audit a second
- * Work and never takes its Actor, Event or Tenant identity from an HTTP body.
- * Domain transition validation belongs in the subsequent command integration. */
-export interface ScopedSupportWorkUpdateContext {
- work():Promise<SupportWork|null>;
- progress(work:SupportWork):Promise<void>;
- audit(eventType:string,metadata:Record<string,unknown>):Promise<void>;
 }
 
 interface StoredSupportHistoryEntry {
@@ -84,19 +77,68 @@ export class PgScopedAccessReader {
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
    if(!work)return null;
    const repository=new PgSupportRepository(db,tenantId);
+   const assertWork=(id:string)=>{
+    if(id!==workId)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
+   };
+   const assertEvent=(id:string)=>{
+    if(id!==work.support_event_id)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
+   };
+   const assertRecord=(row:{tenantId:string;workId:string;recordedByOperatorId:string})=>{
+    assertWork(row.workId);
+    if(row.tenantId!==tenantId||row.recordedByOperatorId!==actorId)
+     throw Error('SCOPED_UPDATE_ACTOR_MISMATCH');
+   };
+   const progress=async(updated:SupportWork)=>{
+    assertWork(updated.id);
+    if(updated.tenantId!==tenantId||
+       updated.serviceId!==work.service_id||updated.contractProfileId!==work.contract_profile_id||
+       updated.supportEventId!==work.support_event_id)
+     throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
+    await repository.progress(updated);
+   };
+   const audit:ScopedSupportWorkUpdateContext['audit']=async(eventType,metadata)=>repository.audit({
+    id:randomUUID(),tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:work.support_event_id,
+    eventType,actorOperatorId:actorId,occurredAt:this.clock.now(),metadataJson:metadata,
+   });
+   const response:SupportResponseRepository={
+    core:{
+     service:id=>{if(id!==work.service_id)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');return repository.core.service(id);},
+     contract:id=>{if(id!==work.contract_profile_id)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');return repository.core.contract(id);},
+    },
+    work:(id)=>{assertWork(id);return repository.work(workId,true);},
+    event:id=>{assertEvent(id);return repository.event(work.support_event_id);},
+    records:id=>{assertWork(id);return repository.records(workId);},
+    lifecycleEvents:id=>{assertWork(id);return repository.lifecycleEvents(workId);},
+    followUps:id=>{assertWork(id);return repository.followUps(workId);},
+    closeDecisions:id=>{assertWork(id);return repository.closeDecisions(workId);},
+    insertRecord:row=>{
+     assertRecord(row);
+     if(row.kind!=='RESPONSE')throw Error('SCOPED_UPDATE_RECORD_KIND_MISMATCH');
+     return repository.insertRecord(row);
+    },
+    insertLifecycleEvent:row=>{
+     assertRecord(row);
+     if(row.kind!=='RESPONSE_RECORDED')throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
+     return repository.insertLifecycleEvent(row);
+    },
+    insertFollowUp:row=>{
+     assertRecord(row);
+     if(row.kind!=='SET')throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
+     return repository.insertFollowUp(row);
+    },
+    insertCloseDecision:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
+    verificationItems:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
+    progress,
+    audit:row=>{
+     if(row.tenantId!==tenantId||row.aggregateType!=='SUPPORT_EVENT'||
+        row.aggregateId!==work.support_event_id||row.actorOperatorId!==actorId)
+      throw Error('SCOPED_UPDATE_ACTOR_MISMATCH');
+     return audit(row.eventType,row.metadataJson);
+    },
+   };
    const context:ScopedSupportWorkUpdateContext={
     work:()=>repository.work(workId,true),
-    progress:async updated=>{
-     if(updated.id!==workId||updated.tenantId!==tenantId||
-        updated.serviceId!==work.service_id||updated.contractProfileId!==work.contract_profile_id||
-        updated.supportEventId!==work.support_event_id)
-      throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
-     await repository.progress(updated);
-    },
-    audit:async(eventType,metadata)=>repository.audit({
-     id:randomUUID(),tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:work.support_event_id,
-     eventType,actorOperatorId:actorId,occurredAt:this.clock.now(),metadataJson:metadata,
-    }),
+    progress,audit,response,
    };
    const result=await mutation(context);
    // Runtime cannot row-lock the privileged Grant/Actor tables. A final

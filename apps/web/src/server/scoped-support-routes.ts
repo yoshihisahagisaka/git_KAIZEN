@@ -1,6 +1,7 @@
 import {Router} from 'express';
 import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
+import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
 import type {ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
@@ -12,7 +13,8 @@ export interface ScopedSupportReader {
 }
 
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
-export function scopedSupportRoutes(reader:ScopedSupportReader){
+export function scopedSupportRoutes(reader:ScopedSupportReader,
+ writer?:Pick<SupportCommands,'recordScopedSupportResponse'>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -54,5 +56,22 @@ export function scopedSupportRoutes(reader:ScopedSupportReader){
   const work=found(await reader.supportWorkSummary(actor.tenantId,actor.id,workId));
   res.json({ok:true,data:work});
  });
+ if(writer){
+  // One explicit response command only: no Close/approve/reopen, Caller or
+  // client-selected Actor/Recipient/Service, and no broad SUPPORT write path.
+  const responseInput=z.strictObject({
+   requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),
+   expectedRecordRevision:z.number().int().nonnegative(),
+   responseText:z.string().trim().min(1).max(4000),
+   disposition:z.enum(['CUSTOMER_WAIT','INVESTIGATING','MONITORING']),
+   followUpAt:z.string().datetime({offset:true}),
+  });
+  router.post('/scoped/support-work/:id/responses',async(req,res)=>{
+   const workId=z.uuid().parse(req.params.id);
+   const input=responseInput.parse(req.body);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:await writer.recordScopedSupportResponse(actor,workId,input)});
+  });
+ }
  return router;
 }

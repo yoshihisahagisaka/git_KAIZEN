@@ -1,8 +1,12 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
-import {assertRole,found,requireCondition} from '../../domain/src/join.js';
+import {assertRole,found,requireCondition,DomainError} from '../../domain/src/join.js';
 import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,ResponseDisposition,SupportResponseDraftNotes,SupportResponseNotes,SupportBeneficiaryDecision} from '../../domain/src/support.js';
 import {supportActionLabels,supportResultLabels,type SupportNotes,type SupportRecord} from '../../domain/src/support.js';
-import type {SupportRepository,SupportRuntime,SupportUnitOfWork} from './support-ports.js';
+import type {SupportRepository,SupportRuntime,SupportUnitOfWork,SupportResponseRepository,ScopedSupportUpdateBoundary} from './support-ports.js';
+import type {JoinRepository} from './join-ports.js';
+type SupportResponseInput={requestId:string;expectedLifecycleRevision:number;expectedRecordRevision:number;responseText:string;
+ disposition:ResponseDisposition;followUpAt:string|null;
+ close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined};
 export class SupportCommands {
  recordBeneficiary(actor:Operator,eventId:string,input:{requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string}){return this.run(actor,async(r,a)=>{
   // Lock the parent: revisions for the same inquiry serialize in the same transaction.
@@ -20,8 +24,22 @@ export class SupportCommands {
   await this.audit(r,a,event.id,'SUPPORT_BENEFICIARY_'+input.kind,{decisionId:decision.id,serviceRecipientId:recipientId,reason,revision:decision.revision});
   return decision;
  });}
- recordSupportResponse(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedRecordRevision:number;responseText:string;disposition:ResponseDisposition;followUpAt:string|null;close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined}){return this.run(actor,async(r,a)=>{
-  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+ recordSupportResponse(actor:Operator,workId:string,input:SupportResponseInput){
+  return this.run(actor,(r,a)=>this.applySupportResponse(r,a,workId,input,'INTERNAL'));
+ }
+ /** External Actors use the same response transitions, but only within a
+  * verified Work-scoped UPDATE transaction. UPDATE cannot Close the Work. */
+ async recordScopedSupportResponse(actor:Operator,workId:string,input:SupportResponseInput):Promise<SupportRecord>{
+  requireCondition(input.disposition!=='COMPLETED'&&!input.close,
+   'SCOPED_CLOSE_NOT_AUTHORIZED','対応終了には別の承認権限が必要です。',403);
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'));
+  return found(result);
+ }
+ private async applySupportResponse(r:SupportResponseRepository,a:Operator,workId:string,
+  input:SupportResponseInput,authority:'INTERNAL'|'SCOPED'):Promise<SupportRecord>{
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)),authority);
   const records=await r.records(workId),events=await r.lifecycleEvents(workId),followUps=await r.followUps(workId),closeDecisions=await r.closeDecisions(workId),old=records.find(x=>x.requestId===input.requestId),requestEvent=events.find(x=>x.requestId===input.requestId),requestFollowUp=followUps.find(x=>x.requestId===input.requestId),requestClose=closeDecisions.find(x=>x.requestId===input.requestId)??null;
   const normalized={expectedLifecycleRevision:input.expectedLifecycleRevision,expectedRecordRevision:input.expectedRecordRevision,responseText:input.responseText.trim(),disposition:input.disposition,followUpAt:input.followUpAt,close:input.close?{...input.close,closeReason:input.close.closeReason.trim()}:null};
   if(old||requestEvent||requestFollowUp||requestClose){const sideEffectPresent=input.disposition==='COMPLETED'?!!requestClose:requestFollowUp?.kind==='SET';this.retry(old?.kind==='RESPONSE'&&requestEvent?.kind==='RESPONSE_RECORDED'&&sideEffectPresent&&old.recordedByOperatorId===a.id,requestEvent?.commandPayload??{},normalized);return old!;}
@@ -37,7 +55,7 @@ export class SupportCommands {
   if(!completed){const follow:SupportFollowUp={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'SET',followUpAt:input.followUpAt,sourceType:'HUMAN_DECISION',basisText:'担当者が次回確認予定を指定',reason:'今回の対応状況に基づく次回確認',supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at};await r.insertFollowUp(follow);w.status='IN_PROGRESS';w.waiting=input.disposition==='CUSTOMER_WAIT';w.waitingParty=null;w.waitingReason=null;w.nextActionOpen=true;w.followUpAt=input.followUpAt;w.outcome=null;w.closedAt=null;}
   else {const verification=await this.verificationGuard(r,workId);requireCondition(!verification.requiredVerificationOpen,'CLOSE_GUARD_UNMET','未完の必須Verificationが残っています。');requireCondition(!verification.verificationRequirementUnknown,'CLOSE_GUARD_UNMET','Verification要否を確認できません。');const guard={previousWaiting:w.waiting,previousNextActionOpen:w.nextActionOpen,previousFollowUpAt:w.followUpAt,confirmsOutstandingResponsibilityEnded:true,requiredVerificationOpen:false,verificationRequirementUnknown:false,verificationBasis:verification.basis,lifecycleRevision:w.lifecycleRevision};if(w.followUpAt){await r.insertFollowUp({id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'CLEARED',followUpAt:null,sourceType:'HUMAN_DECISION',basisText:'対応終了の明示確認',reason:'対応終了',supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at});}const close:SupportCloseDecision={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,closeSequence:(closeDecisions.at(-1)?.closeSequence??0)+1,outcome:input.close!.outcome,closeReason:input.close!.closeReason.trim(),provenanceType:'HUMAN_DECISION',provenanceReference:record.id,evidenceId:null,guardSnapshot:guard,commandPayload:normalized,decidedByOperatorId:a.id,decidedAt:at};await r.insertCloseDecision(close);w.status='COMPLETED';w.outcome=close.outcome;w.waiting=false;w.waitingParty=null;w.waitingReason=null;w.nextActionOpen=false;w.followUpAt=null;w.closedAt=at;}
   w.nextAction=nextAction[input.disposition];w.updatedAt=at;w.lifecycleRevision=event.revision;await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_RESPONSE_RECORDED',{workId,recordId:record.id,disposition:input.disposition});return record;
- });}
+ }
  recordContinuation(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;notes:SupportNotes;nextAction:string;nextActionOpen:boolean}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
   const events=await r.lifecycleEvents(workId),old=events.find(x=>x.requestId===input.requestId);
@@ -195,7 +213,7 @@ export class SupportCommands {
  });}
  private retry(kindMatches:boolean,saved:Record<string,unknown>,payload:Record<string,unknown>){requireCondition(kindMatches&&this.stable(saved)===this.stable(payload),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');}
  private stable(value:unknown):string{if(Array.isArray(value))return '['+value.map(x=>this.stable(x)).join(',')+']';if(value&&typeof value==='object')return '{'+Object.keys(value as Record<string,unknown>).sort().map(k=>JSON.stringify(k)+':'+this.stable((value as Record<string,unknown>)[k])).join(',')+'}';return JSON.stringify(value);}
- private async verificationGuard(r:SupportRepository,workId:string){
+ private async verificationGuard(r:Pick<SupportRepository,'verificationItems'>,workId:string){
   const items=await r.verificationItems(workId);const basis:string[]=[];let requiredVerificationOpen=false,verificationRequirementUnknown=false;
   for(const item of items){
    if(item.changeStatus==='PROPOSED'){requiredVerificationOpen=true;basis.push('CHANGE_PROPOSED_REQUIRES_VERIFICATION');continue;}
@@ -207,10 +225,19 @@ export class SupportCommands {
   if(!items.length)basis.push('NO_ACTION_OR_CHANGE_REQUIRES_VERIFICATION');
   return {requiredVerificationOpen,verificationRequirementUnknown,basis};
  }
- constructor(private uow:SupportUnitOfWork,private runtime:SupportRuntime){}
+ constructor(private uow:SupportUnitOfWork,private runtime:SupportRuntime,
+  private scopedUpdate?:ScopedSupportUpdateBoundary){}
  private run<T>(actor:Operator,fn:(r:SupportRepository,a:Operator)=>Promise<T>){return this.uow.run(actor.tenantId,async r=>{const a=found(await r.core.operator(actor.id));assertRole(a,['ADMIN','OPERATOR']);return fn(r,a);});}
- private async context(r:SupportRepository,a:Operator,e:SupportEvent){const s=found(await r.core.service(e.serviceId)),c=found(await r.core.contract(e.contractProfileId)),now=this.runtime.now();requireCondition(s.status==='ACTIVE'&&c.status==='ACTIVE'&&c.serviceId===s.id&&c.effectiveFrom<=now&&(!c.effectiveTo||c.effectiveTo>now),'SERVICE_NOT_ACTIVE','有効なサービス契約を確認してください。');requireCondition(c.configurationJson.support?.enabled,'SUPPORT_NOT_AUTHORIZED','この契約では問い合わせ対応が許可されていません。',403);assertRole(a,c.configurationJson.support.executeRoles);return c;}
- private audit(r:SupportRepository,a:Operator,eventId:string,type:string,metadata:Record<string,unknown>){return r.audit({id:this.runtime.id(),tenantId:a.tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:eventId,eventType:type,actorOperatorId:a.id,occurredAt:this.runtime.now(),metadataJson:metadata});}
+ private async context(r:{core:Pick<JoinRepository,'service'|'contract'>},a:Operator,e:SupportEvent,
+  authority:'INTERNAL'|'SCOPED'='INTERNAL'){
+  const s=found(await r.core.service(e.serviceId)),c=found(await r.core.contract(e.contractProfileId)),now=this.runtime.now();
+  requireCondition(s.status==='ACTIVE'&&c.status==='ACTIVE'&&c.serviceId===s.id&&c.effectiveFrom<=now&&(!c.effectiveTo||c.effectiveTo>now),
+   'SERVICE_NOT_ACTIVE','有効なサービス契約を確認してください。');
+  requireCondition(c.configurationJson.support?.enabled,'SUPPORT_NOT_AUTHORIZED','この契約では問い合わせ対応が許可されていません。',403);
+  if(authority==='INTERNAL')assertRole(a,c.configurationJson.support.executeRoles);
+  return c;
+ }
+ private audit(r:Pick<SupportRepository,'audit'>,a:Operator,eventId:string,type:string,metadata:Record<string,unknown>){return r.audit({id:this.runtime.id(),tenantId:a.tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:eventId,eventType:type,actorOperatorId:a.id,occurredAt:this.runtime.now(),metadataJson:metadata});}
  createEvent(actor:Operator,input:{requestId:string;personId?:string|undefined;caller?:import('../../domain/src/support.js').SupportCallerInput|undefined;serviceId:string;symptom:string}){return this.run(actor,async(r,a)=>{
   requireCondition(input.symptom.trim().length>0&&input.symptom.length<=4000,'INVALID_INPUT','問い合わせ内容を入力してください。',400);
   requireCondition(!!input.personId!==!!input.caller,'INVALID_INPUT','問い合わせ者を指定してください。',400);
