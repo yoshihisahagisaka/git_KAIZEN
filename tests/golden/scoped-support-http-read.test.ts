@@ -51,6 +51,7 @@ async function grant(scope:'SERVICE'|'SERVICE_RECIPIENT'|'WORK',recipientId:stri
  return id;
 }
 const get=(id:string)=>request(app).get(`/api/scoped/support-work/${id}`).set('Cookie',sessionCookie);
+const getPage=(query='')=>request(app).get(`/api/scoped/support-work${query}`).set('Cookie',sessionCookie);
 
 beforeAll(async()=>{
  db=await testDatabase();
@@ -172,5 +173,75 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
    [ids.contract,'2026-11-06T00:00:00.000Z']);
   await get(workA).expect(404);
+ });
+});
+
+describe('scoped SUPPORT Work authorized list and pagination',()=>{
+ it('returns no tenant-wide records, count or continuation without a grant, despite ADMIN Role',async()=>{
+  const response=await getPage().expect(200);
+  expect(response.body.data).toEqual({items:[],nextCursor:null});
+  expect(JSON.stringify(response.body)).not.toContain('Company B confidential');
+  await request(app).get('/api/support').set('Cookie',sessionCookie).expect(403);
+  await request(app).get('/api/scoped/support-work').expect(401);
+ });
+
+ it('lists only recipient A with no B existence/count leak, even though both have the same Caller',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const res=await getPage().expect(200);
+  expect(res.body.data.items.map((w:{workId:string})=>w.workId)).toEqual([workA]);
+  expect(res.body.data).not.toHaveProperty('total');
+  expect(res.body.data.nextCursor).toBeNull();
+  expect(JSON.stringify(res.body)).not.toContain(workB);
+  expect(JSON.stringify(res.body)).not.toContain('Company B confidential');
+ });
+
+ it('paginates AFTER authorization, never counting hidden B Work as a page item',async()=>{
+  const second=await createWork('Another A Work');
+  await confirm(second.eventId,ids.organization);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const first=await getPage('?limit=1').expect(200);
+  expect(first.body.data.items).toHaveLength(1);
+  expect(first.body.data.nextCursor).toEqual(expect.any(String));
+  const next=await getPage(`?limit=1&cursor=${first.body.data.nextCursor}`).expect(200);
+  expect(next.body.data.items).toHaveLength(1);
+  const seen=[first.body.data.items[0].workId,next.body.data.items[0].workId].sort();
+  expect(seen).toEqual([workA,second.workId].sort());
+  expect(seen).not.toContain(workB);
+  expect((await getPage(`?limit=1&cursor=${next.body.data.nextCursor}`).expect(200)).body.data.items).toEqual([]);
+ });
+
+ it('respects Work-only, correct object/operation and explicit Service-wide scopes',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await grant('SERVICE_RECIPIENT',recipientB,null,{objectKind:'KNOWLEDGE'});
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('WORK',recipientA,workA);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId)).toEqual([workA]);
+  await grant('SERVICE');
+  const all=(await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId);
+  expect(all.sort()).toEqual([workA,workB].sort());
+ });
+
+ it('rechecks revocation, latest beneficiary and Contract on every page of an existing session',async()=>{
+  const grantId=await grant('SERVICE_RECIPIENT',recipientA);
+  expect((await getPage().expect(200)).body.data.items).toHaveLength(1);
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='解除'
+   where id=$1`,[grantId,now,ids.operator]);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'対象確認を取消'});
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await confirm(eventA,ids.organization,2);
+  await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
+   [ids.contract,'2026-11-06T00:00:00.000Z']);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+ });
+
+ it('rejects malformed paging inputs without exposing SQL or target details',async()=>{
+  await getPage('?limit=0').expect(400);
+  await getPage('?limit=51').expect(400);
+  await getPage('?cursor=not-a-cursor').expect(400);
+  await getPage(`?serviceRecipientId=${recipientB}`).expect(400);
  });
 });
