@@ -124,6 +124,10 @@ describe('PostgreSQL migration, identity and RLS baseline', () => {
     expect(await store.consumeLogin(hash)).toBeNull();
   });
   it('session expiry, revocation and inactive Operator are enforced server-side', async () => {
+    // Baseline-only fixture intentionally does not apply later migrations.
+    // Add a test-local compatibility column just for the current Operator loader;
+    // all preceding baseline table/permission assertions ran on the original DDL.
+    await admin.query("alter table factact.operators add column read_authority_mode text not null default 'INTERNAL_V1'");
     const hash = tokenHash('session');
     await store.createSession(hash, { tenantId: tenantA, operatorId: operatorA }, 'csrf');
     expect((await authenticateSession(store, hash))?.operator.id).toBe(operatorA);

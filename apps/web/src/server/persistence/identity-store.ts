@@ -82,7 +82,9 @@ export class PgIdentityStore implements IdentityStore {
     return withTenant(this.pool, ref.tenantId, async client => {
       const { rows } = await client.query(`
         select o.id, o.display_name, t.name as tenant_name,
-          array(select role from factact.operator_roles r where r.operator_id = o.id and r.tenant_id = o.tenant_id order by role) as roles
+          array(select role from factact.operator_roles r
+            where r.operator_id = o.id and r.tenant_id = o.tenant_id
+              and o.read_authority_mode = 'INTERNAL_V1' order by role) as roles
         from factact.operators o join factact.tenants t on t.id = o.tenant_id
         where o.id = $1 and o.status = 'ACTIVE' and t.status = 'ACTIVE'
       `, [ref.operatorId]);

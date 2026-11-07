@@ -33,7 +33,8 @@ export class PgJoinRepository implements JoinRepository {
   }
   async operator(id: string): Promise<Operator | null> {
     const o = await this.one<{ id: string; tenantId: string; displayName: string; tenantName: string; roles: Operator['roles'] }>(`select o.id,o.tenant_id,o.display_name,t.name as tenant_name,
-      array(select role from factact.operator_roles r where r.operator_id=o.id and r.tenant_id=o.tenant_id) as roles
+      array(select role from factact.operator_roles r where r.operator_id=o.id and r.tenant_id=o.tenant_id
+        and o.read_authority_mode='INTERNAL_V1') as roles
       from factact.operators o join factact.tenants t on t.id=o.tenant_id where o.id=$1 and o.status='ACTIVE' and t.status='ACTIVE'`, [id]);
     return o;
   }

@@ -119,6 +119,8 @@ describe('Explore-01 read search',()=>{
     await db.admin.query("insert into factact.tenants(id,name,status) values($1,'Foreign Tenant','ACTIVE')",[tenant]);
     await db.admin.query("insert into factact.organizations(id,tenant_id,name,status) values($1,$2,'FOREIGN-SECRET Organization','ACTIVE')",[organization,tenant]);
     await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'foreign@example.invalid','Foreign Operator','ACTIVE')",[operator,tenant]);
+    // This fixture exercises the previous internal v1 cross-Tenant rejection.
+    await db.admin.query("update factact.operators set read_authority_mode='INTERNAL_V1' where id=$1",[operator]);
     for(const role of actor.roles) await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[tenant,operator,role]);
     await db.admin.query("insert into factact.people(id,tenant_id,organization_id,display_name,email,lifecycle_status) values($1,$2,$3,'FOREIGN-SECRET Person','foreign-secret@example.invalid','ACTIVE')",[person,tenant,organization]);
     await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,serial_number,display_name,device_status) values($1,$2,'FOREIGN-SECRET-DEVICE','FOREIGN-SECRET-SERIAL','Foreign Device','AVAILABLE')",[device,tenant]);

@@ -30,3 +30,13 @@ Owner and Team do not further restrict reads. Read remains separate from Execute
 Review, so Contract `executeRoles` and `reviewRoles` are not reused as read grants.
 Tenant RLS remains mandatory. This checkpoint applies only to internal Operators and
 does not decide external-user or individually confidential-data access.
+
+Read Authority v1 technical guard checkpoint (Draft, 2026-11-07): The stacked
+Draft PR after identity-bound Tenant Context switching adds an explicit
+`operators.read_authority_mode` for this existing internal-only v1 permission
+algorithm. New Operators default to `SCOPED`, whose Roles cannot authorize the
+existing broad JOIN/SUPPORT/Explore paths; reviewed pre-existing Role-bearing
+Operators retain `INTERNAL_V1` after a separately approved migration. This is
+not an employment classification or an authorization for external reads. The
+original external scoped-authority release gate remains open; see
+`docs/factact-internal-read-authority-boundary-checkpoint-20261107.md`.
