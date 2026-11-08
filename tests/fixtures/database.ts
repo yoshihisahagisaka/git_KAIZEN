@@ -20,7 +20,18 @@ export async function testDatabase() {
   const embedded=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'test-admin',port,persistent:true,createPostgresUser:false,initdbFlags:['--encoding=UTF8','--locale=C'],postgresFlags:['-c','listen_addresses=127.0.0.1','-c','unix_socket_directories='],onLog:()=>{},onError:()=>{}});
   const admin=new Pool({host:'127.0.0.1',port,user:'postgres',password:'test-admin',database:'postgres'});
   const runtime=new Pool({host:'127.0.0.1',port,user:'factact_runtime',password:'test-runtime',database:'postgres',max:5});
+  // PostgreSQL sends SQLSTATE 57P01 to any connection still finishing socket
+  // teardown during an intentional embedded-server stop. Only swallow this
+  // expected notification AFTER fixture shutdown begins, not query failures.
+  let shuttingDown=false;
+  const poolError=(error:Error & {code?:string})=>{
+    if(shuttingDown&&error.code==='57P01')return;
+    throw error;
+  };
+  admin.on('error',poolError);
+  runtime.on('error',poolError);
   async function close() {
+    shuttingDown=true;
     await runtime.end();await admin.end();await embedded.stop();
     const root=await realpath(process.cwd()),target=await realpath(directory);
     if(!target.startsWith(root+sep+'.factact-db-test-')) throw new Error('Unsafe fixture cleanup target');

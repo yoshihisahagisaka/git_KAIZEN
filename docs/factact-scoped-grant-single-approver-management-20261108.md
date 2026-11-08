@@ -1,0 +1,39 @@
+# FACTACT | Scoped Grant single-Human approval management (2026-11-08)
+
+Status: **Stacked Draft / internal review. No merge, production migration, real-identity bootstrap, actual customer Grant, or service release.**
+
+## Business Decision / continuity
+
+The user designated **`yoshihisa.hagisaka@atlib.jp` only** as the initial approver for issuance and revocation of Scoped Actor Grants (2026-11-08). No other atLIB account, general Tenant `ADMIN` Role, customer or contractor may approve those changes in this initial slice. Any delegated approval or additional approver requires a separate decision. This preserves the Actor-neutral scoped-access model; one approver is not an implicit grant to any customer data.
+
+## Trusted identity bootstrap (no auto-enrollment)
+
+- `factact_private.scoped_grant_approvers` binds precisely **one** actively approved Google `(issuer, subject)` to the agreed email *label*. Email alone, `operators.email`, a browser field, a matching email domain, an ADMIN Role, a Caller, or a Work Owner are never proof of approval.
+- The approval table is **empty after migration**. No personal subject or credential is checked into Git or derived from the development seed. Before real use, an authorized deployment operator must independently verify the Google OIDC identity belonging to the approved email, record that exact subject through a separately reviewed privileged bootstrap and validate live login. A future approved subject replacement requires explicit revocation of the old binding; only one ACTIVE subject may exist.
+- `factact_private.sessions.oidc_verified_login` distinguishes sessions created by the verified-OIDC callback from compatibility sessions. The `create_session` compatibility path remains valid for existing tests/internal work but cannot authorize Grant management. Server-side context switching retains this provenance rather than upgrading an unverified session.
+- The management function revalidates an unexpired server-side session, currently active verified identity membership, active Tenant/Operator and the approved subject **inside its database transaction**. `FOR SHARE` locks that evidence through commit. Approval is scoped to the currently selected Tenant context; a verified identity still needs active membership for each Tenant it administers.
+- `factact_runtime` remains unable to INSERT/UPDATE/DELETE the Grant table or read the private approval ledger. It may only call the narrowly named SECURITY DEFINER management functions with a server-held session hash; authenticated application callback verification, CSRF/Origin protection and secret-free logs remain mandatory. These functions are **not** safe as general-purpose public SQL APIs or for untrusted callers holding the runtime DB credentials. The existing backend protocol verifier is part of the trusted computing base.
+
+## Controlled commands and audit
+
+- New migration: `supabase/migrations/20261108000100_scoped_grant_approved_management.sql`.
+- `POST /api/admin/scoped-grants`: strict request with `requestId`, target Actor, Service/Contract, exact `SERVICE` / `SERVICE_RECIPIENT` / `WORK` scope, object kind, operations, effective period and **mandatory approval reason**. Tenant and approver identity are not accepted from the request; the new Grant ID is the request ID for stable retries.
+- `POST /api/admin/scoped-grants/:id/revoke`: strict `requestId` and reason; Actor/Tenant is loaded from the persisted Grant, not from the request body. Only ACTIVE grants can be revoked, with identical retries idempotent.
+- The DB resolves active Actor, Service, effective Contract and exact active Recipient. A SUPPORT Work Grant requires the **latest confirmed beneficiary**, not Caller affiliation; an unrelated Work or Recipient is rejected. Normal scoped read/write authorization still rechecks these facts on each call.
+- Issue/revoke first acquire the actor-keyed transaction advisory lock established by PR #39, then the operation ID lock. Request payload/approval identity is durably stored in a **private** idempotency ledger; a repeated ID with a changed payload fails.
+- Each successful change produces both the automatic Grant lifecycle Audit from PR #40 and a management-specific Audit attributed to the verified approving Operator, carrying operation ID and reason. The Grant change, receipt and both Audit rows are in **one DB transaction**; if any write fails, all roll back.
+- The existing global command boundary enforces server session, exact Origin and CSRF for both POST routes. The DB rejects unapproved or expired sessions independently. There is **no** approval delegation, mass assignment, admin enrollment endpoint, UI, or direct privileged DB credential provided by this PR.
+
+## Review / No-Go gates
+
+1. Technical review of SECURITY DEFINER functions, SQL role/function grants and the compatibility-session hardening. Production deployment approval remains separate.
+2. **Verified real-person bootstrap** of the selected Google `(issuer, subject)` and exact Tenant context membership (not yet performed); no identity subject is guessed from email. Real OIDC login and negative tests must be completed in a controlled environment before any customer Grant is issued.
+3. Customer data classification/historical content disclosure, management UI and end-to-end acceptance for external Actors remain release gates. Database superuser and trigger-bypassing operations still require separate operational controls. Nothing in this slice authorizes production migration or user Grant creation.
+
+## Verification targets
+
+- `tests/golden/scoped-grant-management.test.ts`: no bootstrap deny, wrong subject, Tenant/Actor/Contract/scope guards, fixed-OIDC provenance (including compatibility session and rotated session), idempotency/conflict, revocation, audited rollback and runtime least privilege.
+- `tests/golden/scoped-grant-management-http.test.ts`: session, Origin/CSRF, payload smuggling denial and successful approved HTTP issue/revoke in synthetic fixture.
+- `tests/golden/local-setup.test.ts`: application startup checks new private tables and management functions.
+- Full DB Golden/Database suite: **228 PASS / 15 files**, including 14 new management cases; no failures or unhandled teardown errors after fixture shutdown handles the expected SQLSTATE `57P01` only during intentional embedded PostgreSQL stop. The existing `pg` v8 deprecation warning about overlapping queries remains outside this slice.
+- Unit tests: **32 PASS / 3 files**. Typecheck and production build: **PASS**.

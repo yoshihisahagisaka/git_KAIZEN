@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { PgExploreSearchUnitOfWork } from './persistence/explore-repository.js';
 import { ExploreQueries } from '../../../../packages/application/src/explore-queries.js';
 import { PgScopedAccessReader } from './persistence/scoped-access-reader.js';
+import {PgScopedGrantManager} from './persistence/scoped-grant-manager.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -33,7 +34,7 @@ async function main() {
     const app = createApp(config, new PgIdentityStore(pool), provider, logger,
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
-      {queries:new ExploreQueries(exploreUow)},scopedReader);
+      {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool));
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void pool.end(); });
