@@ -23,6 +23,8 @@
     "db:configure-local": "tsx --env-file=.env scripts/local-database.ts",
     "db:prepare-support": "tsx --env-file=.env scripts/prepare-support-demo.ts",
     "auth:verify-local": "tsx --env-file=.env scripts/verify-google-identity.ts",
+    "auth:verify-grant-approver": "tsx --env-file=.env scripts/verify-google-identity.ts --scoped-grant-approver",
+    "db:provision-grant-approver": "tsx --env-file=.env scripts/provision-scoped-grant-approver.ts",
     "db:migrate": "supabase migration up --local",
     "db:reset": "supabase db reset --local",
     "db:bind-operator": "tsx --env-file=.env scripts/bind-operator.ts"
