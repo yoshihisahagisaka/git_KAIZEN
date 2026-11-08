@@ -48,7 +48,9 @@ beforeAll(async () => {
   // Second tenant is a test fixture, not demo seed or a second customer-as-tenant model.
   await admin.query("insert into factact.tenants (id,name,status) values ($1,'Isolation fixture','ACTIVE')", [tenantB]);
   runtime = new Pool({ host: '127.0.0.1', port, user: 'factact_runtime', password: 'test-runtime', database: 'postgres', max: 1 });
-  store = new PgIdentityStore(runtime);
+  // This historical baseline-only test predates the dedicated OIDC minter.
+  // It uses compatibility sessions exclusively; verified minting is never called.
+  store = new PgIdentityStore(runtime,runtime);
 });
 afterAll(async () => {
   await runtime?.end(); await admin?.end();

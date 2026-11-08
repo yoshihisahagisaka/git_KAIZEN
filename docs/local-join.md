@@ -13,10 +13,11 @@ or Supabase Auth setup is required. Google OIDC remains server-owned.
    ID and secret. Keep `APP_ORIGIN=http://localhost:5173` and register exactly
    `http://localhost:5173/auth/callback` in Google. Configure the Google audience
    to permit the intended account. Do not put credentials in Git or chat.
-5. `npm.cmd run db:configure-local` generates a random password for the existing
-   restricted `factact_runtime` role, updates only `DATABASE_URL` in `.env`, and
-   verifies runtime privileges. It does not reset any data. Stop an existing app
-   first: this rotates its local database password. The command is limited to
+5. `npm.cmd run db:configure-local` generates **independent** random passwords
+   for the restricted `factact_runtime` and `factact_oidc_session_minter` roles,
+   updates only `DATABASE_URL` and `OIDC_SESSION_DATABASE_URL` in `.env`, and
+   verifies both role boundaries. It does not reset any data. Stop an existing app
+   first: this rotates its local database passwords. The command is limited to
    development `127.0.0.1:54322/postgres`. It uses the standard local Supabase
    administrative connection unless `ADMIN_DATABASE_URL` is explicitly provided.
 6. With the UI server stopped, run `npm.cmd run auth:verify-local`. Open
@@ -36,7 +37,10 @@ or Supabase Auth setup is required. Google OIDC remains server-owned.
    application resolves the bound Operator and creates its normal opaque session.
 
 For subsequent starts (including after pulling code), use `db:start`, then
-`db:migrate`, then `dev` and `dev:ui`. The server checks required schema objects
+`db:migrate`, then `dev` and `dev:ui`. After first applying the OIDC Session
+minter migration, run `db:configure-local` **once** with the app stopped to
+provision the new role password. The server checks required schema objects and
+both restricted database roles
 at startup and refuses to listen when migrations are missing. Repeat neither
 password rotation nor binding unless the database was reset. Stop application
 terminals with Ctrl+C; `npx.cmd supabase stop` stops local containers while keeping

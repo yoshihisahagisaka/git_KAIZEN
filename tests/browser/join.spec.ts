@@ -13,13 +13,13 @@ import type { Config } from '../../apps/web/src/server/config.js';
 let db:Awaited<ReturnType<typeof testDatabase>>,server:Server,origin:string;
 test.beforeAll(async()=>{
   db=await testDatabase();const port=await freePort();origin=`http://127.0.0.1:${port}`;
-  const config:Config={nodeEnv:'test',port,origin,databaseUrl:'postgresql://test-only',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test-only',clientSecret:'test-only',redirectUri:`${origin}/auth/callback`};
+  const config:Config={nodeEnv:'test',port,origin,databaseUrl:'postgresql://test-only',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test-only',clientSecret:'test-only',redirectUri:`${origin}/auth/callback`};
   const uow=new PgJoinUnitOfWork(db.runtime);
   // Test IdP port only: exercises the real login transaction, Operator mapping and session routes.
   // Production main.ts always uses the Google provider; no bypass flag or test route is shipped.
   const provider={authorizationUrl:(login:{state:string})=>`${origin}/auth/callback?code=test-code&state=${login.state}`,
     verifyCallback:async(url:URL,login:{state:string})=>{if(url.searchParams.get('code')!=='test-code'||url.searchParams.get('state')!==login.state)throw new Error('Invalid test callback');return{issuer:'https://seed.example.invalid',subject:'development-operator'};}};
-  const app=createApp(config,new PgIdentityStore(db.runtime),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)});
+  const app=createApp(config,new PgIdentityStore(db.runtime,db.oidc),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)});
   server=await new Promise<Server>(ok=>{const s=app.listen(port,'127.0.0.1',()=>ok(s));});
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((ok,fail)=>server.close(e=>e?fail(e):ok()));await db?.close();});

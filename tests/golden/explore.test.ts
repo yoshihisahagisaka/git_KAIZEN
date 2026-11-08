@@ -15,7 +15,7 @@ import type { Operator } from '../../packages/domain/src/operator.js';
 
 let db:Awaited<ReturnType<typeof testDatabase>>,queries:ExploreQueries,support:SupportCommands;
 const actor:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'開発オペレーター',tenantName:'atLIB Development',roles:['ADMIN','OPERATOR','REVIEWER']};
-const config:Config={nodeEnv:'test',port:8080,origin:'http://localhost:8080',databaseUrl:'postgresql://unused',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:8080/auth/callback'};
+const config:Config={nodeEnv:'test',port:8080,origin:'http://localhost:8080',databaseUrl:'postgresql://unused',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:8080/auth/callback'};
 
 beforeAll(async()=>{
   db=await testDatabase();
@@ -143,7 +143,7 @@ describe('Explore-01 read search',()=>{
   });
 
   it('exposes an authenticated validated GET API',async()=>{
-    const store=new PgIdentityStore(db.runtime);await store.createSession(tokenHash('explore-test'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
+    const store=new PgIdentityStore(db.runtime,db.oidc);await store.createSession(tokenHash('explore-test'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
     const app=createApp(config,store,{authorizationUrl:()=>'',verifyCallback:async()=>{throw Error('not used');}},pino({level:'silent'}),undefined,undefined,{queries});
     await request(app).get('/api/explore/search?q=PC&types=DEVICE&limit=20').expect(401);
     const valid=await request(app).get('/api/explore/search?q=PC&types=DEVICE&limit=20').set('Cookie','factact_session=explore-test').expect(200);

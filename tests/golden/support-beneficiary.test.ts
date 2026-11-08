@@ -89,9 +89,9 @@ describe('SUPPORT beneficiary is separate from Caller, append-only, without acce
   await expect(withTenant(db.runtime,ids.tenant,c=>c.query('update factact.support_event_beneficiary_decisions set reason=$1',['overwritten']))).rejects.toMatchObject({code:'42501'});
  });
  it('routes confirmation through strict input, current session and CSRF protection',async()=>{
-  const event=await intake(),store=new PgIdentityStore(db.runtime);
+  const event=await intake(),store=new PgIdentityStore(db.runtime,db.oidc);
   await store.createSession(tokenHash('beneficiary-test'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
-  const app=createApp({nodeEnv:'test',port:8080,origin:'http://localhost:5173',databaseUrl:'postgresql://test',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'},store,{authorizationUrl:()=>'',verifyCallback:async()=>{throw Error();}},pino({level:'silent'}),undefined,{commands,queries});
+  const app=createApp({nodeEnv:'test',port:8080,origin:'http://localhost:5173',databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'},store,{authorizationUrl:()=>'',verifyCallback:async()=>{throw Error();}},pino({level:'silent'}),undefined,{commands,queries});
   const path=`/api/support/${event.id}/beneficiary`,body={requestId:randomUUID(),expectedRevision:0,kind:'CONFIRMED',organizationId:companyB,reason:'内部確認'};
   expect((await request(app).post(path).send(body)).status).toBe(401);
   expect((await request(app).post(path).set('Cookie','factact_session=beneficiary-test').send(body)).status).toBe(403);

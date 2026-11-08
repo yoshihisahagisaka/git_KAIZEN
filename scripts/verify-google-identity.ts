@@ -8,13 +8,15 @@ import { createGoogleProvider } from '../apps/web/src/server/auth/oidc.js';
 import { generateOpaqueValue, generateCodeVerifier } from '../apps/web/src/server/auth/pkce.js';
 
 async function main() {
+  const grantApproverMode=process.argv.includes('--scoped-grant-approver');
+  const approvedEmail='yoshihisa.hagisaka@atlib.jp';
   const config = loadConfig(process.env);
   if (config.nodeEnv !== 'development' || config.origin !== 'http://localhost:5173' || config.redirectUri !== 'http://localhost:5173/auth/callback') throw new Error('Only the documented localhost development callback is allowed');
   const provider = await createGoogleProvider(config);
   const app = express(); app.disable('x-powered-by'); app.use(cookieParser());
   let pending: {cookie:string;expires:number;state:string;nonce:string;verifier:string} | undefined;
   app.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");next();});
-  app.get('/',(_req,res)=>res.send('<h1>FACTACT local identity verification</h1><p>This verifies your Google identity only. It does not grant application access.</p><a href="/auth/login">Verify my Google account</a>'));
+  app.get('/',(_req,res)=>res.send(`<h1>FACTACT local identity verification</h1><p>${grantApproverMode?'Verify the designated single Grant approver':'Verify your Google identity'} only. This does not grant application access.</p><a href="/auth/login">Verify my Google account</a>`));
   app.get('/auth/login',(_req,res)=>{
     pending={cookie:generateOpaqueValue(),expires:Date.now()+600000,state:generateOpaqueValue(),nonce:generateOpaqueValue(),verifier:generateCodeVerifier()};
     res.cookie('factact_local_identity',pending.cookie,{httpOnly:true,sameSite:'lax',path:'/',maxAge:600000});
@@ -27,10 +29,13 @@ async function main() {
     res.clearCookie('factact_local_identity',{path:'/'});
     try {
       const callback=new URL(config.redirectUri); callback.search=new URL(req.originalUrl,config.origin).search;
-      const identity=await provider.verifyCallback(callback,login);
-      await writeFile('.env.google-identity.json',JSON.stringify({...identity,verifiedAt:new Date().toISOString()},null,2),{mode:0o600});
-      console.log('Google signature, issuer, state, nonce and PKCE verified. Issuer/sub saved locally; no tokens saved. No Operator binding or session created.');
-      res.send('<h1>Google identity verified</h1><p>You may close this tab. Continue with explicit local Operator binding, then start FACTACT and sign in again.</p>');
+      const identity=grantApproverMode
+        ? await provider.verifyConfirmedEmail(callback,login,approvedEmail)
+        : await provider.verifyCallback(callback,login);
+      const output=grantApproverMode?'.env.scoped-grant-approver.json':'.env.google-identity.json';
+      await writeFile(output,JSON.stringify({...identity,verifiedAt:new Date().toISOString()},null,2),{mode:0o600,flag:'w'});
+      console.log('Google issuer/subject, signature, state, nonce and PKCE verified. Confirmation saved locally; no tokens, Operator binding or Grant were created.');
+      res.send('<h1>Google identity verified</h1><p>You may close this tab. The approval identity still needs an explicit local administrative bootstrap.</p>');
       server.close(); clearTimeout(expiry);
     } catch {res.status(401).send('Google identity verification failed. Start again.');}
   });

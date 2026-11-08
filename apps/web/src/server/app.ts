@@ -16,8 +16,10 @@ import { DomainError } from '../../../../packages/domain/src/join.js';
 import { ZodError } from 'zod';
 import { exploreRoutes, type ExploreServices } from './explore-routes.js';
 import { scopedSupportRoutes, type ScopedSupportReader } from './scoped-support-routes.js';
+import {scopedGrantRoutes} from './scoped-grant-routes.js';
+import type {ScopedGrantManager} from './persistence/scoped-grant-manager.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -36,6 +38,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (support) app.use('/api',supportRoutes(support));
   if (explore) app.use('/api',exploreRoutes(explore));
   if (scopedSupport) app.use('/api',scopedSupportRoutes(scopedSupport,support?.commands));
+  if (scopedGrantManager) app.use('/api',scopedGrantRoutes(scopedGrantManager));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));

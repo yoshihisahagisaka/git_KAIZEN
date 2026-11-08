@@ -5,6 +5,7 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   APP_ORIGIN: z.url(),
   DATABASE_URL: z.url().refine(value => { try { return ['postgres:', 'postgresql:'].includes(new URL(value).protocol); } catch { return false; } }),
+  OIDC_SESSION_DATABASE_URL: z.url().refine(value => { try { return ['postgres:', 'postgresql:'].includes(new URL(value).protocol); } catch { return false; } }),
   DATABASE_SSL: z.enum(['true', 'false']).default('true'),
   OIDC_ISSUER: z.literal('https://accounts.google.com'),
   OIDC_CLIENT_ID: z.string().min(1).refine(value => value !== 'REPLACE_ME'),
@@ -31,7 +32,8 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
   if (c.NODE_ENV === 'production' && c.DATABASE_SSL !== 'true') throw new Error('Production database TLS is required');
   return {
     nodeEnv: c.NODE_ENV, port: c.PORT, origin: c.APP_ORIGIN,
-    databaseUrl: c.DATABASE_URL, databaseSsl: c.DATABASE_SSL === 'true',
+    databaseUrl: c.DATABASE_URL, oidcSessionDatabaseUrl: c.OIDC_SESSION_DATABASE_URL,
+    databaseSsl: c.DATABASE_SSL === 'true',
     issuer: c.OIDC_ISSUER, clientId: c.OIDC_CLIENT_ID, clientSecret: c.OIDC_CLIENT_SECRET,
     redirectUri: c.OIDC_REDIRECT_URI,
   };
