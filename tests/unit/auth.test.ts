@@ -9,7 +9,7 @@ import type { Config } from '../../apps/web/src/server/config.js';
 
 const operator = { id: '20000000-0000-4000-8000-000000000001', tenantId: '10000000-0000-4000-8000-000000000001', displayName: 'Operator', tenantName: 'Development', roles: [] };
 const config: Config = {
-  nodeEnv: 'test', port: 8080, origin: 'http://localhost:5173', databaseUrl: 'postgresql://unused', databaseSsl: false,
+  nodeEnv: 'test', port: 8080, origin: 'http://localhost:5173', databaseUrl: 'postgresql://unused', oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl: false,
   issuer: 'https://accounts.google.com', clientId: 'test', clientSecret: 'test', redirectUri: 'http://localhost:5173/auth/callback',
 };
 let store: IdentityStore;

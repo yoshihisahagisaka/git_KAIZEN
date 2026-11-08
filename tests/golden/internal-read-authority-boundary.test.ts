@@ -20,7 +20,7 @@ const scopedActor = '20000000-0000-4000-8000-000000000055';
 const secondCompany = '30000000-0000-4000-8000-000000000055';
 const config = {
   nodeEnv: 'test' as const, port: 8080, origin: 'http://localhost:5173',
-  databaseUrl: 'postgresql://test', databaseSsl: false,
+  databaseUrl: 'postgresql://test', oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl: false,
   issuer: 'https://accounts.google.com' as const, clientId: 'test', clientSecret: 'test',
   redirectUri: 'http://localhost:5173/auth/callback',
 };
@@ -30,7 +30,7 @@ let app: ReturnType<typeof createApp>;
 
 beforeAll(async () => {
   db = await testDatabase();
-  store = new PgIdentityStore(db.runtime);
+  store = new PgIdentityStore(db.runtime,db.oidc);
   const join = new PgJoinUnitOfWork(db.runtime);
   const support = new PgSupportUnitOfWork(db.runtime);
   app = createApp(config, store, {

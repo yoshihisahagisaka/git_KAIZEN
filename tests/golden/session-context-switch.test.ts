@@ -14,7 +14,7 @@ const unassignedTenant = '10000000-0000-4000-8000-000000000003';
 const identity = { issuer: 'https://accounts.google.com' as const, subject: 'session-context-fixture' };
 const config = {
   nodeEnv: 'test' as const, port: 8080, origin: 'http://localhost:5173',
-  databaseUrl: 'postgresql://test', databaseSsl: false,
+  databaseUrl: 'postgresql://test', oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl: false,
   issuer: identity.issuer, clientId: 'test', clientSecret: 'test',
   redirectUri: 'http://localhost:5173/auth/callback',
 };
@@ -60,7 +60,7 @@ async function revoke(tenantId: string) {
   [identity.issuer, identity.subject, tenantId]);
 }
 
-beforeAll(async () => { db = await testDatabase(); store = new PgIdentityStore(db.runtime); }, 60_000);
+beforeAll(async () => { db = await testDatabase(); store = new PgIdentityStore(db.runtime,db.oidc); }, 60_000);
 beforeEach(async () => {
   await db.reset();
   await db.admin.query('insert into factact.tenants(id,name,status) values($1,$2,$3),($4,$5,$3)',

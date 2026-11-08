@@ -20,7 +20,7 @@ const revoke=async(tenantId:string)=>db.admin.query(`update factact_private.oper
  set status='REVOKED',revoked_at=now(),revocation_reason='権限付与を解除済み'
  where issuer=$1 and subject=$2 and tenant_id=$3`,[identity.issuer,identity.subject,tenantId]);
 
-beforeAll(async()=>{db=await testDatabase();store=new PgIdentityStore(db.runtime);},60_000);
+beforeAll(async()=>{db=await testDatabase();store=new PgIdentityStore(db.runtime,db.oidc);},60_000);
 beforeEach(async()=>{
  await db.reset();
  await db.admin.query('insert into factact.tenants(id,name,status) values($1,$2,$3)',[tenantB,'Second tenant','ACTIVE']);

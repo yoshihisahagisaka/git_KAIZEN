@@ -34,7 +34,7 @@ const audit=(id:string)=>db.admin.query<{event_type:string;actor_operator_id:str
  `select event_type,actor_operator_id from factact.audit_events
   where aggregate_type='SCOPED_ACTOR_GRANT' and aggregate_id=$1 order by occurred_at,id`,[id]);
 
-beforeAll(async()=>{db=await testDatabase();store=new PgIdentityStore(db.runtime);},60_000);
+beforeAll(async()=>{db=await testDatabase();store=new PgIdentityStore(db.runtime,db.oidc);},60_000);
 beforeEach(async()=>{
  await db.reset();
  await db.admin.query('delete from factact_private.scoped_grant_approvers');

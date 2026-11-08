@@ -19,7 +19,7 @@ const companyB='30000000-0000-4000-8000-000000000077';
 const scopedActor='20000000-0000-4000-8000-000000000077';
 const sessionCookie='factact_session=scoped-support-read';
 const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',
- databaseUrl:'postgresql://test',databaseSsl:false,issuer:'https://accounts.google.com' as const,
+ databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com' as const,
  clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'};
 const internal:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Internal',tenantName:'Development',roles:['ADMIN','OPERATOR','REVIEWER']};
 let db:Awaited<ReturnType<typeof testDatabase>>;
@@ -71,7 +71,7 @@ beforeAll(async()=>{
  commands=new SupportCommands(uow,{now:()=>now,id:randomUUID});
  reader=new PgScopedAccessReader(db.runtime,{now:()=>now});
  scopedCommands=new SupportCommands(uow,{now:()=>now,id:randomUUID},reader);
- store=new PgIdentityStore(db.runtime);
+ store=new PgIdentityStore(db.runtime,db.oidc);
  app=createApp(config,store,{
   authorizationUrl:()=> 'https://accounts.google.com/authorize',
   verifyCallback:async()=>({issuer:config.issuer,subject:'scoped-support-user'}),

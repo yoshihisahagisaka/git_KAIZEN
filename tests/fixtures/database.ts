@@ -20,6 +20,7 @@ export async function testDatabase() {
   const embedded=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'test-admin',port,persistent:true,createPostgresUser:false,initdbFlags:['--encoding=UTF8','--locale=C'],postgresFlags:['-c','listen_addresses=127.0.0.1','-c','unix_socket_directories='],onLog:()=>{},onError:()=>{}});
   const admin=new Pool({host:'127.0.0.1',port,user:'postgres',password:'test-admin',database:'postgres'});
   const runtime=new Pool({host:'127.0.0.1',port,user:'factact_runtime',password:'test-runtime',database:'postgres',max:5});
+  const oidc=new Pool({host:'127.0.0.1',port,user:'factact_oidc_session_minter',password:'test-oidc',database:'postgres',max:1});
   // PostgreSQL sends SQLSTATE 57P01 to any connection still finishing socket
   // teardown during an intentional embedded-server stop. Only swallow this
   // expected notification AFTER fixture shutdown begins, not query failures.
@@ -30,9 +31,10 @@ export async function testDatabase() {
   };
   admin.on('error',poolError);
   runtime.on('error',poolError);
+  oidc.on('error',poolError);
   async function close() {
     shuttingDown=true;
-    await runtime.end();await admin.end();await embedded.stop();
+    await runtime.end();await oidc.end();await admin.end();await embedded.stop();
     const root=await realpath(process.cwd()),target=await realpath(directory);
     if(!target.startsWith(root+sep+'.factact-db-test-')) throw new Error('Unsafe fixture cleanup target');
     await rm(target,{recursive:true,force:true});
@@ -45,10 +47,11 @@ export async function testDatabase() {
       catch(e) {await admin.query('ROLLBACK');throw e;}
     }
     await admin.query("alter role factact_runtime password 'test-runtime'");
+    await admin.query("alter role factact_oidc_session_minter password 'test-oidc'");
     const seed=await readFile('supabase/seed.sql','utf8');
     async function reset() {await admin.query('truncate factact.tenants, factact_private.login_transactions restart identity cascade');await admin.query(seed);}
     await reset();
-    return {admin,runtime,reset,close};
+    return {admin,runtime,oidc,reset,close};
   } catch(e) {await close();throw e;}
 }
 export const ids={tenant:'10000000-0000-4000-8000-000000000001',operator:'20000000-0000-4000-8000-000000000001',organization:'30000000-0000-4000-8000-000000000001',person:'40000000-0000-4000-8000-000000000001',device:'50000000-0000-4000-8000-000000000001',service:'60000000-0000-4000-8000-000000000001',contract:'70000000-0000-4000-8000-000000000001'};

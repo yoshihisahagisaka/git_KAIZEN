@@ -12,7 +12,7 @@ const issuer='https://accounts.google.com';
 const subject='synthetic-approval-http-identity';
 const cookie='factact_session=grant-management-http';
 const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',
- databaseUrl:'postgresql://test',databaseSsl:false,issuer:issuer as 'https://accounts.google.com',
+ databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:issuer as 'https://accounts.google.com',
  clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'};
 let db:Awaited<ReturnType<typeof testDatabase>>;
 let store:PgIdentityStore;
@@ -28,7 +28,7 @@ const post=(body:Record<string,unknown>,csrf='csrf')=>request(app).post('/api/ad
  .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
 
 beforeAll(async()=>{
- db=await testDatabase();store=new PgIdentityStore(db.runtime);
+ db=await testDatabase();store=new PgIdentityStore(db.runtime,db.oidc);
  app=createApp(config,store,{authorizationUrl:()=>'',verifyCallback:async()=>({issuer,subject})},
   pino({level:'silent'}),undefined,undefined,undefined,undefined,new PgScopedGrantManager(db.runtime));
 },60_000);

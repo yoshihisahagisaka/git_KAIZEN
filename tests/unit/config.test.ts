@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../apps/web/src/server/config.js';
+import { assertDistinctDatabaseCredentials } from '../../apps/web/src/server/persistence/database.js';
 const valid = {
   NODE_ENV: 'test', APP_ORIGIN: 'http://localhost:5173',
   DATABASE_URL: 'postgresql://factact_runtime:test@localhost:54322/postgres', DATABASE_SSL: 'false',
+  OIDC_SESSION_DATABASE_URL: 'postgresql://factact_oidc_session_minter:test@localhost:54322/postgres',
   OIDC_ISSUER: 'https://accounts.google.com', OIDC_CLIENT_ID: 'test-client', OIDC_CLIENT_SECRET: 'test-secret',
   OIDC_REDIRECT_URI: 'http://localhost:5173/auth/callback',
 };
@@ -15,5 +17,15 @@ describe('configuration boundary', () => {
   });
   it('does not disclose invalid secret values in errors', () => {
     expect(() => loadConfig({ ...valid, DATABASE_URL: 'sensitive-invalid-password' })).toThrow('Invalid configuration keys: DATABASE_URL');
+    expect(() => loadConfig({ ...valid, OIDC_SESSION_DATABASE_URL: 'sensitive-invalid-password' })).toThrow('Invalid configuration keys: OIDC_SESSION_DATABASE_URL');
+    expect(() => loadConfig({ ...valid, OIDC_SESSION_DATABASE_URL: undefined })).toThrow('Invalid configuration keys: OIDC_SESSION_DATABASE_URL');
+  });
+  it('requires two independently provisioned database credentials before server startup', () => {
+    const config = loadConfig(valid);
+    expect(() => assertDistinctDatabaseCredentials(config)).toThrow('distinct Runtime and OIDC Session');
+    expect(() => assertDistinctDatabaseCredentials({ ...config,
+      oidcSessionDatabaseUrl: 'postgresql://factact_oidc_session_minter:independent@localhost:54322/postgres',
+    })).not.toThrow();
+    expect(() => assertDistinctDatabaseCredentials({ ...config, oidcSessionDatabaseUrl: config.databaseUrl })).toThrow('distinct Runtime and OIDC Session');
   });
 });

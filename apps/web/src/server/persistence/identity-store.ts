@@ -18,7 +18,7 @@ export interface VerifiedActorContext {
 }
 
 export class PgIdentityStore implements IdentityStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly oidcSessionPool: Pool) {}
   async beginLogin(hash: string, login: LoginTransaction): Promise<void> {
     await this.pool.query('select factact_private.begin_login($1,$2,$3,$4)', [hash, login.state, login.nonce, login.verifier]);
   }
@@ -48,7 +48,7 @@ export class PgIdentityStore implements IdentityStore {
     await this.pool.query('select factact_private.create_session($1,$2,$3,$4)', [hash, ref.tenantId, ref.operatorId, csrfToken]);
   }
   async createVerifiedSession(hash: string, ref: OperatorRef, csrfToken: string, identity: Identity): Promise<void> {
-    await this.pool.query('select factact_private.create_verified_session($1,$2,$3,$4,$5,$6)',
+    await this.oidcSessionPool.query('select factact_private.create_verified_session($1,$2,$3,$4,$5,$6)',
       [hash, ref.tenantId, ref.operatorId, csrfToken, identity.issuer, identity.subject]);
   }
   async readSession(hash: string): Promise<SessionRef | null> {
