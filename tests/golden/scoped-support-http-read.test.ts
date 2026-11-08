@@ -203,6 +203,18 @@ describe('scoped SUPPORT UPDATE transaction boundary (not HTTP-exposed)',()=>{
  const update=(id:string,fn:(r:import('../../apps/web/src/server/persistence/scoped-access-reader.js').ScopedSupportWorkUpdateContext)=>Promise<string>)=>
   reader.runSupportWorkUpdate(ids.tenant,scopedActor,id,fn);
 
+ it('keeps Grant mutation privileges denied to the runtime while enabling only the lock function',async()=>{
+  const result=await db.admin.query<{can_select:boolean;can_update:boolean;can_insert:boolean;
+   can_delete:boolean;can_lock:boolean}>(`select
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','SELECT') as can_select,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','UPDATE') as can_update,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','INSERT') as can_insert,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','DELETE') as can_delete,
+    has_function_privilege('factact_runtime','factact.lock_scoped_actor_authority(uuid,uuid)','EXECUTE') as can_lock`);
+  expect(result.rows[0]).toEqual({can_select:true,can_update:false,can_insert:false,
+   can_delete:false,can_lock:true});
+ });
+
  it('fails closed without UPDATE, for another recipient, wrong kind, wrong Work, and invalid IDs',async()=>{
   let callbacks=0;
   const callback=async()=>{callbacks++;return 'executed';};
@@ -292,28 +304,81 @@ describe('scoped SUPPORT UPDATE transaction boundary (not HTTP-exposed)',()=>{
   expect(audit.rows[0]?.metadata_json.nextAction).toBe('authorized transition');
  });
 
- it('rolls back the Work and Audit when a Grant is revoked during the transaction',async()=>{
+ it('serializes a pending revocation after the authorized Work and Audit COMMIT',async()=>{
   const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
-  const before=await db.admin.query<{next_action:string}>(
-   'select next_action from factact.work where id=$1',[workA]);
-  await expect(update(workA,async r=>{
+  let entered!:()=>void,release!:()=>void;
+  const callbackEntered=new Promise<void>(ok=>{entered=ok;});
+  const callbackRelease=new Promise<void>(ok=>{release=ok;});
+  const writing=update(workA,async r=>{
    const work=await r.work();
    if(!work)throw Error('Work missing');
-   work.nextAction='must never commit after revocation';
+   work.nextAction='committed before revocation';
    await r.progress(work);
    await r.audit('SCOPED_REVOKED_UPDATE_TEST',{workId:workA});
-   // Privileged Grant lifecycle is separate from the runtime transaction.
-   await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
-    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='権限を失効' where id=$1`,
-    [grantId,now,ids.operator]);
-   return 'not committed';
-  })).rejects.toThrow('SCOPED_UPDATE_AUTHORITY_CHANGED');
+   entered();
+   await callbackRelease; // Concurrent privileged transaction cannot pass its trigger.
+   return 'committed';
+  });
+  await callbackEntered;
+  const revoking=db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='権限を失効' where id=$1`,
+   [grantId,now,ids.operator]);
+  try {
+   const stillWaiting=await Promise.race([revoking.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+  } finally {release();}
+  expect(await writing).toBe('committed');
+  await revoking;
   const after=await db.admin.query<{next_action:string}>(
    'select next_action from factact.work where id=$1',[workA]);
-  expect(after.rows[0]?.next_action).toBe(before.rows[0]?.next_action);
+  expect(after.rows[0]?.next_action).toBe('committed before revocation');
   const audit=await db.admin.query(`select id from factact.audit_events
    where event_type='SCOPED_REVOKED_UPDATE_TEST' and aggregate_id=$1`,[eventA]);
-  expect(audit.rows).toHaveLength(0);
+  expect(audit.rows).toHaveLength(1);
+  expect(await update(workA,async()=> 'unexpected')).toBeNull();
+ });
+
+ it('waits for an in-flight privileged revoke, then rejects without invoking the Work callback',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const privileged=await db.admin.connect();
+  let open=false,callbacks=0;
+  try {
+   await privileged.query('BEGIN');open=true;
+   await privileged.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='失効を先行' where id=$1`,
+    [grantId,now,ids.operator]);
+   const pending=update(workA,async()=>{callbacks++;return 'unexpected';});
+   const stillWaiting=await Promise.race([pending.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+   await privileged.query('COMMIT');open=false;
+   expect(await pending).toBeNull();
+   expect(callbacks).toBe(0);
+  } finally {
+   if(open)await privileged.query('ROLLBACK');
+   privileged.release();
+  }
+ });
+
+ it('serializes Actor deactivation as an authorization revocation',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const privileged=await db.admin.connect();
+  let open=false,callbacks=0;
+  try {
+   await privileged.query('BEGIN');open=true;
+   await privileged.query('update factact.operators set status=$2 where id=$1',[scopedActor,'INACTIVE']);
+   const pending=update(workA,async()=>{callbacks++;return 'unexpected';});
+   const stillWaiting=await Promise.race([pending.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+   await privileged.query('COMMIT');open=false;
+   expect(await pending).toBeNull();
+   expect(callbacks).toBe(0);
+  } finally {
+   if(open)await privileged.query('ROLLBACK');
+   privileged.release();
+  }
  });
 });
 

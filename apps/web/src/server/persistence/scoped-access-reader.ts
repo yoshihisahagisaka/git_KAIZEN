@@ -66,16 +66,22 @@ export class PgScopedAccessReader {
   return withTenant(this.pool,target.tenantId,db=>this.authorizedInTransaction(db,actorId,target,at),true);
  }
 
- /** Internal-only UPDATE transaction boundary. No HTTP write route calls this
-  * yet. The beneficiary, effective grant and Actor are resolved from the DB,
-  * under the same transaction as the future mutation and Audit write.
-  * An unauthorized Work is never passed to the callback. */
+ /** Server-owned UPDATE transaction boundary, invoked only by validated
+  * scoped SUPPORT application commands. Beneficiary, effective Grant and Actor
+  * are resolved from the DB in the mutation/Audit transaction. Unauthorized
+  * Work is never passed to the callback. */
  async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
   mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
   return withTenant(this.pool,tenantId,async db=>{
+   // Mandatory first lock: Grant INSERT/UPDATE/DELETE and Actor deactivation
+   // acquire the identical actor-keyed transaction lock in DB triggers.
+   // A revoke cannot commit between authorization and this Work's COMMIT.
+   // This does not grant factact_runtime UPDATE rights on privileged tables.
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
+    [tenantId,actorId]);
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
    if(!work)return null;
    const repository=new PgSupportRepository(db,tenantId);
@@ -144,9 +150,8 @@ export class PgScopedAccessReader {
     progress,audit,response,
    };
    const result=await mutation(context);
-   // Runtime cannot row-lock the privileged Grant/Actor tables. A final
-   // READ COMMITTED check catches revocations committed during the mutation.
-   // Grant issuance/revocation must eventually coordinate its own race gate.
+   // Still re-check time-bound eligibility before commit. The actor-keyed
+   // transaction lock closes the Grant/Actor status change-to-COMMIT race.
    if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE'))
     throw Error('SCOPED_UPDATE_AUTHORITY_CHANGED');
    return result;
