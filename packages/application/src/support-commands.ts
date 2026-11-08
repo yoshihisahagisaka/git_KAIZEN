@@ -7,6 +7,8 @@ import type {JoinRepository} from './join-ports.js';
 type SupportResponseInput={requestId:string;expectedLifecycleRevision:number;expectedRecordRevision:number;responseText:string;
  disposition:ResponseDisposition;followUpAt:string|null;
  close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined};
+type ScopedResponseCorrectionInput={requestId:string;expectedRecordRevision:number;
+ supersedesRecordId:string;responseText:string;correctionReason:string};
 export class SupportCommands {
  recordBeneficiary(actor:Operator,eventId:string,input:{requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string}){return this.run(actor,async(r,a)=>{
   // Lock the parent: revisions for the same inquiry serialize in the same transaction.
@@ -36,6 +38,71 @@ export class SupportCommands {
   const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
    ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'));
   return found(result);
+ }
+ /** A correction is an append-only attestation, never a second response Action,
+  * Follow-up change, disposition change, Work transition or Close command. */
+ async correctScopedSupportResponse(actor:Operator,workId:string,
+  input:ScopedResponseCorrectionInput):Promise<SupportRecord>{
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.applyScopedResponseCorrection(response,actor,workId,input));
+  return found(result);
+ }
+ private async applyScopedResponseCorrection(r:SupportResponseRepository,a:Operator,workId:string,
+  input:ScopedResponseCorrectionInput):Promise<SupportRecord>{
+  const w=found(await r.work(workId,true));
+  await this.context(r,a,found(await r.event(w.supportEventId)),'SCOPED');
+  requireCondition(w.lifecycleVersion===2,'WORK_STATE_CONFLICT','この対応は訂正できません。');
+  const records=await r.records(workId);
+  const normalized={supersedesRecordId:input.supersedesRecordId,responseText:input.responseText.trim()};
+  const reason=input.correctionReason.trim();
+  const old=records.find(x=>x.requestId===input.requestId);
+  if(old){
+   requireCondition(old.kind==='RESPONSE_CORRECTION'&&old.recordedByOperatorId===a.id&&
+    old.revision===input.expectedRecordRevision+1&&old.correctionReason===reason&&
+    this.stable(old.notes)===this.stable(normalized),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');
+   return old;
+  }
+  requireCondition((records.at(-1)?.revision??0)===input.expectedRecordRevision,
+   'STALE_REVISION','記録が更新されています。最新の履歴を確認してください。');
+  requireCondition(normalized.responseText.length>=1&&normalized.responseText.length<=4000&&
+   reason.length>=1&&reason.length<=1000,'INVALID_INPUT','訂正本文と訂正理由を確認してください。',400);
+  const source=found(records.find(x=>x.id===input.supersedesRecordId)??null);
+  if(source.kind!=='RESPONSE'&&source.kind!=='RESPONSE_CORRECTION')
+   throw new DomainError('INVALID_CORRECTION_TARGET','訂正対象は対応本文の記録のみです。',400);
+  // Only the author may correct their own response; never alter a completed
+  // response's Close provenance through a scoped UPDATE grant.
+  requireCondition(source.recordedByOperatorId===a.id,'INVALID_CORRECTION_TARGET',
+   '他の担当者が記録した対応は訂正できません。',403);
+  if(source.kind==='RESPONSE')requireCondition(source.notes.disposition!=='COMPLETED',
+   'SCOPED_CLOSE_NOT_AUTHORIZED','終了済みの対応記録は訂正できません。',403);
+  else {
+   // Follow the provenance to its original response and verify its Author
+   // and disposition, including when correcting a prior correction.
+   let ancestor:SupportRecord=source;
+   const visited=new Set<string>();
+   while(ancestor.kind==='RESPONSE_CORRECTION'){
+    requireCondition(!visited.has(ancestor.id),'INVALID_CORRECTION_TARGET','訂正元が不正です。',400);
+    visited.add(ancestor.id);
+    const parentId:string=ancestor.notes.supersedesRecordId;
+    ancestor=found(records.find(x=>x.id===parentId)??null);
+   }
+   if(ancestor.kind!=='RESPONSE')throw new DomainError('INVALID_CORRECTION_TARGET','訂正元が不正です。',400);
+   requireCondition(ancestor.recordedByOperatorId===a.id&&ancestor.notes.disposition!=='COMPLETED',
+    'INVALID_CORRECTION_TARGET',
+    '訂正対象は本人の継続対応記録のみです。',403);
+  }
+  requireCondition(!records.some(x=>x.kind==='RESPONSE_CORRECTION'&&
+   x.notes.supersedesRecordId===source.id),'STALE_REVISION',
+   'この本文には新しい訂正があります。最新の履歴を確認してください。');
+  const record:SupportRecord={id:this.runtime.id(),tenantId:a.tenantId,workId,
+   requestId:input.requestId,revision:input.expectedRecordRevision+1,
+   kind:'RESPONSE_CORRECTION',notes:normalized,correctionReason:reason,
+   recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  await r.insertRecord(record);
+  await this.audit(r,a,w.supportEventId,'SUPPORT_RESPONSE_CORRECTED',
+   {workId,recordId:record.id,supersedesRecordId:source.id,revision:record.revision,correctionReason:reason});
+  return record;
  }
  private async applySupportResponse(r:SupportResponseRepository,a:Operator,workId:string,
   input:SupportResponseInput,authority:'INTERNAL'|'SCOPED'):Promise<SupportRecord>{

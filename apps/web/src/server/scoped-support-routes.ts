@@ -14,7 +14,7 @@ export interface ScopedSupportReader {
 
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
- writer?:Pick<SupportCommands,'recordScopedSupportResponse'>){
+ writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -71,6 +71,21 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const input=responseInput.parse(req.body);
    const actor=(res.locals.session as {operator:Operator}).operator;
    res.json({ok:true,data:await writer.recordScopedSupportResponse(actor,workId,input)});
+  });
+  // Text-only append-only correction of the actor's own non-closing response.
+  // The Work's disposition, Follow-up and lifecycle are deliberately immutable here.
+  const correctionInput=z.strictObject({
+   requestId:z.uuid(),expectedRecordRevision:z.number().int().nonnegative(),
+   responseText:z.string().trim().min(1).max(4000),
+   correctionReason:z.string().trim().min(1).max(1000),
+  });
+  router.post('/scoped/support-work/:id/responses/:recordId/corrections',async(req,res)=>{
+   const workId=z.uuid().parse(req.params.id);
+   const supersedesRecordId=z.uuid().parse(req.params.recordId);
+   const input=correctionInput.parse(req.body);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:await writer.correctScopedSupportResponse(actor,workId,
+    {...input,supersedesRecordId})});
   });
  }
  return router;
