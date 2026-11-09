@@ -1,6 +1,6 @@
 # FACTACT | External Actor Registry Change → Verify → Commit Fit/Gap (2026-11-09)
 
-Status: **Read-only technical Fit/Gap with an accepted human-operation principle (2026-11-09). No database migration, API, UI, production change, or Grant issued.** The specific first field, source contract, and review/approval authority rules are still implementation gates.
+Status: **Read-only technical Fit/Gap with accepted human-operation and escalation policy principles (2026-11-09). No database migration, API, UI, production change, or Grant issued.** The specific first field, source contract, and review/approval authority rules are still implementation gates.
 
 ## Baseline and accepted invariants
 
@@ -20,6 +20,28 @@ The user explicitly confirmed: **retain `Change → Verify → Commit` as backen
 - **Status and failures**: a proposal or pending review must never appear as a completed save. Show only useful operational status and safe retry/stale-conflict feedback. Authority, Tenant/Recipient isolation, audit provenance, concurrency and revocation checks remain mandatory for every route, including one-click paths.
 
 This clarification **does not approve same-person review, field-specific auto-approval, or privileged direct UPDATE**. Distinct `REGISTRY UPDATE / REVIEW / APPROVE` permissions are domain controls and need not correspond one-to-one with visible user actions; their allowed combination is a separate unresolved contract.
+
+## Accepted operations policy — simple settings and authority-based escalation (2026-11-09)
+
+The user accepted a **simple management-facing policy table**: **change category × operator level → `不可 / 申請 / 確定`**; a person edits and presses one 「保存」, and FACTACT decides whether the change can be committed or must be escalated. This is intended as a **reusable operations concept** beyond Registry, but this PR does **not** implement or activate a global workflow engine.
+
+- **Management UX**: (1) assign an operator to a recognizable level, (2) configure each change category's allowed disposition per level, (3) handle the resulting 「確認待ち」 queue with 「確定」 or 「差し戻し」. Start with understandable example levels `新人 / 一般 / 責任者`. These are **presentation/policy-template labels**, not replacement identity types, hard-coded seniority-based permissions or automatically ordered security roles. Prefer a small number of **change categories**, not a new row for every low-level field or technical operation.
+- **Three dispositions**: `不可` means no unauthorized edit or proposal; `申請` means an eligible, explicitly authorized proposer may submit a Change for authorized review, **without changing the authoritative Registry**; `確定` means immediate Commit **only if** target-specific Grants, field policy, evidence/Verify requirements and any approved self-review rule actually permit it. A policy-cell label alone never authorizes an operation.
+- **Escalation**: route a pending proposal to an **actually authorized** reviewer/approver under the same current Tenant, Service, Contract and ServiceRecipient constraints; do not infer a reviewer from job title, Caller or Organization affiliation. A default responsibility chain is a useful configuration convenience, **not** a grant. If nobody currently qualifies or a Grant is revoked, hold the proposal safely as 「確認待ち／担当者割当待ち」 rather than silently approving or exposing another customer's information.
+- **Reviewer UX**: show the before/after values, source, stated reason, evidence state and requesting Actor in one place. The reviewer uses a concise confirm or return action; backend Verify and Commit remain independent auditable domain transitions. Preserve the distinction between a reported Statement and verified FACT.
+- **Configuration scope**: reuse templates where useful, with **service-specific policies and explicit recipient/Work grants** still authoritative. Changes to operator-level assignment, policy, escalation routing and the underlying Grants require proper administrative authority, change history and audit. Do not introduce a second ungoverned permission system alongside `scoped_actor_grants`.
+- **Safe default**: no applicable rule, no effective Grant, ambiguous change category, unavailable reviewer, or insufficient verification evidence **cannot** become an implicit `確定`. Never show success for pending proposals.
+
+### Illustrative policy table — examples, NOT approved field-level authorization
+
+| Change category (example) | 新人 | 一般 | 責任者 |
+| --- | --- | --- | --- |
+| Display name correction | 申請 | 確定 | 確定 |
+| Contact information correction | 申請 | 確定 | 確定 |
+| Organization affiliation change | 不可 | 申請 | 確定 |
+| Contract/access-right change | 不可 | 申請 | 申請 |
+
+**Important**: the values above are **UI illustrations from the discussion**, not approved permission defaults or approval thresholds. No automatic verification or same-person approval is approved by this example. An operator-level template must ultimately resolve to the existing distinct `REGISTRY UPDATE/REVIEW/APPROVE` and precise Grant scopes; rules for doing so remain an implementation contract.
 
 ## Exact current Git/DDL Fit/Gap
 
@@ -53,6 +75,8 @@ Any implementation must meet these acceptance boundaries:
 2. **Standalone source contract**: What Core-compatible, traceable source/event represents an ordinary management-table correction without a made-up Work? Link a genuine authorized Work when one exists, but do not require people to create one for routine Registry maintenance. The present SUPPORT Work can have a Caller from A and beneficiary B, so an arbitrary Person cannot be implicitly attached. The specific standalone persistence/provenance mapping is not settled in Git.
 3. **Review/Commit Authority**: The generic grant operations exist, but no agreed field-level mapping from `REGISTRY UPDATE / REVIEW / APPROVE` to proposer, verifier and committer or self-review/dual-control exceptions has been found. That mapping determines which edits can finish behind one 「保存」 action and which must remain 「確認待ち」. `deviceAssignment.reviewRoles` and `allowSelfReview` are device-specific and not safe defaults for Registry edits.
 
+   The accepted **operator-level × change-category** UX must be mapped to that authority contract without elevating a display level into a security principal. The first implementation should identify the minimum categories and an authorized reviewer resolution/fallback mechanism; the illustrative table above must not silently seed live policy.
+
 These are **narrow missing implementation contracts**; the existing Actor Neutrality, Change semantics, customer separation and initial-release target remain decided. Do not migrate DDL or expose an externally writable route until resolved. Changes to generic Change DDL require an isolated migration and migration rollback/negative-test review.
 
 ## First acceptance-test matrix after the gates close
@@ -62,9 +86,11 @@ These are **narrow missing implementation contracts**; the existing Actor Neutra
 | A authorized full path | Proposed Change leaves Person unchanged → Verify leaves unchanged → Commit updates exactly one Person and audits before/after; immutable evidence and source link. |
 | Human single-action path | One 「保存」 interaction never skips Change/Verify/Commit; **「保存済み」 only after Commit**, otherwise **「確認待ち」** with authoritative Person unchanged. No artificial Work is requested for standalone edits. |
 | Separate-review path | Where required by field-level authority policy, a proposer cannot silently self-approve; reviewer sees clear before/after and a single confirmation action, with explicit audited backend Verify/Commit transitions. |
+| Level/category routing | `不可` cannot propose; `申請` with valid proposal Grant remains pending; `確定` never bypasses missing REVIEW/APPROVE, evidence, scope or policy checks. Level display alone authorizes nothing. |
+| Escalation resolution | Reviewer must have exact current target scope and review/approval Grant; missing/revoked approver stays pending without cross-customer leakage. Changing an operator's level or routing cannot retroactively commit a pending proposal. |
 | A UPDATE only | Can propose under granted scope; cannot self-grant REVIEW/APPROVE or commit through alternate endpoints. |
 | B / forged target | B person ID, mismatched Work beneficiary, revoked recipient, inactive contract, Caller-submitted organization, cross-Tenant and Role-only actor all fail closed without revealing a target. |
 | Stale/revoked | Concurrent proposals on same Person, changed row between Verify and Commit, revoke before Commit, revoked Actor, repeat idempotency, and audit/Registry rollback on failed transaction. |
 | Existing features | JOIN device assignment Change/Verify/Commit Golden, SUPPORT scoped response/correction, REGISTRY read and full Chromium regression remain PASS. |
 
-**Checkpoint decision:** The **simple human operation / full backend Change→Verify→Commit** principle is accepted. Existing PC-assignment Change flow cannot simply be presented as a ready-made general Registry Edit engine. Next implementation remains gated by the three bounded contracts above (field, standalone source, review/approval rules). **Production / merge / new privileged Grant No-Go.**
+**Checkpoint decision:** **Simple human operation / full backend Change→Verify→Commit**, and **management-facing operator-level × change-category policies with authority-based escalation**, are accepted principles. Existing PC-assignment Change flow cannot simply be presented as a ready-made general Registry Edit engine. Next implementation remains gated by the three bounded contracts above (field, standalone source, review/approval rules, including policy-to-Grant mapping). **Production / merge / new privileged Grant No-Go.**
