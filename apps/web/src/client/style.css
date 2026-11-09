@@ -117,3 +117,27 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 @media(max-width:700px) { .app-shell { grid-template-columns:1fr; } nav { padding:12px; } nav a { display:inline-block; margin:4px; padding:8px; } nav p,nav strong { display:none; } .page-content { padding:18px; } .account,header { flex-wrap:wrap; padding:12px 18px; } h1 { font-size:23px; } }
 @media(max-width:620px) { .work-status-bar { grid-template-columns:1fr; } .section-heading { display:block; } .form-actions { display:block; } .form-actions button { width:100%; } }
 @media(max-width:620px) { .device-comparison-grid { grid-template-columns:1fr; } }
+.context-picker { min-width:210px; max-width:340px; }
+.context-picker label { margin:0 0 4px; font-size:14px; }
+.context-picker select { padding:7px; }
+.scoped-support-layout { display:grid; grid-template-columns:210px minmax(0,1fr); min-height:80vh; }
+.scoped-support-content { max-width:1400px; }
+.scoped-support-heading { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+.scoped-support-heading h1 { margin-bottom:4px; }
+.scoped-support-panels { display:grid; grid-template-columns:minmax(260px,1fr) minmax(0,1.7fr); gap:20px; }
+.scoped-support-panels > section { min-width:0; background:white; border:1px solid #d5e1e3; border-radius:8px; padding:20px; }
+.scoped-work-list { margin:0; padding:0; list-style:none; }
+.scoped-work-list li { margin:0 0 10px; }
+.scoped-work-button { width:100%; margin:0; padding:14px; text-align:left; background:white; color:#203c43; border-color:#c3d7da; }
+.scoped-work-button:hover,.scoped-work-button.active { background:#e8f4f4; color:#203c43; border-color:#006b73; }
+.scoped-work-button strong,.scoped-work-button span,.scoped-work-button small { display:block; overflow-wrap:anywhere; }
+.scoped-work-button span { color:#36676e; }
+.scoped-work-button small { color:#506970; }
+.scoped-work-summary { display:grid; grid-template-columns:minmax(110px,0.45fr) minmax(0,1fr); gap:8px 16px; overflow-wrap:anywhere; }
+.scoped-work-summary dt { font-weight:600; }
+.scoped-work-summary dd { margin:0; white-space:pre-wrap; }
+.scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
+.scoped-history li { margin:0 0 18px; }
+.scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:1000px) { .scoped-support-panels { grid-template-columns:1fr; } }
+@media(max-width:700px) { .scoped-support-layout { grid-template-columns:1fr; } .scoped-support-navigation { padding:10px 16px; min-height:0; } .scoped-support-navigation strong { display:block; font-size:18px; } .scoped-support-navigation p { display:none; } .scoped-support-heading { flex-wrap:wrap; } .context-picker { width:100%; max-width:none; } }

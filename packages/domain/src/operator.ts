@@ -6,6 +6,9 @@ export interface Operator {
   displayName: string;
   tenantName: string;
   roles: OperatorRole[];
+  // DB-derived read boundary. Optional only for legacy application/test callers;
+  // browser access must fail closed when no explicit mode is supplied.
+  readAuthorityMode?: 'SCOPED' | 'INTERNAL_V1';
 }
 
 // Authentication supplies identity, never implicit command/Contract Authority.
