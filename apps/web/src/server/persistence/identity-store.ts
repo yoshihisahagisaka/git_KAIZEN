@@ -81,7 +81,7 @@ export class PgIdentityStore implements IdentityStore {
   async loadActiveOperator(ref: OperatorRef): Promise<Operator | null> {
     return withTenant(this.pool, ref.tenantId, async client => {
       const { rows } = await client.query(`
-        select o.id, o.display_name, t.name as tenant_name,
+        select o.id, o.display_name, t.name as tenant_name, o.read_authority_mode,
           array(select role from factact.operator_roles r
             where r.operator_id = o.id and r.tenant_id = o.tenant_id
               and o.read_authority_mode = 'INTERNAL_V1' order by role) as roles
@@ -89,8 +89,10 @@ export class PgIdentityStore implements IdentityStore {
         where o.id = $1 and o.status = 'ACTIVE' and t.status = 'ACTIVE'
       `, [ref.operatorId]);
       if (!rows[0]) return null;
-      const row = z.object({ id: z.uuid(), display_name: z.string(), tenant_name: z.string(), roles: rolesSchema }).parse(rows[0]);
-      return { id: row.id, tenantId: ref.tenantId, displayName: row.display_name, tenantName: row.tenant_name, roles: row.roles };
+      const row = z.object({ id: z.uuid(), display_name: z.string(), tenant_name: z.string(),
+        read_authority_mode: z.enum(['SCOPED', 'INTERNAL_V1']), roles: rolesSchema }).parse(rows[0]);
+      return { id: row.id, tenantId: ref.tenantId, displayName: row.display_name,
+        tenantName: row.tenant_name, roles: row.roles, readAuthorityMode: row.read_authority_mode };
     });
   }
 }

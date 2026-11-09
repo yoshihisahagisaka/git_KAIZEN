@@ -74,11 +74,14 @@ describe('internal Read Authority v1 is explicit, never inferred from Role, Tena
     expect(rows.find(r => r.id === scopedActor)?.read_authority_mode).toBe('SCOPED');
     expect((await store.loadActiveOperator({ tenantId: ids.tenant, operatorId: ids.operator }))?.roles).toEqual(['ADMIN', 'OPERATOR', 'REVIEWER']);
     expect((await store.loadActiveOperator({ tenantId: ids.tenant, operatorId: scopedActor }))?.roles).toEqual([]);
+    expect((await store.loadActiveOperator({ tenantId: ids.tenant, operatorId: ids.operator }))?.readAuthorityMode).toBe('INTERNAL_V1');
+    expect((await store.loadActiveOperator({ tenantId: ids.tenant, operatorId: scopedActor }))?.readAuthorityMode).toBe('SCOPED');
   });
 
   it('protects every existing broad JOIN, SUPPORT and Explore read route from a Role-bearing SCOPED Actor', async () => {
     const session = await request(app).get('/api/session').set('Cookie', cookie).expect(200);
     expect(session.body.data.operator).toMatchObject({ tenantId: ids.tenant, id: scopedActor, roles: [] });
+    expect(session.body.data.operator.readAuthorityMode).toBe('SCOPED');
     for (const route of [
       '/api/home', '/api/devices', `/api/people/${ids.person}/context`, '/api/work',
       '/api/support', '/api/support-responsibility', '/api/explore/search?q=Other%20customer%20secret',
