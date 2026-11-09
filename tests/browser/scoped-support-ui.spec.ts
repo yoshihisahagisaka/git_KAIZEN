@@ -105,6 +105,62 @@ test('scoped read UI shows A only, detail and allowed history; never calls inter
   expect(secret.status()).toBe(404);
 });
 
+test('READ-only actor cannot see response or correction controls',async({page})=>{
+  await commands.recordSupportResponse(internal,workA,{requestId:randomUUID(),expectedLifecycleRevision:0,
+    expectedRecordRevision:0,responseText:'Internal author only',disposition:'MONITORING',followUpAt:'2026-11-10T01:00:00.000Z'});
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  await expect(page.getByRole('region',{name:'対応履歴'})).toContainText('Internal author only');
+  await expect(page.getByRole('region',{name:'対応の記録'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'この記録を訂正'})).toHaveCount(0);
+});
+
+test('UPDATE actor records response and appends own text correction; B remains invisible',async({page})=>{
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+    [grantId,['READ','UPDATE']]);
+  await login(page);
+  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
+  await page.locator('.scoped-work-button').click();
+  const form=page.getByRole('region',{name:'対応の記録'});
+  await expect(form).toBeVisible();
+  await form.getByLabel('対応内容').fill('External A response');
+  await form.getByLabel('対応後の状態').selectOption('MONITORING');
+  await form.getByLabel('次回確認予定').fill('2026-11-12T15:00');
+  await form.getByRole('button',{name:'対応を記録'}).click();
+  await expect(page.getByRole('region',{name:'対応履歴'})).toContainText('External A response');
+  await page.getByRole('button',{name:'この記録を訂正'}).click();
+  const correction=page.getByRole('region',{name:'対応内容の訂正'});
+  await correction.getByLabel('訂正後の対応内容').fill('External A corrected text');
+  await correction.getByLabel('訂正理由').fill('表現の誤り');
+  await correction.getByRole('button',{name:'訂正を追記'}).click();
+  const history=page.getByRole('region',{name:'対応履歴'});
+  await expect(history).toContainText('External A corrected text');
+  await expect(history).toContainText('External A response');
+  await expect(history.getByRole('button',{name:'この記録を訂正'})).toHaveCount(1);
+  expect((await page.request.get(`${origin}/api/scoped/support-work/${workB}`)).status()).toBe(404);
+  await expect(page.getByText('Customer B confidential')).toHaveCount(0);
+});
+
+test('revoked UPDATE/READ grant denies an open form and removes the Work after revalidation',async({page})=>{
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+    [grantId,['READ','UPDATE']]);
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  const form=page.getByRole('region',{name:'対応の記録'});
+  await expect(form).toBeVisible();
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='Write revocation browser regression'
+    where id=$1`,[grantId,now,ids.operator]);
+  await form.getByLabel('対応内容').fill('Should not be persisted');
+  await form.getByLabel('次回確認予定').fill('2026-11-12T15:00');
+  await form.getByRole('button',{name:'対応を記録'}).click();
+  await expect(page.getByRole('alert')).toContainText('記録できませんでした');
+  await page.getByRole('button',{name:'最新情報を確認'}).click();
+  await expect(page.getByText('現在、閲覧できる対応はありません。')).toBeVisible();
+  await expect(form).toHaveCount(0);
+  expect((await page.request.get(`${origin}/api/scoped/support-work/${workA}`)).status()).toBe(404);
+});
+
 test('revocation removes previously visible Work on revalidation without disclosing B',async({page})=>{
   await login(page);
   await expect(page.locator('.scoped-work-button')).toHaveCount(1);
