@@ -148,7 +148,7 @@ test('separate REGISTRY READ reveals only confirmed beneficiary A people, with n
   const directory=page.getByRole('region',{name:'受益企業の登録情報'});
   await expect(directory).toBeVisible();
   await expect(directory).toContainText('田中 一郎');
-  await expect(directory).toContainText('在籍');
+  await expect(directory).toContainText('登録手続き中');
   await expect(directory).not.toContainText('B secret person');
   await expect(directory).not.toContainText('b-private@example.invalid');
   await expect(directory.locator('input,textarea')).toHaveCount(0);
