@@ -91,9 +91,12 @@ test('scoped read UI shows A only, detail and allowed history; never calls inter
   page.on('request',request=>requested.push(new URL(request.url()).pathname));
   await login(page);
   const list=page.getByRole('region',{name:'許可された対応一覧'});
-  await expect(list.getByRole('button',{name:/Customer A authorized/})).toBeVisible();
+  // The Work title is intentionally generic (Caller + 問い合わせ); the
+  // inquiry symptom is NOT included in the scoped list/read projection.
+  await expect(list.locator('.scoped-work-button')).toHaveCount(1);
+  await expect(list.getByRole('button',{name:/田中 一郎さんからの問い合わせ/})).toBeVisible();
   await expect(page.getByText('Customer B confidential')).toHaveCount(0);
-  await list.getByRole('button',{name:/Customer A authorized/}).click();
+  await list.locator('.scoped-work-button').click();
   await expect(page.getByRole('region',{name:'選択した対応の詳細'})).toContainText('Customer A response only');
   expect(requested.some(path=>path.startsWith('/api/support')||path.startsWith('/api/home')||path.startsWith('/api/explore'))).toBe(false);
   expect(requested).toContain('/api/scoped/support-work');
@@ -104,13 +107,13 @@ test('scoped read UI shows A only, detail and allowed history; never calls inter
 
 test('revocation removes previously visible Work on revalidation without disclosing B',async({page})=>{
   await login(page);
-  await expect(page.getByRole('button',{name:/Customer A authorized/})).toBeVisible();
+  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
   await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
     revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='Browser regression'
     where id=$1`,[grantId,now,ids.operator]);
   await page.getByRole('button',{name:'一覧を更新'}).click();
   await expect(page.getByText('現在、閲覧できる対応はありません。')).toBeVisible();
-  await expect(page.getByText('Customer A authorized')).toHaveCount(0);
+  await expect(page.locator('.scoped-work-button')).toHaveCount(0);
   await expect(page.getByText('Customer B confidential')).toHaveCount(0);
   expect((await page.request.get(`${origin}/api/scoped/support-work/${workA}`)).status()).toBe(404);
 });
@@ -122,11 +125,11 @@ test('switching authorized Tenant discards A data and selects scoped-only empty 
     (issuer,subject,tenant_id,operator_id,is_login_default) values($1,$2,$3,$4,false)`,
     ['https://seed.example.invalid','external-scoped-ui-actor',tenantB,actorB]);
   await login(page);
-  await expect(page.getByRole('button',{name:/Customer A authorized/})).toBeVisible();
+  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
   await page.getByLabel('利用する所属先').selectOption(tenantB);
   await expect(page.getByText('External alternate / External Other Tenant')).toBeVisible();
   await expect(page.getByText('現在、閲覧できる対応はありません。')).toBeVisible();
-  await expect(page.getByText('Customer A authorized')).toHaveCount(0);
+  await expect(page.locator('.scoped-work-button')).toHaveCount(0);
   await expect(page.getByText('Customer B confidential')).toHaveCount(0);
   expect((await page.request.get(`${origin}/api/scoped/support-work/${workA}`)).status()).toBe(404);
 });
