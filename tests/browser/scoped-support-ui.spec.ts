@@ -4,7 +4,12 @@ import {randomUUID} from 'node:crypto';
 import pino from 'pino';
 import {ids,testDatabase,freePort} from '../fixtures/database.js';
 import {withTenant} from '../../apps/web/src/server/persistence/database.js';
-import {PgJoinRepository} from '../../apps/web/src/server/persistence/join-repository.js';
+import {PgJoinRepository,PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {JoinCommands} from '../../packages/application/src/join-commands.js';
+import {JoinQueries} from '../../packages/application/src/join-queries.js';
+import {PgExploreSearchUnitOfWork} from '../../apps/web/src/server/persistence/explore-repository.js';
+import {ExploreQueries} from '../../packages/application/src/explore-queries.js';
+import {PgScopedGrantManager} from '../../apps/web/src/server/persistence/scoped-grant-manager.js';
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
@@ -30,6 +35,8 @@ test.beforeAll(async()=>{
     oidcSessionDatabaseUrl:'postgresql://test-oidc',databaseSsl:false,
     issuer:'https://accounts.google.com',clientId:'test-only',clientSecret:'test-only',redirectUri:`${origin}/auth/callback`};
   const uow=new PgSupportUnitOfWork(db.runtime);
+  const joinUow=new PgJoinUnitOfWork(db.runtime);
+  const exploreUow=new PgExploreSearchUnitOfWork(db.runtime);
   commands=new SupportCommands(uow,{now:()=>now,id:randomUUID});
   const reader=new PgScopedAccessReader(db.runtime,{now:()=>now});
   const app=createApp(config,new PgIdentityStore(db.runtime,db.oidc),{
@@ -38,9 +45,10 @@ test.beforeAll(async()=>{
       if(url.searchParams.get('code')!=='test-code'||url.searchParams.get('state')!==login.state)throw Error('Test OIDC rejected');
       return {issuer:'https://seed.example.invalid',subject:'external-scoped-ui-actor'};
     },
-  },pino({level:'silent'}),undefined,
+  },pino({level:'silent'}),
+    {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
     {commands:new SupportCommands(uow,{now:()=>now,id:randomUUID},reader),queries:new SupportQueries(uow)},
-    undefined,reader);
+    {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime));
   server=await new Promise<Server>(resolve=>{const s=app.listen(port,'127.0.0.1',()=>resolve(s));});
 });
 test.afterAll(async()=>{
@@ -103,6 +111,22 @@ test('scoped read UI shows A only, detail and allowed history; never calls inter
   expect(requested).toContain(`/api/scoped/support-work/${workA}/history`);
   const secret=await page.request.get(`${origin}/api/scoped/support-work/${workB}`);
   expect(secret.status()).toBe(404);
+});
+
+test('legacy ADMIN/OPERATOR/REVIEWER Roles cannot bypass internal APIs under the same scoped browser session',async({page})=>{
+  await login(page);
+  const paths=['/api/home','/api/work','/api/devices','/api/support',
+    '/api/support-responsibility','/api/explore/search?q=Customer'];
+  for(const path of paths){
+    const response=await page.request.get(`${origin}${path}`);
+    expect(response.status(),path).toBe(403);
+    expect(await response.text()).not.toContain('Customer B confidential');
+  }
+  const session=await page.request.get(`${origin}/api/session`);
+  expect((await session.json()).data.operator).toMatchObject({readAuthorityMode:'SCOPED',roles:[]});
+  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
+  await page.locator('.scoped-work-button').click();
+  await expect(page.getByRole('region',{name:'選択した対応の詳細'})).toContainText('田中 一郎');
 });
 
 test('READ-only actor cannot see response or correction controls',async({page})=>{
