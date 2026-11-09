@@ -37,7 +37,7 @@ async function main() {
     const app = createApp(config, new PgIdentityStore(pool, oidcSessionPool), provider, logger,
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
-      {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool));
+      {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader);
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });

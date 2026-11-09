@@ -43,6 +43,13 @@ export interface ScopedSupportWorkHistory {
  work:ScopedSupportWorkSummary;entries:ScopedSupportHistoryEntry[];nextCursor:string|null;
 }
 
+export interface ScopedRegistryPeopleCursor {displayName:string;personId:string}
+export interface ScopedRegistryPeoplePage {
+ organizationId:string;organizationName:string;
+ items:Array<{personId:string;displayName:string;lifecycleStatus:'JOINING'|'ACTIVE'|'INACTIVE'}>;
+ nextCursor:string|null;
+}
+
 interface StoredSupportHistoryEntry {
  id:string;revision:number;kind:string;occurred_at:Date;
  response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
@@ -58,6 +65,52 @@ interface StoredSupportHistoryEntry {
  */
 export class PgScopedAccessReader {
  constructor(private readonly pool:Pool,private readonly clock:{now():string}={now:()=>new Date().toISOString()}){}
+
+ /** Reuse the existing verified Organization ServiceRecipient and REGISTRY READ
+  * grant. The caller's affiliation is never an authorization input. No email,
+  * global count, unverified observation or cross-customer query is projected. */
+ async registryPeople(tenantId:string,actorId:string,serviceId:string,organizationId:string,
+  limit:number,cursor:ScopedRegistryPeopleCursor|null):Promise<ScopedRegistryPeoplePage|null>{
+  if(![tenantId,actorId,serviceId,organizationId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>50||
+    (cursor&&(!cursor.displayName||cursor.displayName.length>200||!z.uuid().safeParse(cursor.personId).success)))return null;
+  const at=this.clock.now();if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const {rows:contexts}=await db.query<{recipient_id:string;contract_id:string;organization_name:string}>(`
+    select r.id as recipient_id,c.id as contract_id,o.name as organization_name
+    from factact.service_recipients r
+    join factact.organizations o on o.tenant_id=r.tenant_id and o.id=r.recipient_organization_id
+      and o.status='ACTIVE'
+    join factact.services s on s.tenant_id=r.tenant_id and s.id=r.service_id and s.status='ACTIVE'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id and c.service_id=s.id
+      and c.status='ACTIVE' and c.effective_from<=$4::timestamptz
+      and (c.effective_to is null or c.effective_to>$4::timestamptz)
+    where r.tenant_id=$1 and r.service_id=$2 and r.recipient_organization_id=$3
+      and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
+    order by c.version desc`,[tenantId,serviceId,organizationId,at]);
+   let organizationName:string|null=null;
+   for(const context of contexts){
+    if(await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId,contractProfileId:context.contract_id,
+     scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:context.recipient_id},
+     objectKind:'REGISTRY',operation:'READ',
+    },at)){organizationName=context.organization_name;break;}
+   }
+   if(organizationName===null)return null;
+   const {rows}=await db.query<{id:string;display_name:string;lifecycle_status:'JOINING'|'ACTIVE'|'INACTIVE'}>(`
+    select id,display_name,lifecycle_status from factact.people
+    where tenant_id=$1 and organization_id=$2
+      and ($3::text is null or (display_name,id)>($3::text,$4::uuid))
+    order by display_name,id limit $5`,
+    [tenantId,organizationId,cursor?.displayName??null,cursor?.personId??null,limit]);
+   const last=rows.at(-1);
+   return {organizationId,organizationName,
+    items:rows.map(p=>({personId:p.id,displayName:p.display_name,lifecycleStatus:p.lifecycle_status})),
+    nextCursor:rows.length===limit&&last
+     ?Buffer.from(JSON.stringify({displayName:last.display_name,personId:last.id})).toString('base64url')
+     :null};
+  },true);
+ }
 
  async authorized(actorId:string,target:ResolvedAccessTarget):Promise<boolean>{
   // The kernel is also a shape validator. Reject without querying a malformed scope.
