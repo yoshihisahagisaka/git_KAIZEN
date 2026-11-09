@@ -28,6 +28,7 @@ export interface ScopedSupportWorkSummary {
  title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';nextAction:string;
  waiting:boolean;followUpAt:string|null;updatedAt:string;
  lifecycleRevision:number;recordRevision:number;canUpdate:boolean;
+ registryOrganizationId:string|null;
 }
 
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
@@ -229,7 +230,8 @@ export class PgScopedAccessReader {
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
    if(!work)return null;
    const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
-   return this.projectSupportWork(work,canUpdate);
+   const registryOrganizationId=await this.readableRegistryOrganization(db,tenantId,actorId,work,at);
+   return this.projectSupportWork(work,canUpdate,registryOrganizationId);
   },true);
  }
 
@@ -247,6 +249,7 @@ export class PgScopedAccessReader {
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
    if(!work)return null;
    const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
+   const registryOrganizationId=await this.readableRegistryOrganization(db,tenantId,actorId,work,at);
    const {rows}=await db.query<StoredSupportHistoryEntry>(`
     with entries as (
      select r.id,r.revision,'RESPONSE'::text as kind,r.recorded_at as occurred_at,
@@ -296,7 +299,7 @@ export class PgScopedAccessReader {
    const nextCursor=entries.length===limit&&last
     ?Buffer.from(JSON.stringify({occurredAt:last.occurredAt,id:last.id})).toString('base64url')
     :null;
-   return {work:this.projectSupportWork(work,canUpdate),entries,nextCursor};
+   return {work:this.projectSupportWork(work,canUpdate,registryOrganizationId),entries,nextCursor};
   },true);
  }
 
@@ -416,7 +419,8 @@ export class PgScopedAccessReader {
      objectKind:'SUPPORT',operation:'READ'};
     if(await this.authorizedInTransaction(db,actorId,target,at)){
      const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
-     items.push(this.projectSupportWork(work,canUpdate));
+     const registryOrganizationId=await this.readableRegistryOrganization(db,tenantId,actorId,work,at);
+     items.push(this.projectSupportWork(work,canUpdate,registryOrganizationId));
     }
    }
    // No hasMore/total: pagination metadata cannot reveal hidden candidates.
@@ -438,12 +442,38 @@ export class PgScopedAccessReader {
    },at);
  }
 
- private projectSupportWork(work:StoredSupportWorkSummary,canUpdate=false):ScopedSupportWorkSummary{
+ /** A link to an Organization directory is separately gated by REGISTRY READ
+  * on this Work's latest confirmed beneficiary; SUPPORT READ alone gives no
+  * Directory visibility. Resolve the current recipient and grant in the same
+  * read-only tenant snapshot as the Work summary. */
+ private async readableRegistryOrganization(db:PoolClient,tenantId:string,actorId:string,
+  work:StoredSupportWorkSummary,at:string):Promise<string|null>{
+  if(work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)return null;
+  const {rows}=await db.query<{organization_id:string}>(`
+   select r.recipient_organization_id as organization_id
+   from factact.service_recipients r
+   join factact.organizations o on o.tenant_id=r.tenant_id
+    and o.id=r.recipient_organization_id and o.status='ACTIVE'
+   where r.tenant_id=$1 and r.id=$2 and r.service_id=$3
+    and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'`,
+   [tenantId,work.confirmed_recipient_id,work.service_id]);
+  if(!rows[0]?.organization_id)return null;
+  const allowed=await this.authorizedInTransaction(db,actorId,{
+   tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+   scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:work.confirmed_recipient_id},
+   objectKind:'REGISTRY',operation:'READ',
+  },at);
+  return allowed?rows[0].organization_id:null;
+ }
+
+ private projectSupportWork(work:StoredSupportWorkSummary,canUpdate=false,
+  registryOrganizationId:string|null=null):ScopedSupportWorkSummary{
   return {workId:work.work_id,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
    serviceRecipientId:work.confirmed_recipient_id!,title:work.title,status:work.status,
    nextAction:work.next_action,waiting:work.waiting,
    followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString(),
-   lifecycleRevision:work.lifecycle_revision,recordRevision:work.record_revision,canUpdate};
+   lifecycleRevision:work.lifecycle_revision,recordRevision:work.record_revision,canUpdate,
+   registryOrganizationId};
  }
 
  private async authorizedInTransaction(db:PoolClient,actorId:string,target:ResolvedAccessTarget,at:string):Promise<boolean>{

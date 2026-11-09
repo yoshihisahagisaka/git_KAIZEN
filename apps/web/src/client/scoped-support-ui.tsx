@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {api} from './api.js';
 import type {
+  ScopedRegistryPeoplePage,
   ScopedSupportHistoryEntry,ScopedSupportWorkHistory,ScopedSupportWorkPage,
   ScopedSupportWorkSummary,
 } from '../server/persistence/scoped-access-reader.js';
@@ -30,6 +31,62 @@ function WorkSummary({work}:{work:ScopedSupportWorkSummary}) {
     <dt>次回確認予定</dt><dd>{date(work.followUpAt)}</dd>
     <dt>更新日時</dt><dd>{date(work.updatedAt)}</dd>
   </dl>;
+}
+const lifecycleLabels:Record<ScopedRegistryPeoplePage['items'][number]['lifecycleStatus'],string>={
+  JOINING:'登録手続き中',ACTIVE:'在籍',INACTIVE:'非在籍',
+};
+/** Mounted only for the server-authorized current beneficiary. All directory
+ * reads go through the narrow REGISTRY endpoint, independently reauthorized. */
+function ScopedRegistryContext({work}:{work:ScopedSupportWorkSummary}) {
+  const [page,setPage]=useState<ScopedRegistryPeoplePage|null>(null);
+  const [busy,setBusy]=useState(true);
+  const [error,setError]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);
+  const organizationId=work.registryOrganizationId!;
+  const serviceId=work.serviceId;
+  const url=`/api/scoped/registry/organizations/${organizationId}/people?serviceId=${serviceId}&limit=20`;
+  useEffect(()=>{
+    let active=true;
+    setPage(null);setError(false);setBusy(true);
+    api<ScopedRegistryPeoplePage>(url).then(result=>{
+      if(result.organizationId!==organizationId)throw Error('Registry organization mismatch');
+      if(active)setPage(result);
+    }).catch(()=>{if(active){setPage(null);setError(true);}})
+      .finally(()=>{if(active)setBusy(false);});
+    return ()=>{active=false;};
+  },[url,organizationId]);
+
+  async function loadMorePeople(){
+    if(!page?.nextCursor||loadingMore)return;
+    setLoadingMore(true);setError(false);
+    try {
+      const result=await api<ScopedRegistryPeoplePage>(`${url}&cursor=${encodeURIComponent(page.nextCursor)}`);
+      if(result.organizationId!==organizationId)throw Error('Registry organization mismatch');
+      setPage(previous=>{
+        if(!previous||previous.organizationId!==result.organizationId)return null;
+        const seen=new Set(previous.items.map(person=>person.personId));
+        return {...result,items:[...previous.items,...result.items.filter(person=>!seen.has(person.personId))]};
+      });
+    } catch {
+      // A revoked grant must not leave previously fetched Person data on screen.
+      setPage(null);setError(true);
+    } finally {setLoadingMore(false);}
+  }
+
+  return <section aria-label="受益企業の登録情報" className="scoped-registry-context">
+    <h3>受益企業の登録情報</h3>
+    {busy&&<p role="status">登録情報を確認しています…</p>}
+    {error&&<p role="alert">登録情報を取得できませんでした。最新情報を確認してください。</p>}
+    {page&&<>
+      <strong className="scoped-registry-organization">{page.organizationName}</strong>
+      {!page.items.length&&<p>登録されている方はいません。</p>}
+      <ul>{page.items.map(person=><li key={person.personId}>
+        <span>{person.displayName}</span><span>{lifecycleLabels[person.lifecycleStatus]}</span>
+      </li>)}</ul>
+      {page.nextCursor&&<button type="button" className="secondary" disabled={loadingMore}
+        onClick={()=>void loadMorePeople()}>さらに表示</button>}
+    </>}
+  </section>;
 }
 function HistoryEntry({entry,onCorrect}:{entry:ScopedSupportHistoryEntry;onCorrect:(entry:ScopedSupportHistoryEntry)=>void}) {
   return <li>
@@ -218,6 +275,8 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
                 <h3>{detail.title}</h3><WorkSummary work={detail}/>
+                {detail.registryOrganizationId&&<ScopedRegistryContext
+                  key={`${detail.workId}:${detail.registryOrganizationId}`} work={detail}/>}
                 {writeNotice&&<p role="status" className="scoped-write-notice">{writeNotice}</p>}
                 {writeError&&<div role="alert" className="scoped-write-error"><p>{writeError}</p>
                   <button type="button" className="secondary" disabled={detailBusy||writeBusy} onClick={refreshWork}>最新情報を確認</button></div>}
