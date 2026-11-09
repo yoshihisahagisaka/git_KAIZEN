@@ -180,6 +180,41 @@ describe('scoped REGISTRY Person directory',()=>{
   await db.admin.query("update factact.contract_profiles set status='INACTIVE' where id=$1",[ids.contract]);
   await directory(ids.organization).expect(404);
  });
+
+ it('links a Work to its confirmed beneficiary directory only with separate REGISTRY READ, and revokes the link',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'SUPPORT'});
+  const supportOnly=(await get(workA).expect(200)).body.data;
+  expect(supportOnly.registryOrganizationId).toBeNull();
+  expect((await getPage().expect(200)).body.data.items[0].registryOrganizationId).toBeNull();
+  expect((await getHistory(workA).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(ids.organization).expect(404);
+
+  const registryGrant=await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  for(const summary of [
+   (await get(workA).expect(200)).body.data,
+   (await getPage().expect(200)).body.data.items[0],
+   (await getHistory(workA).expect(200)).body.data.work,
+  ])expect(summary.registryOrganizationId).toBe(ids.organization);
+  await get(workB).expect(404);
+  await directory(companyB).expect(404);
+
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_by_operator_id=$1,revoked_at=$2,revocation_reason='Directory link revocation test'
+   where id=$3`,[ids.operator,now,registryGrant]);
+  expect((await get(workA).expect(200)).body.data.registryOrganizationId).toBeNull();
+  expect((await getHistory(workA).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(ids.organization).expect(404);
+ });
+
+ it('does not expose registry directory from REGISTRY-only grant or from the Caller of another Work',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('SERVICE_RECIPIENT',recipientB,null,{objectKind:'SUPPORT'});
+  expect((await get(workB).expect(200)).body.data.registryOrganizationId).toBeNull();
+  expect((await getHistory(workB).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(companyB).expect(404);
+ });
 });
 
 describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
@@ -242,7 +277,7 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
    contractProfileId:ids.contract,serviceRecipientId:recipientA});
   expect(Object.keys(allowed.body.data).sort()).toEqual([
    'canUpdate','contractProfileId','followUpAt','lifecycleRevision','nextAction','recordRevision',
-   'serviceId','serviceRecipientId','status','title','updatedAt','waiting','workId',
+   'registryOrganizationId','serviceId','serviceRecipientId','status','title','updatedAt','waiting','workId',
   ]);
   const forbidden=await get(workB).expect(404),missing=await get(randomUUID()).expect(404);
   expect(forbidden.body.error.code).toBe('NOT_FOUND');

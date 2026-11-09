@@ -136,6 +136,12 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .scoped-work-summary { display:grid; grid-template-columns:minmax(110px,0.45fr) minmax(0,1fr); gap:8px 16px; overflow-wrap:anywhere; }
 .scoped-work-summary dt { font-weight:600; }
 .scoped-work-summary dd { margin:0; white-space:pre-wrap; }
+.scoped-registry-context { margin:18px 0; padding:18px 0; border-top:1px solid #d5e1e3; }
+.scoped-registry-context h3 { margin-top:0; }
+.scoped-registry-organization { display:block; margin-bottom:10px; font-size:1.05rem; }
+.scoped-registry-context ul { list-style:none; padding:0; margin:0 0 12px; }
+.scoped-registry-context li { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #e6eef0; overflow-wrap:anywhere; }
+.scoped-registry-context li span:last-child { flex-shrink:0; color:#506970; }
 .scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
 .scoped-history li { margin:0 0 18px; }
 .scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }

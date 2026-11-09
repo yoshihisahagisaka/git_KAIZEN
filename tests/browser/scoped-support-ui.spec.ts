@@ -48,7 +48,7 @@ test.beforeAll(async()=>{
   },pino({level:'silent'}),
     {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
     {commands:new SupportCommands(uow,{now:()=>now,id:randomUUID},reader),queries:new SupportQueries(uow)},
-    {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime));
+    {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader);
   server=await new Promise<Server>(resolve=>{const s=app.listen(port,'127.0.0.1',()=>resolve(s));});
 });
 test.afterAll(async()=>{
@@ -90,6 +90,20 @@ async function login(page:Page){
   await page.getByRole('link',{name:'Googleでログイン'}).click();
   await expect(page.getByRole('heading',{name:'問い合わせ・対応状況'})).toBeVisible();
 }
+async function grantRegistryA(){
+  const {rows}=await db.admin.query<{id:string}>(`
+    select id from factact.service_recipients
+    where tenant_id=$1 and service_id=$2 and recipient_organization_id=$3
+      and recipient_type='ORGANIZATION' and status='ACTIVE'`,[ids.tenant,ids.service,ids.organization]);
+  if(!rows[0])throw Error('Missing A Organization recipient');
+  const id=randomUUID();
+  await db.admin.query(`insert into factact.scoped_actor_grants
+    (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+     service_recipient_id,object_kind,operations,effective_from,issued_by_operator_id)
+    values($1,$2,$3,$4,$5,'SERVICE_RECIPIENT',$6,'REGISTRY',$7,$8,$9)`,
+    [id,ids.tenant,scopedActor,ids.service,ids.contract,rows[0].id,['READ'],'2026-11-01T00:00:00.000Z',ids.operator]);
+  return id;
+}
 
 test('scoped read UI shows A only, detail and allowed history; never calls internal broad APIs',async({page})=>{
   await page.setViewportSize({width:1366,height:768});
@@ -111,6 +125,50 @@ test('scoped read UI shows A only, detail and allowed history; never calls inter
   expect(requested).toContain(`/api/scoped/support-work/${workA}/history`);
   const secret=await page.request.get(`${origin}/api/scoped/support-work/${workB}`);
   expect(secret.status()).toBe(404);
+});
+
+test('SUPPORT-only actor sees no directory context and never requests REGISTRY API',async({page})=>{
+  const requested:string[]=[];
+  page.on('request',request=>requested.push(new URL(request.url()).pathname));
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  await expect(page.getByRole('region',{name:'選択した対応の詳細'})).toContainText('田中 一郎');
+  await expect(page.getByRole('region',{name:'受益企業の登録情報'})).toHaveCount(0);
+  expect(requested.filter(path=>path.startsWith('/api/scoped/registry/'))).toEqual([]);
+});
+
+test('separate REGISTRY READ reveals only confirmed beneficiary A people, with no email or B details',async({page})=>{
+  await db.admin.query(`insert into factact.people
+    (id,tenant_id,organization_id,display_name,email,lifecycle_status)
+    values($1,$2,$3,'B secret person','b-private@example.invalid','ACTIVE')`,
+    [randomUUID(),ids.tenant,companyB]);
+  await grantRegistryA();
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  const directory=page.getByRole('region',{name:'受益企業の登録情報'});
+  await expect(directory).toBeVisible();
+  await expect(directory).toContainText('田中 一郎');
+  await expect(directory).toContainText('登録手続き中');
+  await expect(directory).not.toContainText('B secret person');
+  await expect(directory).not.toContainText('b-private@example.invalid');
+  await expect(directory.locator('input,textarea')).toHaveCount(0);
+  expect((await page.request.get(`${origin}/api/scoped/registry/organizations/${companyB}/people?serviceId=${ids.service}`)).status()).toBe(404);
+});
+
+test('revoking REGISTRY READ removes previously visible directory while keeping SUPPORT Work',async({page})=>{
+  const registryGrant=await grantRegistryA();
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  await expect(page.getByRole('region',{name:'受益企業の登録情報'})).toContainText('田中 一郎');
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='Browser registry revoke'
+    where id=$1`,[registryGrant,now,ids.operator]);
+  await page.getByRole('button',{name:'一覧を更新'}).click();
+  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
+  await page.locator('.scoped-work-button').click();
+  await expect(page.getByRole('region',{name:'選択した対応の詳細'})).toContainText('田中 一郎');
+  await expect(page.getByRole('region',{name:'受益企業の登録情報'})).toHaveCount(0);
+  expect((await page.request.get(`${origin}/api/scoped/registry/organizations/${ids.organization}/people?serviceId=${ids.service}`)).status()).toBe(404);
 });
 
 test('legacy ADMIN/OPERATOR/REVIEWER Roles cannot bypass internal APIs under the same scoped browser session',async({page})=>{
