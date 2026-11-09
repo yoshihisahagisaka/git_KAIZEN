@@ -86,7 +86,7 @@ beforeAll(async()=>{
  },pino({level:'silent'}),
  {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
  {commands:scopedCommands,queries:new SupportQueries(uow)},
- {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime));
+ {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader);
 },60_000);
 beforeEach(async()=>{
  await db.reset();
@@ -117,6 +117,70 @@ beforeEach(async()=>{
  await confirm(eventB,companyB);
 },60_000);
 afterAll(async()=>{await db?.close();},60_000);
+
+describe('scoped REGISTRY Person directory',()=>{
+ const directory=(organizationId:string,query='')=>request(app)
+  .get(`/api/scoped/registry/organizations/${organizationId}/people?serviceId=${ids.service}${query}`)
+  .set('Cookie',sessionCookie);
+
+ it('does not convert legacy internal Roles, Caller affiliation or SUPPORT grants into REGISTRY access',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'SUPPORT'});
+  await directory(ids.organization).expect(404);
+  await directory(companyB).expect(404);
+  await request(app).get(`/api/scoped/registry/organizations/${ids.organization}/people?serviceId=${ids.service}`)
+   .expect(401);
+ });
+
+ it('lists only persons of an explicitly granted recipient in one snapshot, without contact email or tenant counts',async()=>{
+  const bPerson=randomUUID();
+  await db.admin.query(`insert into factact.people
+   (id,tenant_id,organization_id,display_name,email,lifecycle_status)
+   values($1,$2,$3,'B private person','secret-b@example.invalid','ACTIVE')`,
+   [bPerson,ids.tenant,companyB]);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  const a=(await directory(ids.organization).expect(200)).body.data;
+  expect(a.organizationId).toBe(ids.organization);
+  expect(a.items).toEqual(expect.arrayContaining([expect.objectContaining({personId:ids.person})]));
+  expect(JSON.stringify(a)).not.toContain('secret-b@example.invalid');
+  expect(JSON.stringify(a)).not.toContain('B private person');
+  expect(a).not.toHaveProperty('total');
+  await directory(companyB).expect(404);
+  await directory(companyB,`&cursor=${encodeURIComponent(a.nextCursor??'')}`).expect(404);
+ });
+
+ it('pages the authorized organization only and does not return email or cross-organization entries',async()=>{
+  const second=randomUUID();
+  await db.admin.query(`insert into factact.people
+   (id,tenant_id,organization_id,display_name,email,lifecycle_status)
+   values($1,$2,$3,'ZZZ authorized person','private-a@example.invalid','ACTIVE')`,
+   [second,ids.tenant,ids.organization]);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  const first=(await directory(ids.organization,'&limit=1').expect(200)).body.data;
+  expect(first.items).toHaveLength(1);
+  expect(first.nextCursor).toEqual(expect.any(String));
+  const next=(await directory(ids.organization,`&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`).expect(200)).body.data;
+  expect(next.items).toHaveLength(1);
+  expect(next.items[0].personId).not.toBe(first.items[0].personId);
+  const both=JSON.stringify([first,next]);
+  expect(both).not.toContain('private-a@example.invalid');
+  await directory(companyB,`&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`).expect(404);
+  await directory(ids.organization,'&cursor=not-a-valid-cursor').expect(400);
+ });
+
+ it('respects a deliberate service-wide REGISTRY grant, explicit revocation and current contract',async()=>{
+  const grantId=await grant('SERVICE',null,null,{objectKind:'REGISTRY'});
+  await directory(ids.organization).expect(200);
+  await directory(companyB).expect(200);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_by_operator_id=$1,revoked_at=$2,revocation_reason='Test revoke' where id=$3`,
+   [ids.operator,now,grantId]);
+  await directory(ids.organization).expect(404);
+  await directory(companyB).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  await db.admin.query("update factact.contract_profiles set status='INACTIVE' where id=$1",[ids.contract]);
+  await directory(ids.organization).expect(404);
+ });
+});
 
 describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
  it('keeps every mounted INTERNAL JOIN/SUPPORT/Explore read and write surface closed to a SCOPED actor with legacy Roles',async()=>{
