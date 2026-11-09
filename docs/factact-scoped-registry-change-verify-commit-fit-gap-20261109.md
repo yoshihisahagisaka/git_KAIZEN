@@ -94,3 +94,5 @@ These are **narrow missing implementation contracts**; the existing Actor Neutra
 | Existing features | JOIN device assignment Change/Verify/Commit Golden, SUPPORT scoped response/correction, REGISTRY read and full Chromium regression remain PASS. |
 
 **Checkpoint decision:** **Simple human operation / full backend Change→Verify→Commit**, and **management-facing operator-level × change-category policies with authority-based escalation**, are accepted principles. Existing PC-assignment Change flow cannot simply be presented as a ready-made general Registry Edit engine. Next implementation remains gated by the three bounded contracts above (field, standalone source, review/approval rules, including policy-to-Grant mapping). **Production / merge / new privileged Grant No-Go.**
+
+**Next technical-contract candidate:** `docs/factact-scoped-registry-first-edit-contract-candidate-20261109.md` maps the three gates to an additive Registry edit source/Change approach, a conservative approval path and precise negative tests. Its technical candidates are **not approved decisions** and do not authorize mutation.
