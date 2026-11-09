@@ -17,6 +17,7 @@ const dispositionLabels:Record<string,string>={
   CUSTOMER_WAIT:'お客様の回答待ち',INVESTIGATING:'確認中',
   MONITORING:'経過観察',COMPLETED:'完了',
 };
+type OpenDisposition='CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING';
 function date(value:string|null) {
   if(!value)return '未設定';
   const parsed=new Date(value);
@@ -30,19 +31,20 @@ function WorkSummary({work}:{work:ScopedSupportWorkSummary}) {
     <dt>更新日時</dt><dd>{date(work.updatedAt)}</dd>
   </dl>;
 }
-function HistoryEntry({entry}:{entry:ScopedSupportHistoryEntry}) {
+function HistoryEntry({entry,onCorrect}:{entry:ScopedSupportHistoryEntry;onCorrect:(entry:ScopedSupportHistoryEntry)=>void}) {
   return <li>
     <strong>{eventLabels[entry.kind]??'対応状況の変更'}</strong>
     <time dateTime={entry.occurredAt}>{date(entry.occurredAt)}</time>
     {entry.responseText&&<p className="scoped-record-text">{entry.responseText}</p>}
     {entry.disposition&&<p>対応後の状態: {dispositionLabels[entry.disposition]??'確認中'}</p>}
     {entry.correctionReason&&<p>訂正理由: {entry.correctionReason}</p>}
+    {entry.canCorrect&&<button type="button" className="secondary" onClick={()=>onCorrect(entry)}>この記録を訂正</button>}
   </li>;
 }
 
-/** All data comes exclusively from the scoped READ endpoints; no broad JOIN,
- * SUPPORT, Explore or company-wide search request is ever issued here. */
-export function ScopedSupportUI() {
+/** Reads and writes exclusively through the scoped SUPPORT endpoints, with
+ * server-derived grants on each request; never calls broad internal APIs. */
+export function ScopedSupportUI({csrf}:{csrf:string}) {
   const [items,setItems]=useState<ScopedSupportWorkSummary[]>([]);
   const [nextCursor,setNextCursor]=useState<string|null>(null);
   const [selectedId,setSelectedId]=useState<string|null>(null);
@@ -53,8 +55,77 @@ export function ScopedSupportUI() {
   const [error,setError]=useState('');
   const [detailError,setDetailError]=useState('');
   const [revision,setRevision]=useState(0);
+  const [responseText,setResponseText]=useState('');
+  const [disposition,setDisposition]=useState<OpenDisposition>('INVESTIGATING');
+  const [followUpLocal,setFollowUpLocal]=useState('');
+  const [correctionTarget,setCorrectionTarget]=useState<ScopedSupportHistoryEntry|null>(null);
+  const [correctionText,setCorrectionText]=useState('');
+  const [correctionReason,setCorrectionReason]=useState('');
+  const [writeBusy,setWriteBusy]=useState(false);
+  const [writeError,setWriteError]=useState('');
+  const [writeNotice,setWriteNotice]=useState('');
   const selectedRequestId=useRef<string|null>(null);
-  function selectWork(id:string|null) {selectedRequestId.current=id;setSelectedId(id);}
+  const writeInFlight=useRef(false);
+  const responseRequestId=useRef<string|null>(null);
+  const correctionRequestId=useRef<string|null>(null);
+  function selectWork(id:string|null) {
+    selectedRequestId.current=id;setSelectedId(id);
+    setResponseText('');setDisposition('INVESTIGATING');setFollowUpLocal('');
+    setCorrectionTarget(null);setCorrectionText('');setCorrectionReason('');
+    responseRequestId.current=null;correctionRequestId.current=null;
+    setWriteError('');setWriteNotice('');
+  }
+  function refreshWork() {setWriteError('');setRevision(r=>r+1);}
+  function startCorrection(entry:ScopedSupportHistoryEntry) {
+    setCorrectionTarget(entry);setCorrectionText(entry.responseText??'');setCorrectionReason('');
+    correctionRequestId.current=null;setWriteError('');setWriteNotice('');
+  }
+  async function submitResponse(event:React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if(!detail||!detail.canUpdate||!selectedId||writeInFlight.current)return;
+    const text=responseText.trim(),followUp=new Date(followUpLocal);
+    if(!text||text.length>4000||!followUpLocal||!Number.isFinite(followUp.getTime())){
+      setWriteError('対応内容と次回確認予定を確認してください。');return;
+    }
+    const workId=selectedId,requestId=responseRequestId.current??crypto.randomUUID();
+    responseRequestId.current=requestId;writeInFlight.current=true;setWriteBusy(true);setWriteError('');setWriteNotice('');
+    try {
+      await api(`/api/scoped/support-work/${workId}/responses`,csrf,{
+        requestId,expectedLifecycleRevision:detail.lifecycleRevision,expectedRecordRevision:detail.recordRevision,
+        responseText:text,disposition,followUpAt:followUp.toISOString(),
+      });
+      if(selectedRequestId.current!==workId)return;
+      responseRequestId.current=null;setResponseText('');setFollowUpLocal('');
+      setWriteNotice('対応を記録しました。');refreshWork();
+    } catch {
+      if(selectedRequestId.current===workId){
+        setWriteError('記録できませんでした。権限や更新状況を確認してください。再送時は同じ内容で試してください。');
+      }
+    } finally {writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
+  }
+  async function submitCorrection(event:React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if(!detail||!detail.canUpdate||!selectedId||!correctionTarget?.canCorrect||writeInFlight.current)return;
+    const text=correctionText.trim(),reason=correctionReason.trim();
+    if(!text||text.length>4000||!reason||reason.length>1000){
+      setWriteError('訂正内容と訂正理由を確認してください。');return;
+    }
+    const workId=selectedId,recordId=correctionTarget.id;
+    const requestId=correctionRequestId.current??crypto.randomUUID();
+    correctionRequestId.current=requestId;writeInFlight.current=true;setWriteBusy(true);setWriteError('');setWriteNotice('');
+    try {
+      await api(`/api/scoped/support-work/${workId}/responses/${recordId}/corrections`,csrf,{
+        requestId,expectedRecordRevision:detail.recordRevision,responseText:text,correctionReason:reason,
+      });
+      if(selectedRequestId.current!==workId)return;
+      correctionRequestId.current=null;setCorrectionTarget(null);setCorrectionText('');setCorrectionReason('');
+      setWriteNotice('元の記録を残したまま、訂正を追記しました。');refreshWork();
+    } catch {
+      if(selectedRequestId.current===workId){
+        setWriteError('訂正できませんでした。権限や更新状況を確認してください。再送時は同じ内容で試してください。');
+      }
+    } finally {writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
+  }
 
   useEffect(()=>{
     let active=true;
@@ -124,7 +195,7 @@ export function ScopedSupportUI() {
   return <div className="scoped-support-layout">
     <nav aria-label="許可された対応" className="scoped-support-navigation"><strong>SUPPORT</strong><p>許可された対応のみ表示しています。</p></nav>
     <div className="page-content scoped-support-content">
-      <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>閲覧が許可されている案件を確認できます。</p></div>
+      <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
         <button className="secondary" disabled={busy} onClick={()=>{selectWork(null);setRevision(r=>r+1);}}>一覧を更新</button></div>
       {error&&<p role="alert">{error}</p>}
       <div className="scoped-support-panels">
@@ -147,10 +218,47 @@ export function ScopedSupportUI() {
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
                 <h3>{detail.title}</h3><WorkSummary work={detail}/>
+                {writeNotice&&<p role="status" className="scoped-write-notice">{writeNotice}</p>}
+                {writeError&&<div role="alert" className="scoped-write-error"><p>{writeError}</p>
+                  <button type="button" className="secondary" disabled={detailBusy||writeBusy} onClick={refreshWork}>最新情報を確認</button></div>}
+                {detail.canUpdate&&<section className="scoped-action" aria-label="対応の記録">
+                  <h3>対応を記録</h3>
+                  <form onSubmit={event=>void submitResponse(event)}>
+                    <label htmlFor="scoped-response">対応内容</label>
+                    <textarea id="scoped-response" rows={4} maxLength={4000} required value={responseText} disabled={writeBusy}
+                      onChange={event=>{setResponseText(event.target.value);responseRequestId.current=null;}}/>
+                    <div className="scoped-action-fields">
+                      <div><label htmlFor="scoped-disposition">対応後の状態</label>
+                        <select id="scoped-disposition" value={disposition} disabled={writeBusy}
+                          onChange={event=>{setDisposition(event.target.value as OpenDisposition);responseRequestId.current=null;}}>
+                          <option value="CUSTOMER_WAIT">お客様の回答待ち</option>
+                          <option value="INVESTIGATING">確認中</option>
+                          <option value="MONITORING">経過観察</option>
+                        </select></div>
+                      <div><label htmlFor="scoped-follow-up">次回確認予定</label>
+                        <input id="scoped-follow-up" type="datetime-local" required value={followUpLocal} disabled={writeBusy}
+                          onChange={event=>{setFollowUpLocal(event.target.value);responseRequestId.current=null;}}/></div>
+                    </div>
+                    <button type="submit" disabled={writeBusy||detailBusy||!responseText.trim()||!followUpLocal}>対応を記録</button>
+                  </form>
+                </section>}
+                {detail.canUpdate&&correctionTarget&&<section aria-label="対応内容の訂正" className="scoped-action">
+                  <h3>対応内容を訂正</h3><p>状態や次回確認予定は変更せず、訂正履歴を追記します。</p>
+                  <form onSubmit={event=>void submitCorrection(event)}>
+                    <label htmlFor="scoped-correction">訂正後の対応内容</label>
+                    <textarea id="scoped-correction" rows={4} maxLength={4000} required value={correctionText} disabled={writeBusy}
+                      onChange={event=>{setCorrectionText(event.target.value);correctionRequestId.current=null;}}/>
+                    <label htmlFor="scoped-correction-reason">訂正理由</label>
+                    <textarea id="scoped-correction-reason" rows={2} maxLength={1000} required value={correctionReason} disabled={writeBusy}
+                      onChange={event=>{setCorrectionReason(event.target.value);correctionRequestId.current=null;}}/>
+                    <div className="scoped-action-buttons"><button type="submit" disabled={writeBusy||detailBusy||!correctionText.trim()||!correctionReason.trim()}>訂正を追記</button>
+                      <button type="button" className="secondary" disabled={writeBusy} onClick={()=>{setCorrectionTarget(null);correctionRequestId.current=null;}}>キャンセル</button></div>
+                  </form>
+                </section>}
                 <section aria-label="対応履歴" className="scoped-history">
                   <h3>対応履歴</h3>
                   {!history.entries.length&&<p>表示できる記録はまだありません。</p>}
-                  <ol>{history.entries.map(entry=><HistoryEntry key={entry.id} entry={entry}/>)}</ol>
+                  <ol>{history.entries.map(entry=><HistoryEntry key={entry.id} entry={entry} onCorrect={startCorrection}/>)}</ol>
                   {history.nextCursor&&<button className="secondary" disabled={detailBusy} onClick={()=>void loadMoreHistory()}>過去の記録を表示</button>}
                 </section>
               </>}

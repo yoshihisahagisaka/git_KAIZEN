@@ -19,6 +19,7 @@ interface StoredSupportWorkSummary {
  work_id:string;service_id:string;contract_profile_id:string;support_event_id:string;
  title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';next_action:string;
  waiting:boolean;follow_up_at:Date|null;updated_at:Date;
+ lifecycle_revision:number;record_revision:number;
  beneficiary_kind:'CONFIRMED'|'CLEARED'|null;confirmed_recipient_id:string|null;
 }
 
@@ -26,6 +27,7 @@ export interface ScopedSupportWorkSummary {
  workId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;
  title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';nextAction:string;
  waiting:boolean;followUpAt:string|null;updatedAt:string;
+ lifecycleRevision:number;recordRevision:number;canUpdate:boolean;
 }
 
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
@@ -34,6 +36,7 @@ export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
 export interface ScopedSupportHistoryEntry {
  id:string;revision:number;kind:string;occurredAt:string;
  responseText:string|null;disposition:'CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED'|null;
+ canCorrect:boolean;
  supersedesRecordId?:string;correctionReason?:string;
 }
 export interface ScopedSupportWorkHistory {
@@ -44,6 +47,7 @@ interface StoredSupportHistoryEntry {
  id:string;revision:number;kind:string;occurred_at:Date;
  response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
  supersedes_record_id:string|null;correction_reason:string|null;
+ own_record:boolean;has_correction:boolean;
 }
 
 /**
@@ -170,7 +174,9 @@ export class PgScopedAccessReader {
   if(!Number.isFinite(Date.parse(at)))return null;
   return withTenant(this.pool,tenantId,async db=>{
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
-   return work?this.projectSupportWork(work):null;
+   if(!work)return null;
+   const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
+   return this.projectSupportWork(work,canUpdate);
   },true);
  }
 
@@ -187,36 +193,49 @@ export class PgScopedAccessReader {
   return withTenant(this.pool,tenantId,async db=>{
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
    if(!work)return null;
+   const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
    const {rows}=await db.query<StoredSupportHistoryEntry>(`
     with entries as (
      select r.id,r.revision,'RESPONSE'::text as kind,r.recorded_at as occurred_at,
       r.notes->>'responseText' as response_text,r.notes->>'disposition' as disposition,
-      null::text as supersedes_record_id,null::text as correction_reason
+      null::text as supersedes_record_id,null::text as correction_reason,
+      (r.recorded_by_operator_id=$6::uuid) as own_record,
+      exists(select 1 from factact.support_work_records newer
+       where newer.tenant_id=r.tenant_id and newer.work_id=r.work_id
+        and newer.kind='RESPONSE_CORRECTION' and newer.notes->>'supersedesRecordId'=r.id::text) as has_correction
      from factact.support_work_records r
      where r.tenant_id=$2 and r.work_id=$1 and r.kind='RESPONSE'
       and jsonb_typeof(r.notes->'responseText')='string'
       and r.notes->>'disposition' in ('CUSTOMER_WAIT','INVESTIGATING','MONITORING','COMPLETED')
      union all
      select r.id,r.revision,'RESPONSE_CORRECTION'::text,r.recorded_at,
-      r.notes->>'responseText',null::text,r.notes->>'supersedesRecordId',r.correction_reason
+      r.notes->>'responseText',null::text,r.notes->>'supersedesRecordId',r.correction_reason,
+      (r.recorded_by_operator_id=$6::uuid),
+      exists(select 1 from factact.support_work_records newer
+       where newer.tenant_id=r.tenant_id and newer.work_id=r.work_id
+        and newer.kind='RESPONSE_CORRECTION' and newer.notes->>'supersedesRecordId'=r.id::text)
      from factact.support_work_records r
      where r.tenant_id=$2 and r.work_id=$1 and r.kind='RESPONSE_CORRECTION'
       and jsonb_typeof(r.notes->'responseText')='string'
       and jsonb_typeof(r.notes->'supersedesRecordId')='string'
      union all
-     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text,null::text,null::text
+     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text,null::text,null::text,
+      false::boolean,false::boolean
      from factact.support_work_lifecycle_events e
      where e.tenant_id=$2 and e.work_id=$1
       and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED')
     )
     select id,revision,kind,occurred_at,response_text,disposition,
-     supersedes_record_id,correction_reason from entries
+     supersedes_record_id,correction_reason,own_record,has_correction from entries
     where ($3::timestamptz is null or (occurred_at,id)<($3::timestamptz,$4::uuid))
     order by occurred_at desc,id desc limit $5`,
-    [workId,tenantId,cursor?.occurredAt??null,cursor?.id??null,limit]);
+    [workId,tenantId,cursor?.occurredAt??null,cursor?.id??null,limit,actorId]);
    const entries:ScopedSupportHistoryEntry[]=rows.map(row=>({
     id:row.id,revision:row.revision,kind:row.kind,occurredAt:row.occurred_at.toISOString(),
     responseText:row.response_text,disposition:row.disposition,
+    canCorrect:canUpdate&&row.own_record&&!row.has_correction&&
+      (row.kind==='RESPONSE_CORRECTION'||
+       (row.kind==='RESPONSE'&&row.disposition!=='COMPLETED')),
     ...(row.kind==='RESPONSE_CORRECTION'?{
      supersedesRecordId:row.supersedes_record_id!,correctionReason:row.correction_reason!}:{}),
    }));
@@ -224,7 +243,7 @@ export class PgScopedAccessReader {
    const nextCursor=entries.length===limit&&last
     ?Buffer.from(JSON.stringify({occurredAt:last.occurredAt,id:last.id})).toString('base64url')
     :null;
-   return {work:this.projectSupportWork(work),entries,nextCursor};
+   return {work:this.projectSupportWork(work,canUpdate),entries,nextCursor};
   },true);
  }
 
@@ -242,7 +261,9 @@ export class PgScopedAccessReader {
    }
    const {rows}=await db.query<StoredSupportWorkSummary>(`
     select w.id as work_id,w.service_id,w.contract_profile_id,w.support_event_id,w.title,w.status,
-      w.next_action,w.waiting,w.follow_up_at,w.updated_at,
+      w.next_action,w.waiting,w.follow_up_at,w.updated_at,w.lifecycle_revision,
+      (select coalesce(max(r.revision),0)::integer from factact.support_work_records r
+       where r.tenant_id=w.tenant_id and r.work_id=w.id) as record_revision,
       beneficiary.kind as beneficiary_kind,
       beneficiary.service_recipient_id as confirmed_recipient_id
     from factact.work w
@@ -285,7 +306,9 @@ export class PgScopedAccessReader {
   return withTenant(this.pool,tenantId,async db=>{
    const {rows}=await db.query<StoredSupportWorkSummary>(`
     select w.id as work_id,w.service_id,w.contract_profile_id,w.support_event_id,w.title,w.status,
-      w.next_action,w.waiting,w.follow_up_at,w.updated_at,
+      w.next_action,w.waiting,w.follow_up_at,w.updated_at,w.lifecycle_revision,
+      (select coalesce(max(r.revision),0)::integer from factact.support_work_records r
+       where r.tenant_id=w.tenant_id and r.work_id=w.id) as record_revision,
       beneficiary.kind as beneficiary_kind,
       beneficiary.service_recipient_id as confirmed_recipient_id
     from factact.work w
@@ -338,7 +361,10 @@ export class PgScopedAccessReader {
      contractProfileId:work.contract_profile_id,
      scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id,workId:work.work_id},
      objectKind:'SUPPORT',operation:'READ'};
-    if(await this.authorizedInTransaction(db,actorId,target,at))items.push(this.projectSupportWork(work));
+    if(await this.authorizedInTransaction(db,actorId,target,at)){
+     const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
+     items.push(this.projectSupportWork(work,canUpdate));
+    }
    }
    // No hasMore/total: pagination metadata cannot reveal hidden candidates.
    const last=items.at(-1);
@@ -349,11 +375,22 @@ export class PgScopedAccessReader {
   },true);
  }
 
- private projectSupportWork(work:StoredSupportWorkSummary):ScopedSupportWorkSummary{
+ private async canUpdateWork(db:PoolClient,tenantId:string,actorId:string,
+  work:StoredSupportWorkSummary,at:string):Promise<boolean>{
+   if(work.status==='COMPLETED'||!work.confirmed_recipient_id)return false;
+   return this.authorizedInTransaction(db,actorId,{
+    tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+    scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id,workId:work.work_id},
+    objectKind:'SUPPORT',operation:'UPDATE',
+   },at);
+ }
+
+ private projectSupportWork(work:StoredSupportWorkSummary,canUpdate=false):ScopedSupportWorkSummary{
   return {workId:work.work_id,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
    serviceRecipientId:work.confirmed_recipient_id!,title:work.title,status:work.status,
    nextAction:work.next_action,waiting:work.waiting,
-   followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString()};
+   followUpAt:work.follow_up_at?.toISOString()??null,updatedAt:work.updated_at.toISOString(),
+   lifecycleRevision:work.lifecycle_revision,recordRevision:work.record_revision,canUpdate};
  }
 
  private async authorizedInTransaction(db:PoolClient,actorId:string,target:ResolvedAccessTarget,at:string):Promise<boolean>{

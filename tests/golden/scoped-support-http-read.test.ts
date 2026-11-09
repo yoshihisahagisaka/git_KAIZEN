@@ -123,8 +123,8 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   expect(allowed.body.data).toMatchObject({workId:workA,serviceId:ids.service,
    contractProfileId:ids.contract,serviceRecipientId:recipientA});
   expect(Object.keys(allowed.body.data).sort()).toEqual([
-   'contractProfileId','followUpAt','nextAction','serviceId','serviceRecipientId',
-   'status','title','updatedAt','waiting','workId',
+   'canUpdate','contractProfileId','followUpAt','lifecycleRevision','nextAction','recordRevision',
+   'serviceId','serviceRecipientId','status','title','updatedAt','waiting','workId',
   ]);
   const forbidden=await get(workB).expect(404),missing=await get(randomUUID()).expect(404);
   expect(forbidden.body.error.code).toBe('NOT_FOUND');
@@ -134,6 +134,38 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await request(app).get(`/api/scoped/support-work/${workB}?serviceRecipientId=${recipientA}&serviceId=${ids.service}`)
    .set('Cookie',sessionCookie).expect(404);
   await request(app).get('/api/support').set('Cookie',sessionCookie).expect(403);
+ });
+
+ it('projects current revisions and UPDATE/correction capabilities only for the active actor',async()=>{
+  const readGrant=await grant('SERVICE_RECIPIENT',recipientA);
+  const readOnly=await get(workA).expect(200);
+  expect(readOnly.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:false});
+  const readOnlyPage=await getPage().expect(200);
+  expect(readOnlyPage.body.data.items[0].canUpdate).toBe(false);
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+   [readGrant,['READ','UPDATE']]);
+  const writable=await get(workA).expect(200);
+  expect(writable.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:true});
+  expect((await getPage().expect(200)).body.data.items[0].canUpdate).toBe(true);
+  const text='An external scoped response';
+  await postScopedResponse(workA,{requestId:randomUUID(),expectedLifecycleRevision:0,
+   expectedRecordRevision:0,responseText:text,disposition:'MONITORING',followUpAt:'2026-11-12T00:00:00.000Z'})
+   .expect(200);
+  const history=await getHistory(workA).expect(200);
+  expect(history.body.data.work).toMatchObject({lifecycleRevision:1,recordRevision:1,canUpdate:true});
+  const own=history.body.data.entries.find((e:{kind:string})=>e.kind==='RESPONSE');
+  expect(own).toMatchObject({responseText:text,canCorrect:true});
+  const corrected=await postCorrection(workA,own.id,{requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Corrected external response',correctionReason:'Typo fixed'}).expect(200);
+  const newer=await getHistory(workA).expect(200);
+  expect(newer.body.data.work).toMatchObject({lifecycleRevision:1,recordRevision:2,canUpdate:true});
+  expect(newer.body.data.entries.find((e:{id:string})=>e.id===own.id).canCorrect).toBe(false);
+  expect(newer.body.data.entries.find((e:{id:string})=>e.id===corrected.body.data.id).canCorrect).toBe(true);
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+   [readGrant,['READ']]);
+  expect((await get(workA).expect(200)).body.data.canUpdate).toBe(false);
+  expect((await getHistory(workA).expect(200)).body.data.entries.every((e:{canCorrect:boolean})=>!e.canCorrect)).toBe(true);
+  expect((await get(workB).expect(404)).body.error.code).toBe('NOT_FOUND');
  });
 
  it('keeps Work-only grants narrow and expands to B only for an explicit Service grant',async()=>{
@@ -802,7 +834,7 @@ describe('scoped SUPPORT Work detail and bounded activity history',()=>{
    responseText:null,disposition:null,
   });
   expect(Object.keys(data.entries[0]).sort()).toEqual([
-   'disposition','id','kind','occurredAt','responseText','revision',
+   'canCorrect','disposition','id','kind','occurredAt','responseText','revision',
   ]);
   const serialized=JSON.stringify(response.body);
   for(const secret of ['A internal draft secret','Private internal waiting reason','B confidential response',

@@ -79,7 +79,7 @@ function App() {
       {session.operator.readAuthorityMode==='INTERNAL_V1'
         ? <JoinUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} operator={session.operator}/>
         : session.operator.readAuthorityMode==='SCOPED'
-          ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} />
+          ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken}/>
           : <p role="alert">このアカウントで利用できる画面を確認できませんでした。管理者にお問い合わせください。</p>}
     </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href="/auth/login">Googleでログイン</a></div>}
   </main>;
