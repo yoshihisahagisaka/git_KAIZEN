@@ -5,6 +5,12 @@ import pino from 'pino';
 import {ids,testDatabase} from '../fixtures/database.js';
 import {withTenant} from '../../apps/web/src/server/persistence/database.js';
 import {PgJoinRepository} from '../../apps/web/src/server/persistence/join-repository.js';
+import {PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {JoinCommands} from '../../packages/application/src/join-commands.js';
+import {JoinQueries} from '../../packages/application/src/join-queries.js';
+import {PgExploreSearchUnitOfWork} from '../../apps/web/src/server/persistence/explore-repository.js';
+import {ExploreQueries} from '../../packages/application/src/explore-queries.js';
+import {PgScopedGrantManager} from '../../apps/web/src/server/persistence/scoped-grant-manager.js';
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
@@ -72,10 +78,15 @@ beforeAll(async()=>{
  reader=new PgScopedAccessReader(db.runtime,{now:()=>now});
  scopedCommands=new SupportCommands(uow,{now:()=>now,id:randomUUID},reader);
  store=new PgIdentityStore(db.runtime,db.oidc);
+ const joinUow=new PgJoinUnitOfWork(db.runtime);
+ const exploreUow=new PgExploreSearchUnitOfWork(db.runtime);
  app=createApp(config,store,{
   authorizationUrl:()=> 'https://accounts.google.com/authorize',
   verifyCallback:async()=>({issuer:config.issuer,subject:'scoped-support-user'}),
- },pino({level:'silent'}),undefined,{commands:scopedCommands,queries:new SupportQueries(uow)},undefined,reader);
+ },pino({level:'silent'}),
+ {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
+ {commands:scopedCommands,queries:new SupportQueries(uow)},
+ {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime));
 },60_000);
 beforeEach(async()=>{
  await db.reset();
@@ -108,6 +119,49 @@ beforeEach(async()=>{
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
+ it('keeps every mounted INTERNAL JOIN/SUPPORT/Explore read and write surface closed to a SCOPED actor with legacy Roles',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['READ','UPDATE']});
+  const paths=[
+   '/api/home','/api/work','/api/work/'+workA,'/api/devices','/api/people/'+ids.person+'/context',
+   '/api/support','/api/support-responsibility','/api/support/'+eventA,
+   '/api/explore/search?q=Customer&types=ORGANIZATION,PERSON,WORK,KNOWLEDGE_CANDIDATE',
+  ];
+  for(const path of paths){
+   const response=await request(app).get(path).set('Cookie',sessionCookie);
+   expect(response.status,`GET ${path}`).toBe(403);
+   expect(JSON.stringify(response.body)).not.toContain('B customer confidential');
+   expect(JSON.stringify(response.body)).not.toContain('Company B confidential');
+  }
+  const before=(await db.admin.query('select count(*)::integer as n from factact.support_events')).rows[0].n;
+  const forged=await request(app).post('/api/support').set('Cookie',sessionCookie)
+   .set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'Forbidden intake'});
+  expect(forged.status).toBe(403);
+  const forgedResponse=await request(app).post(`/api/support-work/${workA}/responses`)
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,
+    responseText:'Forbidden broad response',disposition:'MONITORING',followUpAt:'2026-11-12T00:00:00.000Z'});
+  expect(forgedResponse.status).toBe(403);
+  const forgedJoin=await request(app).post('/api/join-events')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({organizationId:ids.organization,personId:ids.person,serviceId:ids.service,joinDate:'2026-11-12'});
+  expect(forgedJoin.status).toBe(403);
+  const grantsBefore=(await db.admin.query('select count(*)::integer as n from factact.scoped_actor_grants')).rows[0].n;
+  const forgedGrant=await request(app).post('/api/admin/scoped-grants')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),actorOperatorId:scopedActor,serviceId:ids.service,
+    contractProfileId:ids.contract,scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:recipientB},
+    objectKind:'SUPPORT',operations:['READ'],effectiveFrom:'2026-11-01T00:00:00.000Z',
+    effectiveUntil:null,reason:'Forged privileged grant'});
+  expect(forgedGrant.status).toBe(403);
+  expect((await db.admin.query('select count(*)::integer as n from factact.scoped_actor_grants')).rows[0].n).toBe(grantsBefore);
+  const after=(await db.admin.query('select count(*)::integer as n from factact.support_events')).rows[0].n;
+  expect(after).toBe(before);
+  expect((await db.admin.query('select count(*)::integer as n from factact.support_work_records where work_id=$1',[workA])).rows[0].n).toBe(0);
+  // The same session can still use its explicit narrow SUPPORT grant.
+  expect((await get(workA).expect(200)).body.data.canUpdate).toBe(true);
+  await get(workB).expect(404);
+ });
  it('denies every Work without an explicit grant despite assigned internal Roles',async()=>{
   const session=await request(app).get('/api/session').set('Cookie',sessionCookie).expect(200);
   expect(session.body.data.operator.roles).toEqual([]);
