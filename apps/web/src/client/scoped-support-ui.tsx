@@ -49,6 +49,7 @@ function ScopedRegistryContext({work,csrf}:{work:ScopedSupportWorkSummary;csrf:s
   const [saving,setSaving]=useState(false);
   const [writeError,setWriteError]=useState('');
   const [pendingNotice,setPendingNotice]=useState('');
+  const [refreshIndex,setRefreshIndex]=useState(0);
   const retry=useRef<{personId:string;payload:{serviceId:string;requestId:string;requestKey:string;
    proposedDisplayName:string;reason:string;expectedRegistryRevision:number}}|null>(null);
   const saveInFlight=useRef(false);
@@ -65,7 +66,7 @@ function ScopedRegistryContext({work,csrf}:{work:ScopedSupportWorkSummary;csrf:s
     }).catch(()=>{if(active){setPage(null);setError(true);}})
       .finally(()=>{if(active)setBusy(false);});
     return ()=>{active=false;};
-  },[url,organizationId]);
+  },[url,organizationId,refreshIndex]);
 
   function startEditing(person:ScopedRegistryPeoplePage['items'][number]){
     setEditingId(person.personId);setProposedName(person.displayName);setReason('');
@@ -123,6 +124,8 @@ function ScopedRegistryContext({work,csrf}:{work:ScopedSupportWorkSummary;csrf:s
 
   return <section aria-label="受益企業の登録情報" className="scoped-registry-context">
     <h3>受益企業の登録情報</h3>
+    <button type="button" className="secondary" disabled={busy||saving}
+      onClick={()=>setRefreshIndex(value=>value+1)}>登録情報を更新</button>
     {busy&&<p role="status">登録情報を確認しています…</p>}
     {error&&<p role="alert">登録情報を取得できませんでした。最新情報を確認してください。</p>}
     {pendingNotice&&<p role="status" className="scoped-write-notice">{pendingNotice}</p>}
@@ -132,6 +135,15 @@ function ScopedRegistryContext({work,csrf}:{work:ScopedSupportWorkSummary;csrf:s
       {!page.items.length&&<p>登録されている方はいません。</p>}
       <ul>{page.items.map(person=><li key={person.personId}>
         <span>{person.displayName}</span><span>{lifecycleLabels[person.lifecycleStatus]}</span>
+        {person.latestOwnRequest&&<div className="registry-own-request">
+         <strong>前回の変更依頼：{person.latestOwnRequest.status==='REJECTED'?'差し戻し':
+          person.latestOwnRequest.status==='COMMITTED'?'確定済み':'確認待ち'}</strong>
+         <p>申請した表示名：{person.latestOwnRequest.proposedDisplayName}</p>
+         {person.latestOwnRequest.status==='REJECTED'&&<p>
+          差し戻し理由：{person.latestOwnRequest.rejectionReason}</p>}
+         {person.latestOwnRequest.status==='REJECTED'&&<small>
+          訂正する場合は「編集」から新しい変更依頼を提出してください。</small>}
+        </div>}
         {page.canPropose&&editingId!==person.personId&&<button type="button" className="secondary"
           disabled={saving||!Number.isSafeInteger(person.registryRevision)}
           onClick={()=>startEditing(person)}>編集</button>}

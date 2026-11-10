@@ -146,6 +146,9 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .scoped-registry-edit label { margin:10px 0 4px; }
 .scoped-registry-edit small { display:block; color:#506970; }
 .scoped-registry-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.registry-own-request { flex-basis:100%; border-left:3px solid #849fa4; padding:6px 10px; background:#f5f8f8; }
+.registry-own-request p { margin:6px 0; }
+.registry-own-request small { color:#506970; }
 .registry-review { padding:16px 20px; margin:0 0 20px; background:white; border:1px solid #cbdadd; border-radius:8px; }
 .registry-review-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .registry-review-heading h2 { margin:0; }
@@ -155,6 +158,10 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .registry-review-list dl { display:grid; grid-template-columns:minmax(130px,.65fr) minmax(0,2fr); gap:8px 12px; }
 .registry-review-list dt { font-weight:600; }
 .registry-review-list dd { margin:0; overflow-wrap:anywhere; }
+.registry-review-actions { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 0; }
+.registry-review-return { display:grid; gap:8px; margin-top:12px; }
+.registry-review-return label { font-weight:600; }
+.registry-review-return textarea { width:100%; max-width:100%; box-sizing:border-box; min-height:80px; }
 .scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
 .scoped-history li { margin:0 0 18px; }
 .scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }

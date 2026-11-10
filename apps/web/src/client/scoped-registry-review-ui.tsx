@@ -15,6 +15,8 @@ export function ScopedRegistryReviewUI({csrf}:{csrf:string}){
  const [notice,setNotice]=useState('');
  const [revision,setRevision]=useState(0);
  const [confirmingId,setConfirmingId]=useState<string|null>(null);
+ const [returningId,setReturningId]=useState<string|null>(null);
+ const [returnReason,setReturnReason]=useState('');
  const inFlight=useRef(false);
  useEffect(()=>{
   if(!open){setPage(null);return;}
@@ -47,6 +49,26 @@ export function ScopedRegistryReviewUI({csrf}:{csrf:string}){
   }
  }
 
+ async function returnRequest(event:React.FormEvent<HTMLFormElement>,item:RegistryReviewItem){
+  event.preventDefault();
+  const reason=returnReason.trim();
+  if(returningId!==item.changeId||!reason||inFlight.current)return;
+  inFlight.current=true;setConfirmingId(item.changeId);setActionError('');setNotice('');
+  try{
+   const result=await api<{changeId:string;status:string}>(
+    `/api/scoped/registry/review-queue/${item.changeId}/return`,csrf,{reason});
+   if(result.changeId!==item.changeId||result.status!=='REJECTED')
+    throw Error('Unexpected Registry return result');
+   setNotice('変更依頼を差し戻しました。元の申請内容と理由は履歴に残ります。');
+   setReturnReason('');
+  }catch{
+   setNotice('');setActionError('差し戻しできなかったか、結果を確認できませんでした。最新の確認待ちを取得してください。');
+  }finally{
+   inFlight.current=false;setConfirmingId(null);setReturningId(null);
+   setPage(null);setRevision(value=>value+1);
+  }
+ }
+
  async function more(){
   if(!page?.nextCursor||loadMoreBusy)return;
   setLoadMoreBusy(true);setError('');
@@ -67,7 +89,8 @@ export function ScopedRegistryReviewUI({csrf}:{csrf:string}){
   <div className="registry-review-heading">
    <h2>Registry確認待ち</h2>
    <button type="button" className="secondary" aria-expanded={open}
-    onClick={()=>{setOpen(!open);setNotice('');setError('');setActionError('');}}> {open?'閉じる':'確認する'} </button>
+    onClick={()=>{setOpen(!open);setNotice('');setError('');setActionError('');
+     setReturningId(null);setReturnReason('');}}> {open?'閉じる':'確認する'} </button>
   </div>
   {open&&<>
    <p className="registry-review-note">ご自身の権限で確認できる変更依頼のみ表示します。</p>
@@ -88,9 +111,27 @@ export function ScopedRegistryReviewUI({csrf}:{csrf:string}){
      <dt>状態</dt><dd>{item.status==='PROPOSED'?'確認待ち':'確認済み・確定待ち'}</dd>
     </dl>
     <p className="registry-review-note">申告情報です。独立した本人確認済みの事実ではありません。</p>
-    {item.canConfirm?<button type="button" disabled={confirmingId!==null}
-      onClick={()=>void confirm(item)}>{item.status==='PROPOSED'?'確認して確定':'確定'}</button>:
-      <p>この変更を確定するための権限または確認者条件が不足しています。</p>}
+    {returningId===item.changeId?<form className="registry-review-return"
+      aria-label="変更依頼の差し戻し" onSubmit={event=>void returnRequest(event,item)}>
+      <label htmlFor={`return-reason-${item.changeId}`}>差し戻し理由（必須）</label>
+      <textarea id={`return-reason-${item.changeId}`} value={returnReason} required
+       maxLength={1000} disabled={confirmingId!==null}
+       onChange={event=>setReturnReason(event.target.value)}/>
+      <div className="registry-review-actions">
+       <button type="submit" disabled={confirmingId!==null||!returnReason.trim()}>差し戻す</button>
+       <button type="button" className="secondary" disabled={confirmingId!==null}
+        onClick={()=>{setReturningId(null);setReturnReason('');}}>キャンセル</button>
+      </div>
+     </form>:<>
+      <div className="registry-review-actions">
+       {item.canConfirm&&<button type="button" disabled={confirmingId!==null}
+        onClick={()=>void confirm(item)}>{item.status==='PROPOSED'?'確認して確定':'確定'}</button>}
+       <button type="button" className="secondary" disabled={confirmingId!==null}
+        onClick={()=>{setReturningId(item.changeId);setReturnReason('');setNotice('');
+         setActionError('');}}>差し戻し</button>
+      </div>
+      {!item.canConfirm&&<p>確定には追加の権限または確認者条件が必要です。</p>}
+     </>}
    </li>)}</ul>}
    {page?.nextCursor&&<button type="button" className="secondary" disabled={loadMoreBusy}
      onClick={()=>void more()}>さらに表示</button>}

@@ -29,6 +29,9 @@ const directory=()=>request(app).get('/api/scoped/registry/review-queue?limit=20
 const confirm=(id:string,body:Record<string,unknown>={attestation:'REVIEWED_DISPLAY_NAME_CORRECTION_V1'},csrf='csrf')=>
  request(app).post(`/api/scoped/registry/review-queue/${id}/confirm`)
   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
+const returnRequest=(id:string,body:Record<string,unknown>={reason:'登録表記の再確認が必要です'},csrf='csrf')=>
+ request(app).post(`/api/scoped/registry/review-queue/${id}/return`)
+  .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
 async function grant(actor:string,operations:string[],recipient:string){
  const id=randomUUID();
  await db.admin.query(`insert into factact.scoped_actor_grants
@@ -164,5 +167,54 @@ describe('Registry review queue and atomic one-click Verify → Commit',()=>{
   expect((await directory().expect(200)).body.data.items).toEqual([]);
   const current=await db.admin.query('select display_name,registry_revision from factact.people where id=$1',[ids.person]);
   expect(current.rows).toEqual([{display_name:'田中 一郎',registry_revision:'0'}]);
+ });
+
+ it('return requires session, CSRF, bounded reason and no forged Actor/Tenant fields',async()=>{
+  const changeId=randomUUID();
+  await request(app).post(`/api/scoped/registry/review-queue/${changeId}/return`)
+   .send({reason:'申請理由を確認してください'}).expect(401);
+  await returnRequest(changeId,undefined,'wrong').expect(403);
+  await returnRequest(changeId,{reason:'  '}).expect(400);
+  await returnRequest(changeId,{reason:'x'.repeat(1001)}).expect(400);
+  await returnRequest(changeId,{reason:'再確認',tenantId:ids.tenant}).expect(400);
+  await returnRequest(changeId,{reason:'再確認',actorOperatorId:reviewer}).expect(400);
+ });
+
+ it('REVIEW-only Actor returns a proposal with one reason/Evidence/Audit and no Person update',async()=>{
+  await grant(ids.operator,['UPDATE'],recipientA);
+  await grant(reviewer,['REVIEW'],recipientA);
+  const {changeId}=await propose();
+  expect((await directory().expect(200)).body.data.items).toEqual([
+   expect.objectContaining({changeId,canConfirm:false})]);
+  const reason='登録名の正式な表記を申請者に再確認してください';
+  expect((await returnRequest(changeId,{reason}).expect(200)).body.data)
+   .toEqual({changeId,status:'REJECTED'});
+  await returnRequest(changeId,{reason}).expect(200);
+  await returnRequest(changeId,{reason:'違う理由'}).expect(409);
+  expect((await directory().expect(200)).body.data.items).toEqual([]);
+  const {rows}=await db.admin.query(`select c.status,c.rejection_reason,p.display_name,
+    (select count(*)::integer from factact.change_evidence where change_id=$1) as evidence,
+    (select count(*)::integer from factact.audit_events where aggregate_id=$1) as audits
+    from factact.changes c join factact.registry_edit_requests r
+      on r.tenant_id=c.tenant_id and r.id=c.registry_edit_request_id
+    join factact.people p on p.id=r.target_person_id where c.id=$1`,[changeId]);
+  expect(rows).toEqual([{status:'REJECTED',rejection_reason:reason,
+   display_name:'田中 一郎',evidence:1,audits:2}]);
+ });
+
+ it('A-only return does not reveal B and revoked REVIEW fails closed',async()=>{
+  await grant(ids.operator,['UPDATE'],recipientA);
+  await grant(ids.operator,['UPDATE'],recipientB);
+  const a=await propose(),b=await propose(personB,'Customer B revised');
+  const reviewGrant=await grant(reviewer,['REVIEW'],recipientA);
+  const unknown=await returnRequest(randomUUID()).expect(404);
+  const outside=await returnRequest(b.changeId).expect(404);
+  expect(outside.body.error).toEqual(unknown.body.error);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=now(),revoked_by_operator_id=$1,revocation_reason='Review return HTTP test'
+    where id=$2`,[ids.operator,reviewGrant]);
+  await returnRequest(a.changeId).expect(404);
+  expect((await db.admin.query(`select count(*)::integer as n from factact.changes
+    where status='REJECTED'`)).rows[0].n).toBe(0);
  });
 });
