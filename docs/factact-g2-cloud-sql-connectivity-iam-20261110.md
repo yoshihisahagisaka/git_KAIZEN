@@ -264,4 +264,3 @@ merging Draft PRs #60, #61 or #62.
 - [Cloud SQL IAM database authentication](https://docs.cloud.google.com/sql/docs/postgres/iam-authentication)
 - [Authorize with SSL/TLS certificates](https://docs.cloud.google.com/sql/docs/postgres/authorize-ssl)
 - [VPC pricing](https://cloud.google.com/vpc/pricing)
-
