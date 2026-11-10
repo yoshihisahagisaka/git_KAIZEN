@@ -21,3 +21,19 @@ role. Hosted Supabase role creation, ownership and migration privileges remain a
 deployment verification gate; no hosted incompatibility has been observed because
 hosted execution has not yet been attempted. Do not silently weaken the role model
 if this gate fails; record the exact incompatibility for review.
+
+Cloud SQL applicability amendment, 2026-11-10: every role, RLS and verification
+constraint in this ADR also applies to Cloud SQL. Hosted execution must retain
+`ENABLE/FORCE ROW LEVEL SECURITY`, fail-closed policies, exact grants and the
+separation of Migration/Admin from the dedicated Runtime, OIDC Session Minter
+and Registry Executor roles. Runtime and executor roles must not own business
+tables or receive superuser or `BYPASSRLS`; a Cloud Run service account does not
+replace or enlarge database authority. `SECURITY DEFINER` ownership, fixed
+`search_path`, function `EXECUTE` grants and temporary migration privileges
+must be checked under the exact hosted principals.
+
+Before applying any existing Supabase CLI v2 migration to Cloud SQL, verify role
+creation, ownership transfer, extension and SQL compatibility in an isolated
+synthetic environment. Run the RLS, authentication, audit, Golden Test,
+rollback, pooled-connection and connection-count gates there. An incompatibility
+is a stop condition for review, never a reason to weaken the role model.
