@@ -20,12 +20,14 @@ gates and unresolved gaps in sections 8 and 9:
 2. Give the Cloud Run service **Direct VPC egress** to that VPC. Do not create
    a Serverless VPC Access connector for the initial candidate.
 3. Run Cloud SQL Auth Proxy v2 beside the application and select the private
-   address with `--private-ip`. Bind its listener only to the application
-   container's local interface or a shared Unix socket.
+   address with `--private-ip`. The first candidate is a TCP listener bound to
+   `localhost` only; a shared Unix socket remains a fallback if lifecycle or
+   client behavior requires it.
 4. Let the Cloud Run workload service account authorize the proxy with
-   `roles/cloudsql.client`, preferably constrained to the one staging
-   instance by an IAM Condition after GCP support and condition semantics are
-   verified.
+   `roles/cloudsql.client`. The first candidate is an IAM Condition using the
+   documented Cloud SQL instance resource attributes to constrain access to
+   the one staging instance; its effective permissions and proxy behavior
+   must be proven before construction.
 5. Keep PostgreSQL built-in authentication and the existing exact roles:
    `factact_runtime`, `factact_oidc_session_minter` and the migration/admin
    role. Do **not** adopt IAM database authentication in G2.
@@ -46,6 +48,12 @@ This is a **design candidate, not build authorization**. In particular, the
 current application cannot be deployed unchanged against the proposed local
 proxy endpoint; section 7 records that incompatibility rather than silently
 changing the implementation.
+
+Production must not gain a generic `DATABASE_SSL=false` escape hatch. A later
+implementation must introduce an explicit Proxy connection mode whose local
+`localhost` hop is non-TLS only because Auth Proxy v2 provides verified TLS on
+the remote database hop. Direct database modes must continue to require
+verified TLS.
 
 ## 2. Connection option Fit/Gap
 
@@ -78,6 +86,11 @@ The proposed path is:
 - Select Cloud Run second-generation execution and pin an approved Auth Proxy
   v2 image digest. Define startup/readiness ordering, failure behavior and an
   update cadence before deployment.
+- Scan that pinned proxy image before construction with the approved artifact
+  vulnerability scanner. Any **High or Critical** finding is a STOP unless a
+  documented, explicitly approved response exists for that exact finding and
+  image digest; record scanner, database timestamp, digest, findings and
+  disposition as evidence.
 - Private IP requires a VPC range for private services access. Exact subnet,
   allocated range, firewall and organization-policy compatibility are not yet
   verified.
@@ -110,14 +123,16 @@ Cloud Run deployable. Therefore one workload service account must be able to
 read both serving credentials even though PostgreSQL roles, URLs, pools and
 startup checks remain separate. Full IAM isolation of the two credentials
 would require a separate process/service boundary and is **not** authorized by
-the current Canonical. Record this as residual risk; do not split the service
-without a new decision.
+the current Canonical. Keep the current single service and continue separation
+with the exact PostgreSQL Roles and independent credentials. Record the IAM
+residual risk; do not split the service without a new decision.
 
 `roles/cloudsql.client` grants connection authorization, not database
-privileges. PostgreSQL login and RLS remain a separate control. If an
-instance-scoped IAM Condition cannot be proven reliable for all proxy calls,
-use the project-level role in the dedicated `pj-factact` project and record
-that scope explicitly.
+privileges. PostgreSQL login and RLS remain a separate control. The first
+candidate limits the role to the staging instance with an IAM Condition based
+on documented `resource.name` and `resource.type` attributes. If condition
+support or all proxy calls cannot be proven, STOP and return for an explicit
+scope decision; do not silently broaden the grant to project scope.
 
 ## 5. Secret handling and rotation
 
@@ -188,9 +203,9 @@ The two connection-configuration gaps are intentional STOP items. G2 does not
 change PR #60 to hide them. The next implementation decision must choose one
 of these approaches and update tests accordingly:
 
-1. add an explicit proxy/local-socket mode that disables TLS only on the local
-   hop while preserving production's “verified encrypted DB transport”
-   invariant through the proxy; or
+1. add an explicit proxy mode, initially using `localhost`, that disables TLS
+   only on that local hop while preserving production's “verified encrypted DB
+   transport” invariant through the proxy; or
 2. reject the proxy candidate and fully specify direct private-IP TLS,
    including CA and server-name verification.
 
@@ -202,7 +217,8 @@ recorded:
 | Gate | Required evidence |
 | --- | --- |
 | G2-1 Network | `pj-factact` billing and organization policies; VPC/subnet/private-services-access range; Tokyo support; Direct VPC egress quota and IP allocation; no public DB address |
-| G2-2 Proxy/TLS | Pinned Auth Proxy v2 digest; `--private-ip`; local-only listener; second-generation Cloud Run; readiness/restart test; verified TLS evidence; Cloud SQL Admin API usage acknowledged |
+| G2-2 Proxy/TLS | Pinned Auth Proxy v2 digest; `--private-ip`; `localhost`-only listener; explicit application Proxy mode without a generic production `DATABASE_SSL=false`; second-generation Cloud Run; readiness/restart test; verified TLS evidence; Cloud SQL Admin API usage acknowledged |
+| G2-2A Proxy image | Approved vulnerability scan of the pinned image digest, with scanner/database timestamp and disposition; High or Critical findings STOP unless an approved response for that exact finding exists |
 | G2-3 IAM | Named user-managed SAs; exact role matrix; no default SA/Editor/key; deployer `actAs` boundary; instance IAM Condition result or accepted project scope |
 | G2-4 Secrets | Separate secrets and per-secret access; pinned versions; redacted logs; successful rotation and rollback rehearsal without secret disclosure |
 | G2-5 Database | Existing exact roles and ownership; RLS/Golden Tests; migration preflight; audit evidence; observed sessions stay below the G1 40-session stop threshold |
@@ -225,8 +241,9 @@ Synthetic Staging service for Registry Policy.
    behavior applies to the private path.
 4. **Credential rotation:** accept a bounded maintenance window or approve a
    future dual-credential design; define owner, cadence and rollback.
-5. **Service-account scope:** prove an instance-scoped IAM Condition or accept
-   `roles/cloudsql.client` at the dedicated-project scope.
+5. **Service-account scope:** prove the documented resource-attribute IAM
+   Condition limits Cloud SQL Client calls to the staging instance. Failure is
+   a STOP and requires an explicit scope decision.
 6. **Audit logs:** decide which Cloud Audit Logs Data Access categories and
    retention are required, and add their ingestion/storage cost.
 7. **OIDC IAM residual risk:** accept one workload SA reading both serving
@@ -258,6 +275,7 @@ merging Draft PRs #60, #61 or #62.
 - [Serverless VPC Access](https://docs.cloud.google.com/vpc/docs/serverless-vpc-access)
 - [Cloud Run service identity](https://docs.cloud.google.com/run/docs/securing/service-identity)
 - [Cloud SQL roles and permissions](https://docs.cloud.google.com/sql/docs/postgres/roles-and-permissions)
+- [Cloud SQL IAM Conditions](https://docs.cloud.google.com/sql/docs/postgres/iam-conditions)
 - [Secret Manager access control](https://docs.cloud.google.com/secret-manager/docs/access-control)
 - [Configure secrets for Cloud Run](https://docs.cloud.google.com/run/docs/configuring/services/secrets)
 - [Secret Manager rotation schedules](https://docs.cloud.google.com/secret-manager/docs/secret-rotation)
