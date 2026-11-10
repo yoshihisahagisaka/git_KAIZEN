@@ -16,6 +16,8 @@ import { PgExploreSearchUnitOfWork } from './persistence/explore-repository.js';
 import { ExploreQueries } from '../../../../packages/application/src/explore-queries.js';
 import { PgScopedAccessReader } from './persistence/scoped-access-reader.js';
 import {PgScopedGrantManager} from './persistence/scoped-grant-manager.js';
+import {RegistryEditCommands} from '../../../../packages/application/src/registry-edit-commands.js';
+import {PgRegistryEditStore} from './persistence/registry-edit-store.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'oidcSessionDatabaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -37,7 +39,8 @@ async function main() {
     const app = createApp(config, new PgIdentityStore(pool, oidcSessionPool), provider, logger,
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
-      {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader);
+      {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader,
+      new RegistryEditCommands(new PgRegistryEditStore(pool)));
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });
