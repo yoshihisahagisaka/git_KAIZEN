@@ -21,8 +21,10 @@ import type {ScopedGrantManager} from './persistence/scoped-grant-manager.js';
 import {scopedRegistryRoutes,type ScopedRegistryReader} from './scoped-registry-routes.js';
 import type {RegistryEditCommands} from '../../../../packages/application/src/registry-edit-commands.js';
 import {registryReviewRoutes,type RegistryReviewReader} from './registry-review-routes.js';
+import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
+import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -44,6 +46,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (scopedGrantManager) app.use('/api',scopedGrantRoutes(scopedGrantManager));
   if (scopedRegistry) app.use('/api',scopedRegistryRoutes(scopedRegistry,registryEditCommands));
   if (registryReview && registryEditCommands) app.use('/api',registryReviewRoutes(registryReview,registryEditCommands));
+  if (operatorPolicyAdmin) app.use('/api',operatorPolicyAdminRoutes(operatorPolicyAdmin));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
