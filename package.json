@@ -26,6 +26,7 @@
     "auth:verify-grant-approver": "tsx --env-file=.env scripts/verify-google-identity.ts --scoped-grant-approver",
     "db:provision-grant-approver": "tsx --env-file=.env scripts/provision-scoped-grant-approver.ts",
     "db:migrate": "supabase migration up --local",
+    "db:preflight-registry-executor": "tsx scripts/registry-migration-preflight.ts",
     "db:reset": "supabase db reset --local",
     "db:bind-operator": "tsx --env-file=.env scripts/bind-operator.ts"
   },
