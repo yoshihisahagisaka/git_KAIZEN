@@ -14,10 +14,10 @@ describe('Registry migration preflight / fail-closed disablement',()=>{
   it('reports installed function owner and 13 FORCE RLS tables using SELECT only',async()=>{
     const before=await db.admin.query(`select count(*)::integer as n from factact.audit_events`);
     const result=await readRegistryPreflight(db.admin);
-    expect(result).toMatchObject({phase:'INSTALLED',go:true,
+    expect(result).toMatchObject({phase:'RETURN_INSTALLED',go:true,
       checks:{postgres16Plus:true,forcedTenantRls:true,runtimeNoNameUpdate:true,
-        runtimeNoPrivateHelper:true,runtimeThreeRpcs:true,
-        executorNoLoginBypass:true,executorOwnsFourFunctions:true,
+        runtimeNoPrivateHelper:true,runtimeExpectedRpcs:true,returnRpcInstalled:true,
+        executorNoLoginBypass:true,executorOwnsTargetFunctions:true,
         executorNoMembership:true,executorNoBusinessTables:true,
         executorNoSchemaCreate:true,executorThirteenRlsPolicies:true,
         executorOnlyNameNotOrganization:true,executorNoGrantMutation:true}});
@@ -42,12 +42,15 @@ describe('Registry migration preflight / fail-closed disablement',()=>{
     expect((await readRegistryPreflight(db.admin)).go).toBe(true);
   });
 
-  it('disables only the three runtime RPCs, preserves Person and leaves no role membership',async()=>{
+  it('disables all four Registry RPCs, preserves Person and leaves no role membership',async()=>{
     const sql=await readFile('scripts/registry-disable-execution.sql','utf8');
     await db.admin.query(sql);
     const result=await readRegistryPreflight(db.admin);
     expect(result.go).toBe(false);
-    expect(result.checks.runtimeThreeRpcs).toBe(false);
+    expect(result.checks.runtimeExpectedRpcs).toBe(false);
+    expect((await db.admin.query(`select has_function_privilege('factact_runtime',
+      'factact.registry_return_display_name(uuid,uuid,uuid,text)','EXECUTE') as enabled`))
+      .rows[0].enabled).toBe(false);
     const command=new RegistryEditCommands(new PgRegistryEditStore(db.runtime));
     await expect(command.proposeDisplayName({tenantId:ids.tenant,actorOperatorId:ids.operator},
       {serviceId:ids.service,personId:ids.person,requestId:'90000000-0000-4000-8000-000000000001',

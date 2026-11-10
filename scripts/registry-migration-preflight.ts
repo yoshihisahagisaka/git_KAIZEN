@@ -17,9 +17,10 @@ interface RegistryPreflightRow {
   executor_name_update:boolean;executor_org_update:boolean;executor_grant_write:boolean;
   runtime_name_update:boolean;runtime_source_insert:boolean;
   runtime_private_helper:boolean;runtime_rpc_count:number;
+  return_rpc_exists:boolean;return_rpc_executor_owned:boolean;
 }
 
-export type RegistryPreflightPhase='BEFORE_MIGRATION'|'INSTALLED'|'INCONSISTENT';
+export type RegistryPreflightPhase='BEFORE_MIGRATION'|'INSTALLED'|'RETURN_INSTALLED'|'INCONSISTENT';
 export interface RegistryPreflightResult {
   phase:RegistryPreflightPhase;go:boolean;
   database:string;actor:string;serverVersion:number;
@@ -38,7 +39,8 @@ with migration_actor as (
   'factact_private.registry_edit_authorized(uuid,uuid,uuid,uuid,uuid,text)'::regprocedure,
   'factact.registry_propose_display_name(uuid,uuid,uuid,uuid,uuid,uuid,text,text,bigint)'::regprocedure,
   'factact.registry_verify_display_name(uuid,uuid,uuid,text)'::regprocedure,
-  'factact.registry_commit_display_name(uuid,uuid,uuid)'::regprocedure
+  'factact.registry_commit_display_name(uuid,uuid,uuid)'::regprocedure,
+  to_regprocedure('factact.registry_return_display_name(uuid,uuid,uuid,text)')
  ])
 ), target_tables as (
  select unnest(array['tenants','operators','organizations','people','services',
@@ -97,11 +99,18 @@ select current_database() as database_name,current_user as actor_name,
   or has_function_privilege('factact_runtime',
    'factact_private.registry_person_context_lock(uuid,uuid,uuid,uuid,uuid)','EXECUTE'))
   as runtime_private_helper,
+ (to_regprocedure('factact.registry_return_display_name(uuid,uuid,uuid,text)') is not null)
+  as return_rpc_exists,
+ coalesce((select p.proowner=(select oid from executor) from pg_proc p
+  where p.oid=to_regprocedure('factact.registry_return_display_name(uuid,uuid,uuid,text)')),
+   false) as return_rpc_executor_owned,
  (select count(*)::integer from unnest(array[
   'factact.registry_propose_display_name(uuid,uuid,uuid,uuid,uuid,uuid,text,text,bigint)',
   'factact.registry_verify_display_name(uuid,uuid,uuid,text)',
-  'factact.registry_commit_display_name(uuid,uuid,uuid)']) as f(signature)
-  where has_function_privilege('factact_runtime',f.signature,'EXECUTE'))
+  'factact.registry_commit_display_name(uuid,uuid,uuid)',
+  'factact.registry_return_display_name(uuid,uuid,uuid,text)']) as f(signature)
+  where to_regprocedure(f.signature) is not null
+    and has_function_privilege('factact_runtime',to_regprocedure(f.signature),'EXECUTE'))
   as runtime_rpc_count
 `;
 
@@ -109,29 +118,36 @@ select current_database() as database_name,current_user as actor_name,
 export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<RegistryPreflightResult>{
   const {rows}=await db.query(SQL);const r=rows[0];
   if(!r)throw Error('REGISTRY_PREFLIGHT_UNAVAILABLE');
+  const expectedRpcCount=r.return_rpc_exists?4:3;
+  const expectedFunctionCount=r.return_rpc_exists?5:4;
   const common=r.server_version>=160000 && r.force_rls_count===13
     && !r.runtime_name_update && !r.runtime_source_insert
-    && !r.runtime_private_helper && r.runtime_rpc_count===3;
-  const before=!r.executor_exists && r.may_create_role && r.actor_schema_create
-    && r.actor_function_owner_count===4 && r.actor_table_owner_count===13;
+    && !r.runtime_private_helper && r.runtime_rpc_count===expectedRpcCount;
+  const before=!r.executor_exists && !r.return_rpc_exists && r.may_create_role
+    && r.actor_schema_create && r.actor_function_owner_count===4
+    && r.actor_table_owner_count===13;
   const installed=r.executor_exists && r.executor_no_login_safe
-    && r.executor_function_owner_count===4 && r.executor_member_count===0
+    && r.executor_function_owner_count===expectedFunctionCount
+    && (!r.return_rpc_exists || r.return_rpc_executor_owned)
+    && r.executor_member_count===0
     && r.executor_business_table_owner_count===0 && !r.executor_schema_create
     && r.executor_rls_policy_count===13 && r.executor_name_update
     && !r.executor_org_update && !r.executor_grant_write;
   const phase:RegistryPreflightPhase=before?'BEFORE_MIGRATION':
-    installed?'INSTALLED':'INCONSISTENT';
+    installed?(r.return_rpc_exists?'RETURN_INSTALLED':'INSTALLED'):'INCONSISTENT';
   return {phase,go:common&&(before||installed),database:r.database_name,
     actor:r.actor_name,serverVersion:r.server_version,
     checks:{postgres16Plus:r.server_version>=160000,forcedTenantRls:r.force_rls_count===13,
       runtimeNoNameUpdate:!r.runtime_name_update,runtimeNoSourceInsert:!r.runtime_source_insert,
       runtimeNoPrivateHelper:!r.runtime_private_helper,
-      runtimeThreeRpcs:r.runtime_rpc_count===3,migratorRoleCreation:r.may_create_role,
-      migratorOwnsFunctions:r.actor_function_owner_count===4,
+      runtimeExpectedRpcs:r.runtime_rpc_count===expectedRpcCount,
+      returnRpcInstalled:r.return_rpc_exists && r.return_rpc_executor_owned,
+      migratorRoleCreation:r.may_create_role,
+      migratorOwnsBaseFunctions:r.actor_function_owner_count===4,
       migratorOwnsTables:r.actor_table_owner_count===13,
       migratorSchemaCreate:r.actor_schema_create,
       executorNoLoginBypass:r.executor_no_login_safe,
-      executorOwnsFourFunctions:r.executor_function_owner_count===4,
+      executorOwnsTargetFunctions:r.executor_function_owner_count===expectedFunctionCount,
       executorNoMembership:r.executor_member_count===0,
       executorNoBusinessTables:r.executor_business_table_owner_count===0,
       executorNoSchemaCreate:!r.executor_schema_create,

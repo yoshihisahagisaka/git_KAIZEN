@@ -67,4 +67,13 @@ export class PgRegistryEditStore implements RegistryEditStore {
       return committed[0]!.change_id;
     });
   }
+  async returnForRevision(actor:VerifiedRegistryActor,changeId:string,reason:string):Promise<string>{
+    return withTenant(this.pool,actor.tenantId,async db=>{
+      const {rows}=await db.query<{change_id:string}>(`
+        select factact.registry_return_display_name(
+          $1::uuid,$2::uuid,$3::uuid,$4::text) as change_id`,
+        [actor.tenantId,actor.actorOperatorId,changeId,reason]);
+      return rows[0]!.change_id;
+    });
+  }
 }

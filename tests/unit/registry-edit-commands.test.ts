@@ -13,7 +13,8 @@ describe('Registry Application interface',()=>{
   it('validates direct commands and one-action confirm before any store call',async()=>{
     const store:RegistryEditStore={propose:vi.fn().mockResolvedValue('change'),
       verify:vi.fn().mockResolvedValue('change'),commit:vi.fn().mockResolvedValue('change'),
-      confirm:vi.fn().mockResolvedValue('change')};
+      confirm:vi.fn().mockResolvedValue('change'),
+      returnForRevision:vi.fn().mockResolvedValue('change')};
     const command=new RegistryEditCommands(store);
     expect(command.kind).toBe('PERSON_DISPLAY_NAME_CORRECTION');
     expect(()=>command.proposeDisplayName(actor,{...proposal,proposedDisplayName:' '})).toThrow();
@@ -21,6 +22,8 @@ describe('Registry Application interface',()=>{
     expect(()=>command.verifyDisplayName(actor,proposal.requestId,'')).toThrow();
     expect(()=>command.commitDisplayName(actor,'fake-id')).toThrow();
     expect(()=>command.confirmDisplayName(actor,'fake-id')).toThrow();
+    expect(()=>command.returnDisplayName(actor,'fake-id','誤記')).toThrow();
+    expect(()=>command.returnDisplayName(actor,proposal.requestId,'  ')).toThrow();
     expect(store.propose).not.toHaveBeenCalled();
     expect(await command.proposeDisplayName(actor,proposal)).toEqual({changeId:'change'});
     expect(await command.verifyDisplayName(actor,proposal.requestId,'確認')).toEqual({changeId:'change'});
@@ -28,5 +31,9 @@ describe('Registry Application interface',()=>{
     expect(await command.confirmDisplayName(actor,proposal.requestId)).toEqual({changeId:'change'});
     expect(store.confirm).toHaveBeenCalledWith(actor,proposal.requestId,
       expect.stringContaining('本人確認を行ったことは示さない'));
+    expect(await command.returnDisplayName(actor,proposal.requestId,'  訂正理由を確認してください  '))
+      .toEqual({changeId:'change'});
+    expect(store.returnForRevision).toHaveBeenCalledWith(actor,proposal.requestId,
+      '訂正理由を確認してください');
   });
 });
