@@ -16,12 +16,12 @@ pre-Go checks in section 8.
 
 | Item | Recommendation |
 | --- | --- |
-| GCP project | `pj-factact` candidate; existence, billing attachment and organization policy remain unverified |
+| GCP project | `pj-factact`; existence was confirmed by an earlier read-only investigation, while billing attachment, organization policy and usable authority remain unverified |
 | Region | `asia-northeast1` (Tokyo) |
 | Database | Cloud SQL for PostgreSQL 17, Cloud SQL Enterprise edition |
 | Machine | `db-g1-small`, shared core, 1.7 GiB RAM |
 | Availability | Single zone; no HA; no replica; shared-core has no Cloud SQL SLA |
-| Storage | SSD 10 GiB; automatic increase on with a 20 GiB hard limit |
+| Storage | SSD 10 GiB; automatic increase on with a configured 20 GiB increase limit, subject to Cloud SQL critical-maintenance exceptions |
 | Data | Synthetic data only; no real customer data |
 | Backup | Standard backup, daily, seven retained automated backups; explicit `asia-northeast1` single-region location candidate |
 | PITR | Enable initially with three days of transaction logs; keep seven backups |
@@ -30,10 +30,14 @@ pre-Go checks in section 8.
 | Cost control | Project-scoped monthly budget alerts; 50%, 80%, 100% actual and 100% forecast; service metrics and storage alerts |
 
 The explicit storage limit is required because the Cloud SQL default is
-unlimited automatic growth. The 20 GiB limit bounds cost while leaving room for
-migration, WAL and synthetic test growth. Reaching the limit can reject writes
-or take the database offline, so alert before 70%, 80% and 90% consumption and
-keep at least 20% free for maintenance.
+unlimited automatic growth. The configured 20 GiB limit bounds ordinary
+automatic growth while leaving room for migration, WAL and synthetic test
+growth; it is not an absolute hard cap because Cloud SQL may override the
+automatic-increase settings for critical database maintenance. Reaching the
+configured limit can reject writes or take the database offline, so alert
+before 70%, 80% and 90% consumption, keep at least 20% free for maintenance and
+monitor provisioned bytes and cost rather than assuming 20 GiB can never be
+exceeded.
 
 `db-f1-micro` is not recommended. Its 0.6 GiB memory and default 25 PostgreSQL
 connections leave too little memory and connection headroom for the two pools,
@@ -277,14 +281,17 @@ present in PR #60; G1 must supply the deployment cap.
 | `db-g1-small` default | | **50** |
 | Remaining headroom | | **10** |
 
-The 40-connection envelope is a planning bound, not a Cloud Run guarantee.
+The 40-connection figure is an evidence-driven validation stop threshold, not
+a guaranteed maximum connection count or a Cloud Run/Cloud SQL enforcement
+limit.
 Google documents that maximum instances can be temporarily exceeded during
 traffic spikes, maintenance and revision changes. Use a **service-level max of
 2**, min 0, controlled synthetic load and no traffic split during migration.
 Migration must run with application traffic quiesced and must not coincide with
 a revision rollout or restore test. Alert at 35 active client connections and
-stop the test at 40. Confirm the live `SHOW max_connections` value and Cloud SQL
-reserved connections before any workload.
+stop the test when observed connections reach 40; an overshoot remains possible
+between observations. Confirm the live `SHOW max_connections` value, sampling
+interval and Cloud SQL reserved connections before any workload.
 
 This makes `db-g1-small` conditionally viable for synthetic staging. It does
 not establish performance suitability: shared CPU, 1.7 GiB memory, pool wait
@@ -344,8 +351,8 @@ Sources:
 | Daily backup / seven retained | Fit | Confirm explicit backup location and organization policy |
 | PITR | Fit; recommend three days | Verify settings and actual storage/performance after creation |
 | Restore readiness | Design complete, execution gap | Approve RTO/RPO and execute a synthetic restore under a separate Go |
-| Storage growth | Fit with 20 GiB cap | Alerting and operational owner required |
-| Connection budget | Conditional fit at Cloud Run max 2 | Verify live `max_connections`, reserved connections and rollout behavior |
+| Storage growth | Fit with a configured 20 GiB increase limit | Cloud SQL can override it for critical maintenance; alerting and an operational owner are required |
+| Connection budget | Conditional fit at Cloud Run max 2 | Treat 40 as a measured stop threshold, not a guaranteed maximum; verify live `max_connections`, sampling, reserved connections and rollout behavior |
 | End-of-test cost | Design complete | Named owner, evidence location and deletion/retention Go required |
 
 **G1 decision: Conditional Go for G2/G3 planning; No-Go for infrastructure
@@ -355,8 +362,9 @@ following must be attached to the approval record:
 
 1. an official dated Tokyo quote for compute, SSD and backup storage in the
    intended billing account and currency;
-2. confirmation that `pj-factact` can be used and its billing/org policies
-   allow the selected region, edition and backup location;
+2. confirmation that the previously observed `pj-factact` project has the
+   required billing attachment, organization policies and usable authority for
+   the selected region, edition and backup location;
 3. approved monthly budget amount, alert recipients, cost owner and validation
    end date;
 4. approved RTO/RPO targets and restore-test owner;
