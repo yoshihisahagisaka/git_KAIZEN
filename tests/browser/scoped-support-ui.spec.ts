@@ -376,3 +376,60 @@ test('revoked reviewer cannot confirm an already displayed proposal and sees ref
   expect((await db.admin.query('select status from factact.changes where id=$1',[changeId]))
     .rows[0].status).toBe('PROPOSED');
 });
+
+test('REVIEW-only user can return with a real reason and does not update Person',async({page})=>{
+  const {changeId}=await pendingRegistryChange();
+  await grantRegistryA(['REVIEW']);
+  await login(page);
+  const review=page.getByRole('region',{name:'Registry確認待ち'});
+  await review.getByRole('button',{name:'確認する'}).click();
+  await expect(review).toContainText('田中 太郎');
+  await expect(review.getByRole('button',{name:'確認して確定'})).toHaveCount(0);
+  await review.getByRole('button',{name:'差し戻し'}).click();
+  const form=review.getByRole('form',{name:'変更依頼の差し戻し'});
+  await expect(form.getByRole('button',{name:'差し戻す'})).toBeDisabled();
+  await form.getByLabel('差し戻し理由（必須）').fill('登録名の表記を確認して再申請してください');
+  await form.getByRole('button',{name:'差し戻す'}).click();
+  await expect(review.locator('.scoped-write-notice')).toContainText('差し戻しました');
+  await expect(review).toContainText('現在確認できる変更依頼はありません。');
+  const result=await db.admin.query(`select c.status,c.rejection_reason,
+    p.display_name,p.registry_revision from factact.changes c
+    join factact.registry_edit_requests r on r.tenant_id=c.tenant_id
+      and r.id=c.registry_edit_request_id
+    join factact.people p on p.id=r.target_person_id where c.id=$1`,[changeId]);
+  expect(result.rows).toEqual([{status:'REJECTED',
+    rejection_reason:'登録名の表記を確認して再申請してください',
+    display_name:'田中 一郎',registry_revision:'0'}]);
+});
+
+test('proposer sees own returned reason and can submit a fresh correction without changing old history',async({page})=>{
+  await grantRegistryA(['READ','UPDATE']);
+  await grantRegistryA(['REVIEW'],ids.operator);
+  const registry=new RegistryEditCommands(new PgRegistryEditStore(db.runtime));
+  const initial=await registry.proposeDisplayName({tenantId:ids.tenant,actorOperatorId:scopedActor},
+    {serviceId:ids.service,personId:ids.person,requestId:randomUUID(),requestKey:randomUUID(),
+      proposedDisplayName:'田中 太郎',reason:'登録名の訂正',expectedRegistryRevision:0});
+  await registry.returnDisplayName({tenantId:ids.tenant,actorOperatorId:ids.operator},
+    initial.changeId,'旧表記と新表記を確認してください');
+  await login(page);
+  await page.locator('.scoped-work-button').first().click();
+  const directory=page.getByRole('region',{name:'受益企業の登録情報'});
+  await expect(directory).toContainText('前回の変更依頼：差し戻し');
+  await expect(directory).toContainText('旧表記と新表記を確認してください');
+  await expect(directory).toContainText('田中 一郎');
+  await directory.getByRole('button',{name:'編集'}).click();
+  const form=directory.getByRole('form',{name:'表示名の変更依頼'});
+  await form.getByLabel('訂正後の表示名').fill('田中 次郎');
+  await form.getByLabel('訂正理由').fill('再確認して正式な表示名を申告');
+  await form.getByRole('button',{name:'保存'}).click();
+  await expect(directory.getByRole('status')).toContainText('確認待ち');
+  const {rows}=await db.admin.query(`select c.status,r.proposed_display_name
+    from factact.changes c join factact.registry_edit_requests r
+    on r.tenant_id=c.tenant_id and r.id=c.registry_edit_request_id
+    where r.actor_operator_id=$1 order by c.created_at,c.id`,[scopedActor]);
+  expect(rows).toEqual(expect.arrayContaining([
+    {status:'REJECTED',proposed_display_name:'田中 太郎'},
+    {status:'PROPOSED',proposed_display_name:'田中 次郎'},
+  ]));
+  expect(rows).toHaveLength(2);
+});

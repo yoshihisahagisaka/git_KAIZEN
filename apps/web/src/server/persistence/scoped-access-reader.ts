@@ -49,7 +49,9 @@ export interface ScopedRegistryPeoplePage {
  organizationId:string;organizationName:string;
  canPropose:boolean;
  items:Array<{personId:string;displayName:string;registryRevision:number;
-  lifecycleStatus:'JOINING'|'ACTIVE'|'INACTIVE'}>;
+  lifecycleStatus:'JOINING'|'ACTIVE'|'INACTIVE';
+  latestOwnRequest:{changeId:string;status:'PROPOSED'|'VERIFIED'|'COMMITTED'|'REJECTED';
+   proposedDisplayName:string;rejectionReason:string|null}|null}>;
  nextCursor:string|null;
 }
 
@@ -91,7 +93,7 @@ export class PgScopedAccessReader {
     where r.tenant_id=$1 and r.service_id=$2 and r.recipient_organization_id=$3
       and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
     order by c.version desc`,[tenantId,serviceId,organizationId,at]);
-   let organizationName:string|null=null,canPropose=false;
+   let organizationName:string|null=null,canPropose=false,selectedRecipientId:string|null=null;
    for(const context of contexts){
     if(await this.authorizedInTransaction(db,actorId,{
      tenantId,serviceId,contractProfileId:context.contract_id,
@@ -99,6 +101,7 @@ export class PgScopedAccessReader {
      objectKind:'REGISTRY',operation:'READ',
     },at)){
      organizationName=context.organization_name;
+     selectedRecipientId=context.recipient_id;
      canPropose=await this.authorizedInTransaction(db,actorId,{
       tenantId,serviceId,contractProfileId:context.contract_id,
       scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:context.recipient_id},
@@ -107,18 +110,39 @@ export class PgScopedAccessReader {
      break;
     }
    }
-   if(organizationName===null)return null;
+   if(organizationName===null||selectedRecipientId===null)return null;
    const {rows}=await db.query<{id:string;display_name:string;registry_revision:string;
-    lifecycle_status:'JOINING'|'ACTIVE'|'INACTIVE'}>(`
-    select id,display_name,registry_revision,lifecycle_status from factact.people
-    where tenant_id=$1 and organization_id=$2
-      and ($3::text is null or (display_name,id)>($3::text,$4::uuid))
-    order by display_name,id limit $5`,
-    [tenantId,organizationId,cursor?.displayName??null,cursor?.personId??null,limit]);
+    lifecycle_status:'JOINING'|'ACTIVE'|'INACTIVE';own_change_id:string|null;
+    own_status:'PROPOSED'|'VERIFIED'|'COMMITTED'|'REJECTED'|null;
+    own_proposed_display_name:string|null;own_rejection_reason:string|null}>(`
+    select p.id,p.display_name,p.registry_revision,p.lifecycle_status,
+      own.change_id as own_change_id,own.status as own_status,
+      own.proposed_display_name as own_proposed_display_name,
+      own.rejection_reason as own_rejection_reason
+    from factact.people p
+    left join lateral (
+      select c.id as change_id,c.status,r.proposed_display_name,c.rejection_reason
+      from factact.registry_edit_requests r
+      join factact.changes c on c.tenant_id=r.tenant_id
+        and c.registry_edit_request_id=r.id and c.subject_id=p.id
+      where r.tenant_id=$1 and r.target_person_id=p.id
+        and r.actor_operator_id=$6 and r.service_id=$7
+        and r.service_recipient_id=$8
+      order by r.created_at desc,r.id desc limit 1
+    ) own on true
+    where p.tenant_id=$1 and p.organization_id=$2
+      and ($3::text is null or (p.display_name,p.id)>($3::text,$4::uuid))
+    order by p.display_name,p.id limit $5`,
+    [tenantId,organizationId,cursor?.displayName??null,cursor?.personId??null,limit,
+      actorId,serviceId,selectedRecipientId]);
    const last=rows.at(-1);
    return {organizationId,organizationName,canPropose,
     items:rows.map(p=>({personId:p.id,displayName:p.display_name,
-     registryRevision:Number(p.registry_revision),lifecycleStatus:p.lifecycle_status})),
+     registryRevision:Number(p.registry_revision),lifecycleStatus:p.lifecycle_status,
+     latestOwnRequest:p.own_change_id&&p.own_status&&p.own_proposed_display_name?
+      {changeId:p.own_change_id,status:p.own_status,
+       proposedDisplayName:p.own_proposed_display_name,
+       rejectionReason:p.own_rejection_reason}:null})),
     nextCursor:rows.length===limit&&last
      ?Buffer.from(JSON.stringify({displayName:last.display_name,personId:last.id})).toString('base64url')
      :null};
