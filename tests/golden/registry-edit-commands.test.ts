@@ -114,6 +114,63 @@ describe('Registry display-name Application commands: explicit dual control',()=
     })).rejects.toMatchObject({code:'42501'});
   });
 
+  it('serves separate A/B Organization recipients of ONE Service with no A-to-B authority leak',async()=>{
+    const orgB=randomUUID(),personB=randomUUID();
+    await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
+      values($1,$2,'Customer B','ACTIVE')`,[orgB,ids.tenant]);
+    await db.admin.query(`insert into factact.people
+      (id,tenant_id,organization_id,display_name,lifecycle_status)
+      values($1,$2,$3,'顧客Bの担当者','ACTIVE')`,[personB,ids.tenant,orgB]);
+    const recipientB=await withTenant(db.runtime,ids.tenant,client=>
+      new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(randomUUID(),ids.service,orgB));
+    await grant(ids.operator,['UPDATE']); // A recipient only
+    const proposalB={...input(),personId:personB,proposedDisplayName:'顧客Bの新担当者'};
+    await expect(commands.proposeDisplayName(proposerContext,proposalB))
+      .rejects.toMatchObject({code:'42501'});
+    const deniedAudit=await db.admin.query(`select count(*)::int as n from factact.audit_events
+      where aggregate_type='REGISTRY_CHANGE'`);
+    expect(deniedAudit.rows[0]?.n).toBe(0);
+    await db.admin.query(`insert into factact.scoped_actor_grants
+      (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+       service_recipient_id,object_kind,operations,status,effective_from,issued_by_operator_id)
+      values($1,$2,$3,$4,$5,'SERVICE_RECIPIENT',$6,'REGISTRY',$7,'ACTIVE',now()-interval '1 day',$3)`,
+      [randomUUID(),ids.tenant,ids.operator,ids.service,ids.contract,recipientB,['UPDATE']]);
+    const {changeId}=await commands.proposeDisplayName(proposerContext,proposalB);
+    // The real target's ServiceRecipient is B, never the provider Service owner or A.
+    const source=await db.admin.query(`select service_recipient_id,target_person_id
+      from factact.registry_edit_requests where id=(select registry_edit_request_id
+      from factact.changes where id=$1)`,[changeId]);
+    expect(source.rows).toEqual([{service_recipient_id:recipientB,target_person_id:personB}]);
+    await grant(reviewer,['REVIEW','APPROVE']); // A only
+    await expect(commands.verifyDisplayName(reviewerContext,changeId,'顧客Bの依頼確認'))
+      .rejects.toMatchObject({code:'42501'});
+    await db.admin.query(`insert into factact.scoped_actor_grants
+      (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+       service_recipient_id,object_kind,operations,status,effective_from,issued_by_operator_id)
+      values($1,$2,$3,$4,$5,'SERVICE_RECIPIENT',$6,'REGISTRY',$7,'ACTIVE',now()-interval '1 day',$3)`,
+      [randomUUID(),ids.tenant,reviewer,ids.service,ids.contract,recipientB,['REVIEW','APPROVE']]);
+    await commands.verifyDisplayName(reviewerContext,changeId,'顧客Bの依頼確認');
+    await commands.commitDisplayName(reviewerContext,changeId);
+    expect(await person()).toEqual({display_name:'田中 一郎',registry_revision:'0'});
+    const updated=await db.admin.query(`select display_name,registry_revision from factact.people where id=$1`,[personB]);
+    expect(updated.rows).toEqual([{display_name:'顧客Bの新担当者',registry_revision:'1'}]);
+  });
+
+  it('returns an indistinguishable denial for unknown and out-of-scope Change IDs',async()=>{
+    await grant(ids.operator,['UPDATE']);
+    const {changeId}=await commands.proposeDisplayName(proposerContext,input());
+    const unknown=randomUUID();
+    const denied=[] as Array<{code:string;message:string}>;
+    for(const id of [changeId,unknown]){
+      try{await commands.verifyDisplayName(thirdContext,id,'権限なしのレビュー');}
+      catch(e){denied.push({code:(e as {code:string}).code,message:(e as Error).message});}
+    }
+    expect(denied).toEqual([
+      {code:'42501',message:'Registry change unavailable'},
+      {code:'42501',message:'Registry change unavailable'},
+    ]);
+  });
+
   it('rejects stale Person revisions and withdrawn reviewer authority before Commit',async()=>{
     await grant(ids.operator,['UPDATE']);
     const reviewerGrant=await grant(reviewer,['REVIEW','APPROVE']);
@@ -130,6 +187,42 @@ describe('Registry display-name Application commands: explicit dual control',()=
     await expect(commands.commitDisplayName(reviewerContext,changeId)).rejects.toMatchObject({code:'40001'});
     expect((await recorded(changeId)).status).toBe('VERIFIED');
     expect(await person()).toEqual({display_name:'別経路の新しい表記',registry_revision:'1'});
+  });
+
+  it('holds a competing Grant revocation ahead of Commit and denies the now-ineligible Actor',async()=>{
+    await grant(ids.operator,['UPDATE']);
+    const reviewerGrant=await grant(reviewer,['REVIEW','APPROVE']);
+    const {changeId}=await commands.proposeDisplayName(proposerContext,input());
+    await commands.verifyDisplayName(reviewerContext,changeId,'実施前の照合');
+    const adminClient=await db.admin.connect();
+    try{
+      await adminClient.query('BEGIN');
+      await adminClient.query(`update factact.scoped_actor_grants
+        set status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,
+          revocation_reason='並行取消検証'
+        where id=$1`,[reviewerGrant,ids.operator]);
+      const pendingCommit=commands.commitDisplayName(reviewerContext,changeId)
+        .then(()=>null,(error:unknown)=>error);
+      await adminClient.query('COMMIT');
+      expect(await pendingCommit).toMatchObject({code:'42501'});
+      expect(await person()).toEqual({display_name:'田中 一郎',registry_revision:'0'});
+      expect((await recorded(changeId)).audit_count).toBe(2);
+    }finally{
+      await adminClient.query('ROLLBACK').catch(()=>undefined);
+      adminClient.release();
+    }
+  });
+
+  it('fails closed if the confirmed Organization Recipient becomes inactive before Commit',async()=>{
+    await grant(ids.operator,['UPDATE']);await grant(reviewer,['REVIEW','APPROVE']);
+    const {changeId}=await commands.proposeDisplayName(proposerContext,input());
+    await commands.verifyDisplayName(reviewerContext,changeId,'照合済み');
+    await db.admin.query(`update factact.service_recipients set status='INACTIVE'
+      where tenant_id=$1 and id=$2`,[ids.tenant,recipient]);
+    await expect(commands.commitDisplayName(reviewerContext,changeId))
+      .rejects.toMatchObject({code:'42501'});
+    expect(await person()).toEqual({display_name:'田中 一郎',registry_revision:'0'});
+    expect((await recorded(changeId)).status).toBe('VERIFIED');
   });
 
   it('does not let a third Actor commit without an explicit own Grant',async()=>{
