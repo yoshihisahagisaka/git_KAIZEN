@@ -28,6 +28,7 @@ create table factact.registry_edit_requests (
     check (review_policy_code = 'PERSON_DISPLAY_NAME_DUAL_CONTROL_V1'),
   created_at timestamptz not null default now(),
   unique (tenant_id, id),
+  unique (tenant_id, id, target_person_id, actor_operator_id),
   unique (tenant_id, actor_operator_id, request_key),
   check (length(btrim(original_display_name)) between 1 and 200),
   check (length(btrim(proposed_display_name)) between 1 and 200),
@@ -99,9 +100,9 @@ alter table factact.changes
       and (status <> 'COMMITTED' or committed_by_operator_id is not null)
     )
   ),
-  add constraint registry_change_request_tenant_fk
-    foreign key (tenant_id, registry_edit_request_id)
-    references factact.registry_edit_requests (tenant_id, id),
+  add constraint registry_change_source_identity_fk
+    foreign key (tenant_id, registry_edit_request_id, subject_id, proposed_by_operator_id)
+    references factact.registry_edit_requests (tenant_id, id, target_person_id, actor_operator_id),
   add constraint registry_change_proposer_fk
     foreign key (tenant_id, proposed_by_operator_id)
     references factact.operators (tenant_id, id),
