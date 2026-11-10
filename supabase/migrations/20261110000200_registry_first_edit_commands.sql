@@ -54,6 +54,33 @@ create function factact_private.registry_edit_authorized(
 $$;
 revoke all on function factact_private.registry_edit_authorized(uuid,uuid,uuid,uuid,uuid,text) from public;
 
+-- Service is the service owner's context, not the edited Person's employer.
+-- A service can serve many Organization recipients. Lock the actual target's
+-- Recipient, its Organization, Service, Contract and Tenant until transition
+-- COMMIT so a concurrent deactivation/reassignment cannot pass a stale check.
+create function factact_private.registry_person_context_lock(
+  p_tenant uuid,p_person uuid,p_service uuid,p_contract uuid,p_recipient uuid
+) returns boolean language plpgsql volatile set search_path=pg_catalog as $$
+begin
+  perform 1 from factact.people p
+    join factact.organizations o on o.tenant_id=p.tenant_id
+      and o.id=p.organization_id and o.status='ACTIVE'
+    join factact.tenants t on t.id=p.tenant_id and t.status='ACTIVE'
+    join factact.service_recipients r on r.tenant_id=p.tenant_id
+      and r.id=p_recipient and r.service_id=p_service
+      and r.recipient_organization_id=p.organization_id
+      and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
+    join factact.services s on s.tenant_id=p.tenant_id
+      and s.id=p_service and s.status='ACTIVE'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.id=p_contract and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=now() and (c.effective_to is null or c.effective_to>now())
+    where p.tenant_id=p_tenant and p.id=p_person
+    for share of o,t,r,s,c;
+  return found;
+end $$;
+revoke all on function factact_private.registry_person_context_lock(uuid,uuid,uuid,uuid,uuid) from public;
+
 create function factact.registry_propose_display_name(
   p_tenant uuid,p_actor uuid,p_person uuid,p_service uuid,p_request uuid,
   p_request_key uuid,p_proposed text,p_reason text,p_expected_revision bigint
@@ -82,8 +109,9 @@ begin
     from factact.people p
     join factact.organizations o on o.id=p.organization_id and o.tenant_id=p.tenant_id
       and o.status='ACTIVE'
+    join factact.tenants t on t.id=p.tenant_id and t.status='ACTIVE'
     join factact.services s on s.tenant_id=p.tenant_id and s.id=p_service
-      and s.organization_id=p.organization_id and s.status='ACTIVE'
+      and s.status='ACTIVE'
     join factact.contract_profiles c on c.tenant_id=s.tenant_id and c.service_id=s.id
       and c.status='ACTIVE' and c.effective_from<=now()
       and (c.effective_to is null or c.effective_to>now())
@@ -91,7 +119,7 @@ begin
       and r.service_id=s.id and r.recipient_organization_id=p.organization_id
       and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
     where p.tenant_id=p_tenant and p.id=p_person
-    for share of p,o,s,c,r;
+    for share of p,o,t,s,c,r;
 
   if not factact_private.registry_edit_authorized(p_tenant,p_actor,p_service,
     v_context.contract_id,v_context.recipient_id,'UPDATE') then
@@ -152,7 +180,7 @@ begin
      and r.id=c.registry_edit_request_id
     where c.tenant_id=p_tenant and c.id=p_change;
   if not found or v_row.actor_operator_id=p_actor then
-    raise exception 'distinct Registry reviewer required' using errcode='42501';
+    raise exception 'Registry change unavailable' using errcode='42501';
   end if;
   -- Sorted authority lock order prevents review/revocation deadlocks.
   if v_row.actor_operator_id::text < p_actor::text then
@@ -180,15 +208,13 @@ begin
         'beforeDisplayName',v_row.original_display_name,
         'afterDisplayName',v_row.proposed_display_name,
         'expectedRevision',v_row.expected_registry_revision)
-    or not exists(select 1 from factact.service_recipients r
-        where r.tenant_id=p_tenant and r.id=v_row.service_recipient_id
-          and r.recipient_organization_id=v_row.organization_id
-          and r.recipient_type='ORGANIZATION' and r.status='ACTIVE')
+    or not factact_private.registry_person_context_lock(p_tenant,v_row.target_person_id,
+        v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id)
     or not factact_private.registry_edit_authorized(p_tenant,p_actor,
         v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id,'REVIEW')
     or not factact_private.registry_edit_authorized(p_tenant,v_row.actor_operator_id,
         v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id,'UPDATE') then
-    raise exception 'Registry review context changed or unauthorized' using errcode='42501';
+    raise exception 'Registry change unavailable' using errcode='42501';
   end if;
   v_evidence:=gen_random_uuid();
   insert into factact.evidence
@@ -219,7 +245,7 @@ begin
       and r.id=c.registry_edit_request_id
     where c.tenant_id=p_tenant and c.id=p_change;
   if not found or v_row.actor_operator_id=p_actor or v_row.verified_by_operator_id is null then
-    raise exception 'verified distinct Registry Actor required' using errcode='42501';
+    raise exception 'Registry change unavailable' using errcode='42501';
   end if;
   -- Locks for proposer, verifier and committer, sorted by Actor UUID.
   select array_agg(distinct a order by a) into v_actors
@@ -241,9 +267,11 @@ begin
   -- REVIEW and APPROVE may belong to the same human reviewer; only the
   -- proposer must be distinct from both, as accepted in the first-edit Gate.
   if not found or v_row.actor_operator_id=p_actor
+    or not factact_private.registry_person_context_lock(p_tenant,v_row.target_person_id,
+       v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id)
     or not factact_private.registry_edit_authorized(p_tenant,p_actor,
        v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id,'APPROVE') then
-    raise exception 'Registry commit authority required' using errcode='42501';
+    raise exception 'Registry change unavailable' using errcode='42501';
   end if;
   if v_row.status='COMMITTED' then
     if v_row.committed_by_operator_id=p_actor
@@ -265,10 +293,6 @@ begin
       where ce.tenant_id=p_tenant and ce.change_id=p_change
         and e.evidence_type='VERIFICATION'
         and e.created_by_operator_id=v_row.verified_by_operator_id)
-    or not exists(select 1 from factact.service_recipients r
-      where r.tenant_id=p_tenant and r.id=v_row.service_recipient_id
-        and r.recipient_organization_id=v_row.organization_id
-        and r.recipient_type='ORGANIZATION' and r.status='ACTIVE')
     or not factact_private.registry_edit_authorized(p_tenant,v_row.actor_operator_id,
        v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id,'UPDATE')
     or not factact_private.registry_edit_authorized(p_tenant,v_row.verified_by_operator_id,
