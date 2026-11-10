@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {api,ApiError} from './api.js';
-import type {OperatorPolicyOverview,PolicyLevel,PolicyDisposition}
+import type {OperatorPolicyOverview,PolicyActivationOverview,PolicyLevel,PolicyDisposition}
   from '../server/persistence/operator-policy-admin.js';
 
 const levels:{value:PolicyLevel;label:string}[]=[
@@ -25,6 +25,7 @@ const blankCells=():DraftCells=>({NEWCOMER:'',STANDARD:'',LEAD:''});
 export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
   const [authorized,setAuthorized]=useState(false);
   const [overview,setOverview]=useState<OperatorPolicyOverview|null>(null);
+  const [activation,setActivation]=useState<PolicyActivationOverview|null>(null);
   const [serviceId,setServiceId]=useState('');
   const [open,setOpen]=useState(false);
   const [actorQuery,setActorQuery]=useState('');
@@ -37,6 +38,8 @@ export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
   const [selectedVersionId,setSelectedVersionId]=useState('');
   const [publishReason,setPublishReason]=useState('');
   const [stopReason,setStopReason]=useState('');
+  const [activationReason,setActivationReason]=useState('');
+  const [activationStopReason,setActivationStopReason]=useState('');
   const [busy,setBusy]=useState(false);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
@@ -49,18 +52,22 @@ export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
 
   async function reload(service=serviceId,search=actorQuery){
     const serial=++requestSerial.current;
-    setLoading(true);setOverview(null);
+    setLoading(true);setOverview(null);setActivation(null);
     try{
       const query=new URLSearchParams();
       if(service)query.set('serviceId',service);
       if(search)query.set('actorQuery',search);
-      const data=await api<OperatorPolicyOverview>(`/api/admin/operator-policy?${query}`);
+      const [data,activationData]=await Promise.all([
+        api<OperatorPolicyOverview>(`/api/admin/operator-policy?${query}`),
+        service?api<PolicyActivationOverview>(
+          `/api/admin/operator-policy/activations?${new URLSearchParams({serviceId:service})}`):Promise.resolve(null),
+      ]);
       if(serial!==requestSerial.current)return;
       if(service&&data.service?.id!==service)throw Error('Policy service changed');
-      setAuthorized(true);setOverview(data);
+      setAuthorized(true);setOverview(data);setActivation(activationData);
     }catch(cause){
       if(serial!==requestSerial.current)return;
-      setOverview(null);
+      setOverview(null);setActivation(null);
       if(cause instanceof ApiError&&[401,403,404].includes(cause.status)){
         setAuthorized(false);setOpen(false);
       }else if(authorized){
@@ -77,7 +84,8 @@ export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
     setServiceId(id);setActorId('');setLevel('');setLevelReason('');
     setActorQuery('');setActorSearch('');setCells(blankCells());
     setVersionReason('');setSelectedVersionId('');setPublishReason('');
-    setStopReason('');setError('');setNotice('');retry.current=null;
+    setStopReason('');setActivationReason('');setActivationStopReason('');
+    setError('');setNotice('');retry.current=null;
   }
 
   async function write(path:string,fields:Record<string,unknown>,success:string){
@@ -137,19 +145,37 @@ export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
     },'設定の公開停止を記録しました。');
     if(result)setStopReason('');
   }
+  async function activatePolicy(event:React.FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    if(!activationReason.trim()||overview?.current?.operation!=='PUBLISH'
+      ||!overview.current.versionId)return;
+    const result=await write('/api/admin/operator-policy/activations',{
+      serviceId,versionId:overview.current.versionId,reason:activationReason.trim(),
+    },'サービスへのポリシー適用開始を監査記録に保存しました。');
+    if(result)setActivationReason('');
+  }
+  async function stopActivation(event:React.FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    if(!activationStopReason.trim()||activation?.current?.operation!=='ACTIVATE')return;
+    const result=await write('/api/admin/operator-policy/activations',{
+      serviceId,versionId:null,reason:activationStopReason.trim(),
+    },'ポリシー適用を停止しました。新規Registry申請は拒否されます。');
+    if(result)setActivationStopReason('');
+  }
 
   if(!authorized)return null;
   const service=overview?.service;
   const selectedActor=overview?.actors.find(item=>item.id===actorId);
   const selectedVersion=overview?.versions.find(item=>item.id===selectedVersionId);
   const current=overview?.current;
+  const currentActivation=activation?.current;
   return <section className="policy-admin" aria-label="運用設定（管理者）">
     <div className="policy-admin-heading"><div><h2>運用設定（管理者）</h2>
       <p>サービス別の運用者レベルと変更時の申請ルール</p></div>
       <button type="button" className="secondary" aria-expanded={open}
         onClick={()=>setOpen(value=>!value)}>{open?'閉じる':'設定を開く'}</button></div>
     {open&&<div className="policy-admin-body">
-      <p className="notice">この設定は現時点ではRegistryの変更権限に接続されていません。公開しても自動確定やGrant付与は発生しません。</p>
+      <p className="notice">公開だけではRegistryに適用されません。適用開始はサービスごとの独立操作です。実環境への適用・本番リリースは別途承認が必要です。</p>
       <div className="policy-admin-selection"><label htmlFor="policy-service">対象サービス</label>
         <select id="policy-service" value={serviceId} disabled={busy}
           onChange={event=>chooseService(event.currentTarget.value)}>
@@ -240,8 +266,40 @@ export function OperatorPolicyAdminUI({csrf}:{csrf:string}){
             <button className="secondary" disabled={busy||!stopReason.trim()} type="submit">公開を停止</button>
           </form>}
         </section>
+        <section className="policy-admin-card" aria-label="サービスへのポリシー適用開始・停止">
+          <h3>4. サービスへの適用開始・停止</h3>
+          <p>現在の適用状態：<strong>{currentActivation?.operation==='ACTIVATE'
+            ?currentActivation.publicationId===current?.id
+              ?`第${currentActivation.version}版を適用中`
+              :'公開状態が変更され再適用待ち（新規申請不可）'
+            :currentActivation?.operation==='STOP'?'停止中（新規申請不可）':'未開始（従来のGrant方式）'}</strong></p>
+          <p className="policy-admin-hint">本番環境への適用はNo-Goです。最初はSyntheticのStagingサービスで検証します。公開停止・別版の公開後は新規申請を拒否し、再適用開始が必要です。</p>
+          <form onSubmit={event=>void activatePolicy(event)}>
+            <p>適用対象：{current?.operation==='PUBLISH'?`現在公開中の第${current.version}版`:'公開済み設定版がありません'}</p>
+            <label htmlFor="policy-activation-reason">適用開始・再開の理由（必須）</label>
+            <textarea id="policy-activation-reason" value={activationReason} maxLength={1000}
+              required disabled={busy}
+              onChange={event=>{setActivationReason(event.target.value);retry.current=null;}}/>
+            <button type="submit" disabled={busy||current?.operation!=='PUBLISH'
+              ||!current.versionId||!activationReason.trim()}>このサービスへの適用を開始・再開</button>
+          </form>
+          {currentActivation?.operation==='ACTIVATE'&&
+          <form onSubmit={event=>void stopActivation(event)} className="policy-admin-stop">
+            <label htmlFor="policy-activation-stop-reason">適用停止の理由（必須）</label>
+            <textarea id="policy-activation-stop-reason" value={activationStopReason}
+              maxLength={1000} required disabled={busy}
+              onChange={event=>{setActivationStopReason(event.target.value);retry.current=null;}}/>
+            <button type="submit" className="secondary"
+              disabled={busy||!activationStopReason.trim()}>適用を停止（新規申請を拒否）</button>
+          </form>}
+          {!!activation?.events.length&&<ol>{activation.events.map(item=><li key={item.id}>
+            <strong>{item.operation==='ACTIVATE'?`第${item.version}版を適用開始`:'適用停止'}</strong>
+            <time dateTime={item.at}>{localDate(item.at)} / {item.by}</time>
+            <p>{item.reason}</p>
+          </li>)}</ol>}
+        </section>
         <section className="policy-admin-card" aria-label="運用設定の履歴">
-          <h3>4. 管理履歴</h3>
+          <h3>5. 管理履歴</h3>
           <div className="policy-admin-columns">
             <div><h4>レベルの変更</h4>
               {!overview?.assignments.length&&<p>履歴はありません。</p>}
