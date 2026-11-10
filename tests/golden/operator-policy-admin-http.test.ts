@@ -195,4 +195,46 @@ describe('administrator-only HTTP for operator level × category policy',()=>{
     await expect(db.runtime.query('select * from factact_private.operator_policy_assignment_events'))
       .rejects.toMatchObject({code:'42501'});
   });
+
+  it('activation has its own audited HTTP operation, strict CSRF and fail-closed STOP',async()=>{
+    await db.admin.query(`insert into factact_private.scoped_grant_approvers
+      (issuer,subject,approved_email) values($1,$2,'yoshihisa.hagisaka@atlib.jp')`,
+      [issuer,administrator]);
+    const activate={requestId:randomUUID(),serviceId:ids.service,versionId:randomUUID(),
+      reason:'Staging Syntheticサービスの適用開始'};
+    expect((await post('activations',activate)).status).toBe(403);
+    expect((await post('activations',activate,adminCookie,config.origin,'wrong')).status).toBe(403);
+    expect((await post('activations',{...activate,tenantId:ids.tenant})).status).toBe(400);
+    expect((await post('activations',activate,deniedCookie,config.origin,'denied-csrf')).status).toBe(403);
+    const empty=await get(`/api/admin/operator-policy/activations?serviceId=${ids.service}`);
+    expect(empty.status).toBe(200);
+    expect(empty.body.data).toEqual({current:null,events:[]});
+    expect((await get('/api/admin/operator-policy/activations')).status).toBe(400);
+    const version=versionInput();
+    expect((await post('versions',version)).status).toBe(200);
+    const publication={requestId:randomUUID(),serviceId:ids.service,
+      versionId:version.requestId,reason:'Stagingでルール版を公開'};
+    expect((await post('publications',publication)).status).toBe(200);
+    const start={...activate,versionId:version.requestId};
+    expect((await post('activations',start)).body.data).toEqual({requestId:start.requestId});
+    expect((await post('activations',start)).body.data).toEqual({requestId:start.requestId});
+    expect((await post('activations',{...start,versionId:null})).status).toBe(409);
+    const active=await get(`/api/admin/operator-policy/activations?serviceId=${ids.service}`);
+    expect(active.body.data.current).toMatchObject({
+      operation:'ACTIVATE',version:1,versionId:version.requestId,
+      publicationId:publication.requestId,
+    });
+    const stop={requestId:randomUUID(),serviceId:ids.service,versionId:null,
+      reason:'Staging検証の切戻しとして新規申請を停止'};
+    expect((await post('activations',stop)).status).toBe(200);
+    expect((await get(`/api/admin/operator-policy/activations?serviceId=${ids.service}`))
+      .body.data.current.operation).toBe('STOP');
+    expect((await post('activations',{...stop,requestId:randomUUID()})).status).toBe(403);
+    const audit=(await db.admin.query(`select event_type from factact.audit_events
+      where event_type in ('OPERATOR_POLICY_ACTIVATED','OPERATOR_POLICY_STOPPED')
+      order by occurred_at,id`)).rows.map(item=>item.event_type);
+    expect(audit).toEqual(['OPERATOR_POLICY_ACTIVATED','OPERATOR_POLICY_STOPPED']);
+    expect((await db.admin.query('select count(*)::int as n from factact.scoped_actor_grants'))
+      .rows[0].n).toBe(0);
+  });
 });

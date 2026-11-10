@@ -19,6 +19,9 @@ export const policyVersionInput=z.strictObject({
 export const policyPublicationInput=z.strictObject({
   requestId:uuid,serviceId:uuid,versionId:uuid.nullable(),reason,
 });
+export const policyActivationInput=z.strictObject({
+  requestId:uuid,serviceId:uuid,versionId:uuid.nullable(),reason,
+});
 
 export type PolicyLevel=z.infer<typeof level>;
 export type PolicyDisposition=z.infer<typeof disposition>;
@@ -26,6 +29,7 @@ export type PolicyOverviewInput=z.infer<typeof policyOverviewInput>;
 export type PolicyLevelInput=z.infer<typeof policyLevelInput>;
 export type PolicyVersionInput=z.infer<typeof policyVersionInput>;
 export type PolicyPublicationInput=z.infer<typeof policyPublicationInput>;
+export type PolicyActivationInput=z.infer<typeof policyActivationInput>;
 export interface OperatorPolicyOverview {
   services:{id:string;name:string}[];
   service:{id:string;name:string}|null;
@@ -39,11 +43,19 @@ export interface OperatorPolicyOverview {
     version:number|null;reason:string;at:string;by:string}[];
   current:OperatorPolicyOverview['publications'][number]|null;
 }
+export interface PolicyActivationOverview {
+  current:PolicyActivationOverview['events'][number]|null;
+  events:{id:string;operation:'ACTIVATE'|'STOP';versionId:string|null;
+    publicationId:string|null;
+    version:number|null;reason:string;at:string;by:string}[];
+}
 export interface OperatorPolicyAdmin {
   overview(sessionHash:string,input:PolicyOverviewInput):Promise<OperatorPolicyOverview>;
+  activationOverview(sessionHash:string,serviceId:string):Promise<PolicyActivationOverview>;
   assign(sessionHash:string,input:PolicyLevelInput):Promise<{requestId:string}>;
   version(sessionHash:string,input:PolicyVersionInput):Promise<{versionId:string}>;
   publish(sessionHash:string,input:PolicyPublicationInput):Promise<{requestId:string}>;
+  activate(sessionHash:string,input:PolicyActivationInput):Promise<{requestId:string}>;
 }
 
 function policyError(error:unknown):never {
@@ -70,6 +82,15 @@ export class PgOperatorPolicyAdmin implements OperatorPolicyAdmin {
       return result.rows[0]!.overview;
     }catch(error){return policyError(error);}
   }
+  async activationOverview(sessionHash:string,serviceId:string):Promise<PolicyActivationOverview> {
+    const service=uuid.parse(serviceId);
+    try{
+      const result=await this.pool.query<{overview:PolicyActivationOverview}>(
+        `select factact_private.operator_policy_activation_overview($1,$2) as overview`,
+        [sessionHash,service]);
+      return result.rows[0]!.overview;
+    }catch(error){return policyError(error);}
+  }
   async assign(sessionHash:string,input:PolicyLevelInput):Promise<{requestId:string}> {
     const data=policyLevelInput.parse(input);
     try{
@@ -93,6 +114,15 @@ export class PgOperatorPolicyAdmin implements OperatorPolicyAdmin {
     try{
       const result=await this.pool.query<{id:string}>(
         `select factact_private.operator_policy_publish($1,$2,$3,$4,$5) as id`,
+        [sessionHash,data.requestId,data.serviceId,data.versionId,data.reason]);
+      return {requestId:result.rows[0]!.id};
+    }catch(error){return policyError(error);}
+  }
+  async activate(sessionHash:string,input:PolicyActivationInput):Promise<{requestId:string}> {
+    const data=policyActivationInput.parse(input);
+    try{
+      const result=await this.pool.query<{id:string}>(
+        `select factact_private.operator_policy_set_activation($1,$2,$3,$4,$5) as id`,
         [sessionHash,data.requestId,data.serviceId,data.versionId,data.reason]);
       return {requestId:result.rows[0]!.id};
     }catch(error){return policyError(error);}
