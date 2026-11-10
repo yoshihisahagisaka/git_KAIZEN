@@ -238,7 +238,9 @@ begin
       and c.change_type='KNOWLEDGE_STATE_CHANGE'
       and c.change_kind='PERSON_DISPLAY_NAME_CORRECTION'
     for update of c,p;
-  if not found or v_row.actor_operator_id=p_actor or v_row.verified_by_operator_id=p_actor
+  -- REVIEW and APPROVE may belong to the same human reviewer; only the
+  -- proposer must be distinct from both, as accepted in the first-edit Gate.
+  if not found or v_row.actor_operator_id=p_actor
     or not factact_private.registry_edit_authorized(p_tenant,p_actor,
        v_row.service_id,v_row.contract_profile_id,v_row.service_recipient_id,'APPROVE') then
     raise exception 'Registry commit authority required' using errcode='42501';
