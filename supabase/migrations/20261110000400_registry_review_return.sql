@@ -22,7 +22,7 @@ alter table factact.changes
 alter table factact.evidence
   drop constraint evidence_evidence_type_check,
   add constraint evidence_evidence_type_check
-    check (evidence_type in ('EXECUTION_ATTESTATION','VERIFICATION','REVIEW_RETURN'));
+    check (evidence_type in ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','REVIEW_RETURN'));
 
 -- The dedicated NOLOGIN executor may update only these three additional
 -- lifecycle columns. Runtime still cannot UPDATE Changes or Person directly.

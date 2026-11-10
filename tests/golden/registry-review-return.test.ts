@@ -51,6 +51,15 @@ beforeEach(async()=>{
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('Registry reviewer return/reject with immutable reason and no Person mutation',()=>{
+ it('preserves existing SUPPORT DIAGNOSTIC Evidence acceptance when adding REVIEW_RETURN',async()=>{
+  const {rows}=await db.admin.query(`select pg_get_constraintdef(oid) as definition
+    from pg_constraint where conrelid='factact.evidence'::regclass
+      and conname='evidence_evidence_type_check'`);
+  expect(rows).toHaveLength(1);
+  for(const allowed of ['EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','REVIEW_RETURN'])
+   expect(rows[0].definition).toContain(allowed);
+ });
+
  it('REVIEW-only rejects, stores exact reason/Evidence/Audit, is idempotent and allows fresh proposal',async()=>{
   await grant(ids.operator,['UPDATE'],recipientA);
   await grant(reviewer,['REVIEW'],recipientA);
