@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {api} from './api.js';
+import {api,ApiError} from './api.js';
 import type {
   ScopedRegistryPeoplePage,
   ScopedSupportHistoryEntry,ScopedSupportWorkHistory,ScopedSupportWorkPage,
@@ -37,17 +37,27 @@ const lifecycleLabels:Record<ScopedRegistryPeoplePage['items'][number]['lifecycl
 };
 /** Mounted only for the server-authorized current beneficiary. All directory
  * reads go through the narrow REGISTRY endpoint, independently reauthorized. */
-function ScopedRegistryContext({work}:{work:ScopedSupportWorkSummary}) {
+function ScopedRegistryContext({work,csrf}:{work:ScopedSupportWorkSummary;csrf:string}) {
   const [page,setPage]=useState<ScopedRegistryPeoplePage|null>(null);
   const [busy,setBusy]=useState(true);
   const [error,setError]=useState(false);
   const [loadingMore,setLoadingMore]=useState(false);
+  const [editingId,setEditingId]=useState<string|null>(null);
+  const [proposedName,setProposedName]=useState('');
+  const [reason,setReason]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [writeError,setWriteError]=useState('');
+  const [pendingNotice,setPendingNotice]=useState('');
+  const retry=useRef<{personId:string;payload:{serviceId:string;requestId:string;requestKey:string;
+   proposedDisplayName:string;reason:string;expectedRegistryRevision:number}}|null>(null);
+  const saveInFlight=useRef(false);
   const organizationId=work.registryOrganizationId!;
   const serviceId=work.serviceId;
   const url=`/api/scoped/registry/organizations/${organizationId}/people?serviceId=${serviceId}&limit=20`;
   useEffect(()=>{
     let active=true;
-    setPage(null);setError(false);setBusy(true);
+    setPage(null);setError(false);setBusy(true);setEditingId(null);
+    setWriteError('');setPendingNotice('');retry.current=null;
     api<ScopedRegistryPeoplePage>(url).then(result=>{
       if(result.organizationId!==organizationId)throw Error('Registry organization mismatch');
       if(active)setPage(result);
@@ -55,6 +65,43 @@ function ScopedRegistryContext({work}:{work:ScopedSupportWorkSummary}) {
       .finally(()=>{if(active)setBusy(false);});
     return ()=>{active=false;};
   },[url,organizationId]);
+
+  function startEditing(person:ScopedRegistryPeoplePage['items'][number]){
+    setEditingId(person.personId);setProposedName(person.displayName);setReason('');
+    setWriteError('');setPendingNotice('');retry.current=null;
+  }
+  async function submitProposal(event:React.FormEvent<HTMLFormElement>,
+   person:ScopedRegistryPeoplePage['items'][number]){
+    event.preventDefault();
+    const proposed=proposedName.trim(),rationale=reason.trim();
+    if(saveInFlight.current||!page?.canPropose||editingId!==person.personId||
+      !proposed||proposed===person.displayName||!rationale||
+      !Number.isSafeInteger(person.registryRevision))return;
+    const previous=retry.current;
+    const payload=previous?.personId===person.personId&&
+     previous.payload.proposedDisplayName===proposed&&previous.payload.reason===rationale&&
+     previous.payload.expectedRegistryRevision===person.registryRevision
+      ?previous.payload:{serviceId,requestId:crypto.randomUUID(),requestKey:crypto.randomUUID(),
+        proposedDisplayName:proposed,reason:rationale,expectedRegistryRevision:person.registryRevision};
+    retry.current={personId:person.personId,payload};
+    saveInFlight.current=true;setSaving(true);setWriteError('');setPendingNotice('');
+    try{
+      const result=await api<{changeId:string;status:string}>(
+        `/api/scoped/registry/people/${person.personId}/display-name-proposals`,csrf,payload);
+      if(result.status!=='PENDING_REVIEW')throw Error('Unexpected Registry response');
+      setEditingId(null);setReason('');retry.current=null;
+      // The displayed authoritative Person stays unchanged until a different
+      // reviewer verifies and commits the Change.
+      setPendingNotice('変更依頼を受け付けました。現在、確認待ちです。');
+    }catch(cause){
+      if(cause instanceof ApiError&&[401,403,404].includes(cause.status)){
+        setPage(null);setEditingId(null);retry.current=null;
+        setError(true);
+      }else{
+        setWriteError('変更依頼を受け付けたか確認できませんでした。同じ内容で再試行するか、最新情報を確認してください。');
+      }
+    }finally{saveInFlight.current=false;setSaving(false);}
+  }
 
   async function loadMorePeople(){
     if(!page?.nextCursor||loadingMore)return;
@@ -77,11 +124,32 @@ function ScopedRegistryContext({work}:{work:ScopedSupportWorkSummary}) {
     <h3>受益企業の登録情報</h3>
     {busy&&<p role="status">登録情報を確認しています…</p>}
     {error&&<p role="alert">登録情報を取得できませんでした。最新情報を確認してください。</p>}
+    {pendingNotice&&<p role="status" className="scoped-write-notice">{pendingNotice}</p>}
+    {writeError&&<p role="alert" className="scoped-write-error">{writeError}</p>}
     {page&&<>
       <strong className="scoped-registry-organization">{page.organizationName}</strong>
       {!page.items.length&&<p>登録されている方はいません。</p>}
       <ul>{page.items.map(person=><li key={person.personId}>
         <span>{person.displayName}</span><span>{lifecycleLabels[person.lifecycleStatus]}</span>
+        {page.canPropose&&editingId!==person.personId&&<button type="button" className="secondary"
+          disabled={saving||!Number.isSafeInteger(person.registryRevision)}
+          onClick={()=>startEditing(person)}>編集</button>}
+        {page.canPropose&&editingId===person.personId&&<form className="scoped-registry-edit" aria-label="表示名の変更依頼"
+          onSubmit={event=>void submitProposal(event,person)}>
+          <label htmlFor={`registry-name-${person.personId}`}>訂正後の表示名</label>
+          <input id={`registry-name-${person.personId}`} maxLength={200} required
+            value={proposedName} disabled={saving} onChange={event=>{setProposedName(event.target.value);retry.current=null;}}/>
+          <label htmlFor={`registry-reason-${person.personId}`}>訂正理由</label>
+          <input id={`registry-reason-${person.personId}`} maxLength={1000} required
+            value={reason} disabled={saving} onChange={event=>{setReason(event.target.value);retry.current=null;}}/>
+          <div className="scoped-registry-buttons">
+            <button type="submit" disabled={saving||!proposedName.trim()||!reason.trim()||
+              proposedName.trim()===person.displayName}>保存</button>
+            <button type="button" className="secondary" disabled={saving}
+              onClick={()=>{setEditingId(null);setWriteError('');retry.current=null;}}>キャンセル</button>
+          </div>
+          <small>保存後は確認待ちになります。承認されるまで現在の登録情報は変わりません。</small>
+        </form>}
       </li>)}</ul>
       {page.nextCursor&&<button type="button" className="secondary" disabled={loadingMore}
         onClick={()=>void loadMorePeople()}>さらに表示</button>}
@@ -275,7 +343,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
                 <h3>{detail.title}</h3><WorkSummary work={detail}/>
-                {detail.registryOrganizationId&&<ScopedRegistryContext
+                {detail.registryOrganizationId&&<ScopedRegistryContext csrf={csrf}
                   key={`${detail.workId}:${detail.registryOrganizationId}`} work={detail}/>}
                 {writeNotice&&<p role="status" className="scoped-write-notice">{writeNotice}</p>}
                 {writeError&&<div role="alert" className="scoped-write-error"><p>{writeError}</p>

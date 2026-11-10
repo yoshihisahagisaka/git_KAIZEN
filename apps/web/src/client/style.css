@@ -140,8 +140,12 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .scoped-registry-context h3 { margin-top:0; }
 .scoped-registry-organization { display:block; margin-bottom:10px; font-size:1.05rem; }
 .scoped-registry-context ul { list-style:none; padding:0; margin:0 0 12px; }
-.scoped-registry-context li { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #e6eef0; overflow-wrap:anywhere; }
+.scoped-registry-context li { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:9px 0; border-bottom:1px solid #e6eef0; overflow-wrap:anywhere; }
 .scoped-registry-context li span:last-child { flex-shrink:0; color:#506970; }
+.scoped-registry-edit { width:100%; padding:12px; border:1px solid #c3d7da; border-radius:6px; background:#f6f9f9; }
+.scoped-registry-edit label { margin:10px 0 4px; }
+.scoped-registry-edit small { display:block; color:#506970; }
+.scoped-registry-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
 .scoped-history li { margin:0 0 18px; }
 .scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }

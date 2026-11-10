@@ -12,6 +12,8 @@ import {ExploreQueries} from '../../packages/application/src/explore-queries.js'
 import {PgScopedGrantManager} from '../../apps/web/src/server/persistence/scoped-grant-manager.js';
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
+import {PgRegistryEditStore} from '../../apps/web/src/server/persistence/registry-edit-store.js';
+import {RegistryEditCommands} from '../../packages/application/src/registry-edit-commands.js';
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
 import {SupportCommands} from '../../packages/application/src/support-commands.js';
 import {SupportQueries} from '../../packages/application/src/support-queries.js';
@@ -48,7 +50,8 @@ test.beforeAll(async()=>{
   },pino({level:'silent'}),
     {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
     {commands:new SupportCommands(uow,{now:()=>now,id:randomUUID},reader),queries:new SupportQueries(uow)},
-    {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader);
+    {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader,
+    new RegistryEditCommands(new PgRegistryEditStore(db.runtime)));
   server=await new Promise<Server>(resolve=>{const s=app.listen(port,'127.0.0.1',()=>resolve(s));});
 });
 test.afterAll(async()=>{
@@ -90,7 +93,7 @@ async function login(page:Page){
   await page.getByRole('link',{name:'Googleでログイン'}).click();
   await expect(page.getByRole('heading',{name:'問い合わせ・対応状況'})).toBeVisible();
 }
-async function grantRegistryA(){
+async function grantRegistryA(operations:string[]=['READ']){
   const {rows}=await db.admin.query<{id:string}>(`
     select id from factact.service_recipients
     where tenant_id=$1 and service_id=$2 and recipient_organization_id=$3
@@ -101,7 +104,7 @@ async function grantRegistryA(){
     (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
      service_recipient_id,object_kind,operations,effective_from,issued_by_operator_id)
     values($1,$2,$3,$4,$5,'SERVICE_RECIPIENT',$6,'REGISTRY',$7,$8,$9)`,
-    [id,ids.tenant,scopedActor,ids.service,ids.contract,rows[0].id,['READ'],'2026-11-01T00:00:00.000Z',ids.operator]);
+    [id,ids.tenant,scopedActor,ids.service,ids.contract,rows[0].id,operations,'2026-11-01T00:00:00.000Z',ids.operator]);
   return id;
 }
 
@@ -152,7 +155,55 @@ test('separate REGISTRY READ reveals only confirmed beneficiary A people, with n
   await expect(directory).not.toContainText('B secret person');
   await expect(directory).not.toContainText('b-private@example.invalid');
   await expect(directory.locator('input,textarea')).toHaveCount(0);
+  await expect(directory.getByRole('button',{name:'編集'})).toHaveCount(0);
   expect((await page.request.get(`${origin}/api/scoped/registry/organizations/${companyB}/people?serviceId=${ids.service}`)).status()).toBe(404);
+});
+
+test('one Registry 保存 creates pending Change without mutating Person or opening customer B',async({page})=>{
+  await grantRegistryA(['READ','UPDATE']);
+  const requested:string[]=[];
+  page.on('request',req=>requested.push(new URL(req.url()).pathname));
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  const directory=page.getByRole('region',{name:'受益企業の登録情報'});
+  await expect(directory).toContainText('田中 一郎');
+  await directory.getByRole('button',{name:'編集'}).click();
+  const form=directory.getByRole('form',{name:'表示名の変更依頼'});
+  await form.getByLabel('訂正後の表示名').fill('田中 太郎');
+  await form.getByLabel('訂正理由').fill('顧客から登録表記の訂正依頼');
+  await form.getByRole('button',{name:'保存'}).click();
+  await expect(directory.getByRole('status')).toContainText('確認待ち');
+  await expect(directory).toContainText('田中 一郎');
+  await expect(directory).not.toContainText('田中 太郎');
+  await expect(form).toHaveCount(0);
+  expect(requested.filter(path=>path.endsWith('/display-name-proposals'))).toEqual([
+    `/api/scoped/registry/people/${ids.person}/display-name-proposals`,
+  ]);
+  const {rows}=await db.admin.query(`select c.status,c.work_id,c.action_id,r.reason,
+    p.display_name from factact.changes c join factact.registry_edit_requests r
+    on r.tenant_id=c.tenant_id and r.id=c.registry_edit_request_id
+    join factact.people p on p.id=r.target_person_id`);
+  expect(rows).toEqual([expect.objectContaining({status:'PROPOSED',work_id:null,
+    action_id:null,reason:'顧客から登録表記の訂正依頼',display_name:'田中 一郎'})]);
+  expect((await page.request.get(`${origin}/api/scoped/registry/organizations/${companyB}/people?serviceId=${ids.service}`)).status()).toBe(404);
+});
+
+test('revocation after opening the Registry edit form fails closed at 保存',async({page})=>{
+  const registryGrant=await grantRegistryA(['READ','UPDATE']);
+  await login(page);
+  await page.locator('.scoped-work-button').click();
+  const directory=page.getByRole('region',{name:'受益企業の登録情報'});
+  await directory.getByRole('button',{name:'編集'}).click();
+  const form=directory.getByRole('form',{name:'表示名の変更依頼'});
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=now(),revoked_by_operator_id=$1,revocation_reason='Registry edit browser revoke'
+    where id=$2`,[ids.operator,registryGrant]);
+  await form.getByLabel('訂正後の表示名').fill('変更できない表記');
+  await form.getByLabel('訂正理由').fill('取消後の試行');
+  await form.getByRole('button',{name:'保存'}).click();
+  await expect(directory.getByRole('alert')).toContainText('登録情報を取得できませんでした');
+  await expect(directory).not.toContainText('田中 一郎');
+  expect((await db.admin.query('select count(*)::integer as n from factact.registry_edit_requests')).rows[0].n).toBe(0);
 });
 
 test('revoking REGISTRY READ removes previously visible directory while keeping SUPPORT Work',async({page})=>{

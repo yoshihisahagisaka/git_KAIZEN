@@ -47,7 +47,9 @@ export interface ScopedSupportWorkHistory {
 export interface ScopedRegistryPeopleCursor {displayName:string;personId:string}
 export interface ScopedRegistryPeoplePage {
  organizationId:string;organizationName:string;
- items:Array<{personId:string;displayName:string;lifecycleStatus:'JOINING'|'ACTIVE'|'INACTIVE'}>;
+ canPropose:boolean;
+ items:Array<{personId:string;displayName:string;registryRevision:number;
+  lifecycleStatus:'JOINING'|'ACTIVE'|'INACTIVE'}>;
  nextCursor:string|null;
 }
 
@@ -89,24 +91,34 @@ export class PgScopedAccessReader {
     where r.tenant_id=$1 and r.service_id=$2 and r.recipient_organization_id=$3
       and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
     order by c.version desc`,[tenantId,serviceId,organizationId,at]);
-   let organizationName:string|null=null;
+   let organizationName:string|null=null,canPropose=false;
    for(const context of contexts){
     if(await this.authorizedInTransaction(db,actorId,{
      tenantId,serviceId,contractProfileId:context.contract_id,
      scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:context.recipient_id},
      objectKind:'REGISTRY',operation:'READ',
-    },at)){organizationName=context.organization_name;break;}
+    },at)){
+     organizationName=context.organization_name;
+     canPropose=await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId:context.contract_id,
+      scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:context.recipient_id},
+      objectKind:'REGISTRY',operation:'UPDATE',
+     },at);
+     break;
+    }
    }
    if(organizationName===null)return null;
-   const {rows}=await db.query<{id:string;display_name:string;lifecycle_status:'JOINING'|'ACTIVE'|'INACTIVE'}>(`
-    select id,display_name,lifecycle_status from factact.people
+   const {rows}=await db.query<{id:string;display_name:string;registry_revision:string;
+    lifecycle_status:'JOINING'|'ACTIVE'|'INACTIVE'}>(`
+    select id,display_name,registry_revision,lifecycle_status from factact.people
     where tenant_id=$1 and organization_id=$2
       and ($3::text is null or (display_name,id)>($3::text,$4::uuid))
     order by display_name,id limit $5`,
     [tenantId,organizationId,cursor?.displayName??null,cursor?.personId??null,limit]);
    const last=rows.at(-1);
-   return {organizationId,organizationName,
-    items:rows.map(p=>({personId:p.id,displayName:p.display_name,lifecycleStatus:p.lifecycle_status})),
+   return {organizationId,organizationName,canPropose,
+    items:rows.map(p=>({personId:p.id,displayName:p.display_name,
+     registryRevision:Number(p.registry_revision),lifecycleStatus:p.lifecycle_status})),
     nextCursor:rows.length===limit&&last
      ?Buffer.from(JSON.stringify({displayName:last.display_name,personId:last.id})).toString('base64url')
      :null};
