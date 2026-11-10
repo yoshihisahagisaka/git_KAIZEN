@@ -162,6 +162,26 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .registry-review-return { display:grid; gap:8px; margin-top:12px; }
 .registry-review-return label { font-weight:600; }
 .registry-review-return textarea { width:100%; max-width:100%; box-sizing:border-box; min-height:80px; }
+.policy-admin { margin:16px 28px; padding:18px 22px; border:1px solid #a9c5c9; background:#eaf4f4; border-radius:8px; }
+.policy-admin-heading { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.policy-admin-heading h2 { margin:0; }
+.policy-admin-heading p,.policy-admin-hint { color:#47666b; font-size:14px; }
+.policy-admin-body { margin-top:16px; }
+.policy-admin-selection { max-width:520px; }
+.policy-admin-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.policy-admin-card { min-width:0; padding:20px; margin:12px 0; background:white; border:1px solid #c5d7da; border-radius:8px; }
+.policy-admin-card h3 { margin:0 0 10px; }
+.policy-admin-card label { margin:12px 0 4px; }
+.policy-admin-card textarea { min-height:68px; }
+.policy-admin-card ol { padding-left:22px; }
+.policy-admin-card li { padding-bottom:12px; overflow-wrap:anywhere; }
+.policy-admin-card time { font-size:13px; }
+.policy-admin-preview { margin:12px 0; padding:14px; border-left:4px solid #006b73; background:#eaf5f5; }
+.policy-admin-preview ul { margin:5px 0; }
+.policy-admin-inline { display:flex; align-items:center; gap:8px; }
+.policy-admin-inline button { flex:none; }
+.policy-admin-stop { border-top:1px solid #c5d7da; padding-top:10px; }
+@media(max-width:850px) { .policy-admin-columns { grid-template-columns:1fr; } .policy-admin { margin:12px; } .policy-admin-heading { align-items:flex-start; } }
 .scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
 .scoped-history li { margin:0 0 18px; }
 .scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }

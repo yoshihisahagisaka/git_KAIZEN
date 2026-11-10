@@ -5,6 +5,7 @@ import type { SessionContext } from '../../../../packages/application/src/operat
 import './style.css';
 import { JoinUI } from './join-ui.js';
 import { ScopedSupportUI } from './scoped-support-ui.js';
+import { OperatorPolicyAdminUI } from './operator-policy-admin-ui.js';
 import { api } from './api.js';
 
 type BrowserSession = { operator: Operator; csrfToken: string };
@@ -76,6 +77,8 @@ function App() {
       <div className="account"><p>{session.operator.displayName} / {session.operator.tenantName}</p>
       <SessionContextPicker key={`${session.operator.tenantId}:${session.operator.id}`} session={session} onSwitch={switchContext}/>
       <button className="secondary" onClick={() => void logout()}>ログアウト</button></div>
+      <OperatorPolicyAdminUI key={`policy:${session.operator.tenantId}:${session.operator.id}`}
+        csrf={session.csrfToken}/>
       {session.operator.readAuthorityMode==='INTERNAL_V1'
         ? <JoinUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} operator={session.operator}/>
         : session.operator.readAuthorityMode==='SCOPED'

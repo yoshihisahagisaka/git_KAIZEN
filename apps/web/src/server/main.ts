@@ -19,6 +19,7 @@ import {PgScopedGrantManager} from './persistence/scoped-grant-manager.js';
 import {RegistryEditCommands} from '../../../../packages/application/src/registry-edit-commands.js';
 import {PgRegistryEditStore} from './persistence/registry-edit-store.js';
 import {PgRegistryReviewReader} from './persistence/registry-review-reader.js';
+import {PgOperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'oidcSessionDatabaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -41,7 +42,8 @@ async function main() {
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
       {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader,
-      new RegistryEditCommands(new PgRegistryEditStore(pool)),new PgRegistryReviewReader(pool));
+      new RegistryEditCommands(new PgRegistryEditStore(pool)),new PgRegistryReviewReader(pool),
+      new PgOperatorPolicyAdmin(pool));
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });
