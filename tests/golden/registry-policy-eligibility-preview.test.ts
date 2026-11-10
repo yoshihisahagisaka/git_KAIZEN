@@ -156,7 +156,9 @@ describe('isolated Registry policy eligibility preview: no active cutover',()=>{
    set operations=array['UPDATE']::text[] where id=$1`,[grantId]);
   expect(await eligibility()).toBe('REQUEST');
   await db.admin.query(`update factact.scoped_actor_grants
-   set status='REVOKED',effective_until=now() where id=$1`,[grantId]);
+   set status='REVOKED',effective_until=now(),revoked_at=now(),
+   revoked_by_operator_id=$2,revocation_reason='Synthetic grant revocation'
+   where id=$1`,[grantId,ids.operator]);
   expect(await eligibility()).toBe('DENY');
   grantId=await grant();
   expect(await eligibility()).toBe('REQUEST');
