@@ -348,7 +348,7 @@ test('independent Registry reviewer confirms Person correction in one click with
   await expect(review).toContainText('利用者による登録表記の訂正申告');
   await expect(review).not.toContainText('Customer B confidential');
   await review.getByRole('button',{name:'確認して確定'}).click();
-  await expect(review.getByRole('status')).toContainText('変更を確定しました');
+  await expect(review.locator('.scoped-write-notice')).toContainText('変更を確定しました');
   await expect(review).toContainText('現在確認できる変更依頼はありません。');
   const result=await db.admin.query(`select c.status,c.verified_by_operator_id,
     c.committed_by_operator_id,p.display_name,p.registry_revision
