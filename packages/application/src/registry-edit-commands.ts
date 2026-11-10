@@ -14,6 +14,7 @@ export interface RegistryEditStore {
   verify(actor:VerifiedRegistryActor,changeId:string,summary:string):Promise<string>;
   commit(actor:VerifiedRegistryActor,changeId:string):Promise<string>;
   confirm(actor:VerifiedRegistryActor,changeId:string,summary:string):Promise<string>;
+  returnForRevision(actor:VerifiedRegistryActor,changeId:string,reason:string):Promise<string>;
 }
 
 const uuid=z.uuid();
@@ -55,5 +56,13 @@ export class RegistryEditCommands {
     guardedActor(actor);uuid.parse(changeId);
     const summary='表示された登録表記の訂正前後と依頼理由を確認して確定した。独立した本人確認を行ったことは示さない。';
     return this.store.confirm(actor,changeId,summary).then(id=>({changeId:id}));
+  }
+
+  /** A reviewer declines a pending immutable proposal with a real reason.
+   * Resubmission always creates a new request; never modify this Change. */
+  returnDisplayName(actor:VerifiedRegistryActor,changeId:string,reason:string):Promise<{changeId:string}> {
+    guardedActor(actor);uuid.parse(changeId);
+    if(!trimmedLength(reason,1,1000))throw Error('REGISTRY_RETURN_REASON_REQUIRED');
+    return this.store.returnForRevision(actor,changeId,reason.trim()).then(id=>({changeId:id}));
   }
 }
