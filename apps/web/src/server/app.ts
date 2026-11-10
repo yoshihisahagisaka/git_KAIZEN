@@ -20,8 +20,9 @@ import {scopedGrantRoutes} from './scoped-grant-routes.js';
 import type {ScopedGrantManager} from './persistence/scoped-grant-manager.js';
 import {scopedRegistryRoutes,type ScopedRegistryReader} from './scoped-registry-routes.js';
 import type {RegistryEditCommands} from '../../../../packages/application/src/registry-edit-commands.js';
+import {registryReviewRoutes,type RegistryReviewReader} from './registry-review-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -42,6 +43,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (scopedSupport) app.use('/api',scopedSupportRoutes(scopedSupport,support?.commands));
   if (scopedGrantManager) app.use('/api',scopedGrantRoutes(scopedGrantManager));
   if (scopedRegistry) app.use('/api',scopedRegistryRoutes(scopedRegistry,registryEditCommands));
+  if (registryReview && registryEditCommands) app.use('/api',registryReviewRoutes(registryReview,registryEditCommands));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));

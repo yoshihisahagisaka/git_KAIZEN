@@ -146,6 +146,15 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .scoped-registry-edit label { margin:10px 0 4px; }
 .scoped-registry-edit small { display:block; color:#506970; }
 .scoped-registry-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.registry-review { padding:16px 20px; margin:0 0 20px; background:white; border:1px solid #cbdadd; border-radius:8px; }
+.registry-review-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.registry-review-heading h2 { margin:0; }
+.registry-review-note { color:#506970; }
+.registry-review-list { list-style:none; padding:0; }
+.registry-review-list li { padding:18px; margin:12px 0; border:1px solid #cbdadd; border-radius:6px; background:#f7fafa; }
+.registry-review-list dl { display:grid; grid-template-columns:minmax(130px,.65fr) minmax(0,2fr); gap:8px 12px; }
+.registry-review-list dt { font-weight:600; }
+.registry-review-list dd { margin:0; overflow-wrap:anywhere; }
 .scoped-history { padding:18px 0 0; border-top:1px solid #d5e1e3; }
 .scoped-history li { margin:0 0 18px; }
 .scoped-record-text { white-space:pre-wrap; overflow-wrap:anywhere; }

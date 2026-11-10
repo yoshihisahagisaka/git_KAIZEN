@@ -13,6 +13,7 @@ export interface RegistryEditStore {
   propose(actor:VerifiedRegistryActor,input:ProposeDisplayNameInput):Promise<string>;
   verify(actor:VerifiedRegistryActor,changeId:string,summary:string):Promise<string>;
   commit(actor:VerifiedRegistryActor,changeId:string):Promise<string>;
+  confirm(actor:VerifiedRegistryActor,changeId:string,summary:string):Promise<string>;
 }
 
 const uuid=z.uuid();
@@ -45,5 +46,14 @@ export class RegistryEditCommands {
   commitDisplayName(actor:VerifiedRegistryActor,changeId:string):Promise<{changeId:string}> {
     guardedActor(actor);uuid.parse(changeId);
     return this.store.commit(actor,changeId).then(id=>({changeId:id}));
+  }
+
+  /** One human confirm action, two separate DB state transitions in one ACID
+   * transaction. The attestation describes a screen review, not legal identity
+   * verification or independently observed facts. */
+  confirmDisplayName(actor:VerifiedRegistryActor,changeId:string):Promise<{changeId:string}> {
+    guardedActor(actor);uuid.parse(changeId);
+    const summary='表示された登録表記の訂正前後と依頼理由を確認して確定した。独立した本人確認を行ったことは示さない。';
+    return this.store.confirm(actor,changeId,summary).then(id=>({changeId:id}));
   }
 }
