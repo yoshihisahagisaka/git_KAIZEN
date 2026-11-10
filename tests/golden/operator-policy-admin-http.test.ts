@@ -175,8 +175,11 @@ describe('administrator-only HTTP for operator level × category policy',()=>{
     await db.admin.query(`update factact_private.operator_identities
       set status='REVOKED',revoked_at=now(),revocation_reason='member stopped'
       where subject=$1`,[administrator]);
-    expect((await get()).status).toBe(403);
-    expect((await post('versions',versionInput())).status).toBe(403);
+    // Active membership is checked by the global Session boundary first:
+    // a revoked identity invalidates authentication (401), not just the
+    // policy-administration authorization (403).
+    expect((await get()).status).toBe(401);
+    expect((await post('versions',versionInput())).status).toBe(401);
   });
 
   it('read is restricted to the single function and does not reveal private identity provenance',async()=>{
