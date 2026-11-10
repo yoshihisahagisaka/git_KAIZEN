@@ -13,6 +13,7 @@ import {PgScopedGrantManager} from '../../apps/web/src/server/persistence/scoped
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
 import {PgRegistryEditStore} from '../../apps/web/src/server/persistence/registry-edit-store.js';
+import {PgRegistryReviewReader} from '../../apps/web/src/server/persistence/registry-review-reader.js';
 import {RegistryEditCommands} from '../../packages/application/src/registry-edit-commands.js';
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
 import {SupportCommands} from '../../packages/application/src/support-commands.js';
@@ -51,7 +52,8 @@ test.beforeAll(async()=>{
     {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
     {commands:new SupportCommands(uow,{now:()=>now,id:randomUUID},reader),queries:new SupportQueries(uow)},
     {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader,
-    new RegistryEditCommands(new PgRegistryEditStore(db.runtime)));
+    new RegistryEditCommands(new PgRegistryEditStore(db.runtime)),
+    new PgRegistryReviewReader(db.runtime));
   server=await new Promise<Server>(resolve=>{const s=app.listen(port,'127.0.0.1',()=>resolve(s));});
 });
 test.afterAll(async()=>{
@@ -93,7 +95,7 @@ async function login(page:Page){
   await page.getByRole('link',{name:'Googleでログイン'}).click();
   await expect(page.getByRole('heading',{name:'問い合わせ・対応状況'})).toBeVisible();
 }
-async function grantRegistryA(operations:string[]=['READ']){
+async function grantRegistryA(operations:string[]=['READ'],actor:string=scopedActor){
   const {rows}=await db.admin.query<{id:string}>(`
     select id from factact.service_recipients
     where tenant_id=$1 and service_id=$2 and recipient_organization_id=$3
@@ -104,8 +106,16 @@ async function grantRegistryA(operations:string[]=['READ']){
     (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
      service_recipient_id,object_kind,operations,effective_from,issued_by_operator_id)
     values($1,$2,$3,$4,$5,'SERVICE_RECIPIENT',$6,'REGISTRY',$7,$8,$9)`,
-    [id,ids.tenant,scopedActor,ids.service,ids.contract,rows[0].id,operations,'2026-11-01T00:00:00.000Z',ids.operator]);
+    [id,ids.tenant,actor,ids.service,ids.contract,rows[0].id,operations,'2026-11-01T00:00:00.000Z',ids.operator]);
   return id;
+}
+
+async function pendingRegistryChange(){
+  await grantRegistryA(['UPDATE'],ids.operator);
+  return new RegistryEditCommands(new PgRegistryEditStore(db.runtime)).proposeDisplayName(
+    {tenantId:ids.tenant,actorOperatorId:ids.operator},{serviceId:ids.service,personId:ids.person,
+      requestId:randomUUID(),requestKey:randomUUID(),proposedDisplayName:'田中 太郎',
+      reason:'利用者による登録表記の訂正申告',expectedRegistryRevision:0});
 }
 
 test('scoped read UI shows A only, detail and allowed history; never calls internal broad APIs',async({page})=>{
@@ -321,4 +331,48 @@ test('switching authorized Tenant discards A data and selects scoped-only empty 
   await expect(page.locator('.scoped-work-button')).toHaveCount(0);
   await expect(page.getByText('Customer B confidential')).toHaveCount(0);
   expect((await page.request.get(`${origin}/api/scoped/support-work/${workA}`)).status()).toBe(404);
+});
+
+test('independent Registry reviewer confirms Person correction in one click without SUPPORT access',async({page})=>{
+  const {changeId}=await pendingRegistryChange();
+  await grantRegistryA(['REVIEW','APPROVE']);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=now(),revoked_by_operator_id=$1,revocation_reason='Reviewer has no SUPPORT READ'
+    where id=$2`,[ids.operator,grantId]);
+  await login(page);
+  await expect(page.locator('.scoped-work-button')).toHaveCount(0);
+  const review=page.getByRole('region',{name:'Registry確認待ち'});
+  await review.getByRole('button',{name:'確認する'}).click();
+  await expect(review).toContainText('田中 一郎');
+  await expect(review).toContainText('田中 太郎');
+  await expect(review).toContainText('利用者による登録表記の訂正申告');
+  await expect(review).not.toContainText('Customer B confidential');
+  await review.getByRole('button',{name:'確認して確定'}).click();
+  await expect(review.locator('.scoped-write-notice')).toContainText('変更を確定しました');
+  await expect(review).toContainText('現在確認できる変更依頼はありません。');
+  const result=await db.admin.query(`select c.status,c.verified_by_operator_id,
+    c.committed_by_operator_id,p.display_name,p.registry_revision
+    from factact.changes c join factact.registry_edit_requests r
+      on r.tenant_id=c.tenant_id and r.id=c.registry_edit_request_id
+    join factact.people p on p.id=r.target_person_id where c.id=$1`,[changeId]);
+  expect(result.rows).toEqual([expect.objectContaining({status:'COMMITTED',
+    verified_by_operator_id:scopedActor,committed_by_operator_id:scopedActor,
+    display_name:'田中 太郎',registry_revision:'1'})]);
+});
+
+test('revoked reviewer cannot confirm an already displayed proposal and sees refresh failure',async({page})=>{
+  const {changeId}=await pendingRegistryChange();
+  const reviewGrant=await grantRegistryA(['REVIEW','APPROVE']);
+  await login(page);
+  const review=page.getByRole('region',{name:'Registry確認待ち'});
+  await review.getByRole('button',{name:'確認する'}).click();
+  await expect(review).toContainText('田中 太郎');
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=now(),revoked_by_operator_id=$1,revocation_reason='Revoked after read'
+    where id=$2`,[ids.operator,reviewGrant]);
+  await review.getByRole('button',{name:'確認して確定'}).click();
+  await expect(review.getByRole('alert')).toContainText('確定できなかったか');
+  await expect(review).toContainText('現在確認できる変更依頼はありません。');
+  expect((await db.admin.query('select status from factact.changes where id=$1',[changeId]))
+    .rows[0].status).toBe('PROPOSED');
 });
