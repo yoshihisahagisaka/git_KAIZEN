@@ -14,3 +14,13 @@ JOIN checkpoint implementation, 2026-09-09: the same single deployable app now
 contains the document 15 commands and minimal React workspaces. Native
 embedded-postgres and the injected browser test IdP exist only under tests;
 neither is imported by production, Domain or Application. No deployment redesign.
+
+Hosted platform amendment, 2026-11-10: the September bootstrap decision remains
+the local-development baseline. Supabase CLI continues to own the existing SQL
+migration history, and the single Cloud Run-compatible application, Core
+portability and application boundaries are unchanged. ADR 0009 supersedes only
+the hosted-platform selection: hosted staging targets Cloud Run plus a
+FACTACT-dedicated Cloud SQL for PostgreSQL instance, with synthetic data first.
+This amendment is a platform-direction record, not authorization to create GCP
+resources, run hosted migrations or deploy. Production still requires a
+separate Go decision.
