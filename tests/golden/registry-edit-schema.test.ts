@@ -38,14 +38,14 @@ const insertRequest=async(options:Record<string,unknown>={})=>{
 };
 const insertChange=async(requestId:string,overrides:Record<string,unknown>={})=>{
   const change={id:randomUUID(),workId:null,actionId:null,requestId,proposer:ids.operator,
-    type:'KNOWLEDGE_STATE_CHANGE',kind:'PERSON_DISPLAY_NAME_CORRECTION',status:'PROPOSED',...overrides};
+    subjectId:ids.person,type:'KNOWLEDGE_STATE_CHANGE',kind:'PERSON_DISPLAY_NAME_CORRECTION',status:'PROPOSED',...overrides};
   await withTenant(db.runtime,ids.tenant,client=>client.query(`
     insert into factact.changes
     (id,tenant_id,work_id,action_id,registry_edit_request_id,proposed_by_operator_id,
      change_type,change_kind,status,subject_type,subject_id,proposed_effect_json,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,'PERSON',$10,$11,$12)`,[
       change.id,ids.tenant,change.workId,change.actionId,change.requestId,change.proposer,
-      change.type,change.kind,change.status,ids.person,
+      change.type,change.kind,change.status,change.subjectId,
       {beforeDisplayName:'田中 一郎',afterDisplayName:'田中 太郎',expectedRevision:0},now,
     ]));
   return change;
@@ -105,6 +105,11 @@ describe('Registry first-edit persistence is isolated from JOIN and authoritativ
     await expect(insertChange(another.id,{type:'REALITY_CHANGE'})).rejects.toMatchObject({code:'23514'});
     await expect(insertChange(another.id,{kind:'PRIMARY_DEVICE_ASSIGNMENT'})).rejects.toMatchObject({code:'23514'});
     await expect(insertChange(another.id,{proposer:null})).rejects.toMatchObject({code:'23514'});
+    await expect(insertChange(another.id,{proposer:reviewer})).rejects.toMatchObject({code:'23503'});
+    const differentPerson=randomUUID();
+    await db.admin.query(`insert into factact.people(id,tenant_id,organization_id,display_name,lifecycle_status)
+      values($1,$2,$3,'別の社員','ACTIVE')`,[differentPerson,ids.tenant,ids.organization]);
+    await expect(insertChange(another.id,{subjectId:differentPerson})).rejects.toMatchObject({code:'23503'});
     await expect(insertChange(null as unknown as string)).rejects.toMatchObject({code:'23514'});
     await expect(insertChange(another.id,{workId:randomUUID()})).rejects.toMatchObject({code:'23514'});
   });
