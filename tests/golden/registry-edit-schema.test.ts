@@ -24,7 +24,9 @@ const insertRequest=async(options:Record<string,unknown>={})=>{
   const source={id:randomUUID(),tenantId:ids.tenant,actorId:ids.operator,serviceId:ids.service,
     contractId:ids.contract,recipientId:organizationRecipient,personId:ids.person,requestKey:randomUUID(),
     original:'田中 一郎',proposed:'田中 太郎',revision:0,reason:'登録表記の訂正',...options};
-  await withTenant(db.runtime,ids.tenant,client=>client.query(`
+  // Deliberately exercise raw constraint enforcement through migration owner:
+  // runtime INSERT is disabled by the command migration.
+  await db.admin.query(`
     insert into factact.registry_edit_requests
     (id,tenant_id,actor_operator_id,service_id,contract_profile_id,service_recipient_id,
      target_person_id,request_key,original_display_name,proposed_display_name,
@@ -33,13 +35,13 @@ const insertRequest=async(options:Record<string,unknown>={})=>{
       source.id,source.tenantId,source.actorId,source.serviceId,source.contractId,
       source.recipientId,source.personId,source.requestKey,source.original,source.proposed,
       source.revision,source.reason,now,
-    ]));
+    ]);
   return source;
 };
 const insertChange=async(requestId:string,overrides:Record<string,unknown>={})=>{
   const change={id:randomUUID(),workId:null,actionId:null,requestId,proposer:ids.operator,
     subjectId:ids.person,type:'KNOWLEDGE_STATE_CHANGE',kind:'PERSON_DISPLAY_NAME_CORRECTION',status:'PROPOSED',...overrides};
-  await withTenant(db.runtime,ids.tenant,client=>client.query(`
+  await db.admin.query(`
     insert into factact.changes
     (id,tenant_id,work_id,action_id,registry_edit_request_id,proposed_by_operator_id,
      change_type,change_kind,status,subject_type,subject_id,proposed_effect_json,created_at)
@@ -47,7 +49,7 @@ const insertChange=async(requestId:string,overrides:Record<string,unknown>={})=>
       change.id,ids.tenant,change.workId,change.actionId,change.requestId,change.proposer,
       change.type,change.kind,change.status,change.subjectId,
       {beforeDisplayName:'田中 一郎',afterDisplayName:'田中 太郎',expectedRevision:0},now,
-    ]));
+    ]);
   return change;
 };
 
@@ -69,9 +71,23 @@ describe('Registry first-edit persistence is isolated from JOIN and authoritativ
 
   it('keeps source immutable and grants no direct Person display-name update',async()=>{
     const source=await insertRequest();
+    const change=await insertChange(source.id);
     const personUpdate=()=>withTenant(db.runtime,ids.tenant,client=>client.query(
       'update factact.people set display_name=$2 where id=$1',[ids.person,'Unauthorized']));
     await expect(personUpdate()).rejects.toMatchObject({code:'42501'});
+    await expect(withTenant(db.runtime,ids.tenant,client=>client.query(`
+      insert into factact.registry_edit_requests
+      (id,tenant_id,actor_operator_id,service_id,contract_profile_id,service_recipient_id,
+       target_person_id,request_key,original_display_name,proposed_display_name,
+       expected_registry_revision,reason)
+      values($1,$2,$3,$4,$5,$6,$7,$8,'田中 一郎','田中 三郎',0,'不正な直接要求')`,[
+        randomUUID(),ids.tenant,ids.operator,ids.service,ids.contract,
+        organizationRecipient,ids.person,randomUUID(),
+      ]))).rejects.toMatchObject({code:'42501'});
+    await expect(withTenant(db.runtime,ids.tenant,client=>client.query(`
+      update factact.changes set status='VERIFIED',
+       verified_by_operator_id=$2,verified_at=now(),verification_summary='raw review'
+       where id=$1`,[change.id,reviewer]))).rejects.toMatchObject({code:'42501'});
     await expect(withTenant(db.runtime,ids.tenant,client=>client.query(
       'update factact.registry_edit_requests set reason=$2 where id=$1',[source.id,'rewritten']))).rejects.toMatchObject({code:'42501'});
     await expect(withTenant(db.runtime,ids.tenant,client=>client.query(
@@ -91,7 +107,9 @@ describe('Registry first-edit persistence is isolated from JOIN and authoritativ
     await expect(insertRequest({recipientId:randomUUID()})).rejects.toMatchObject({code:'23503'});
     await expect(insertRequest({personId:randomUUID()})).rejects.toMatchObject({code:'23503'});
     await db.admin.query('insert into factact.tenants(id,name,status) values($1,$2,$3)',[otherTenant,'Other','ACTIVE']);
-    await expect(insertRequest({tenantId:otherTenant})).rejects.toMatchObject({code:'42501'});
+    // Admin can create independent Tenant data; the tenant-scoped runtime
+    // cannot observe either Tenant through RLS.
+    await expect(insertRequest({tenantId:otherTenant})).rejects.toMatchObject({code:'23503'});
     const invisible=await withTenant(db.runtime,otherTenant,client=>client.query(
       'select id from factact.registry_edit_requests where id=$1',[first.id]));
     expect(invisible.rows).toEqual([]);
