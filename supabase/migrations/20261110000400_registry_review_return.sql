@@ -24,10 +24,8 @@ alter table factact.evidence
   add constraint evidence_evidence_type_check
     check (evidence_type in ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','REVIEW_RETURN'));
 
--- The dedicated NOLOGIN executor may update only these three additional
--- lifecycle columns. Runtime still cannot UPDATE Changes or Person directly.
-grant update(rejected_by_operator_id,rejected_at,rejection_reason)
-  on factact.changes to factact_registry_executor;
+-- G3 A2 grants these bounded lifecycle columns only during atomic 01100
+-- Finalization. Runtime still cannot UPDATE Changes or Person directly.
 
 create function factact.registry_return_display_name(
   p_tenant uuid,p_actor uuid,p_change uuid,p_reason text
@@ -118,11 +116,5 @@ revoke all on function factact.registry_return_display_name(uuid,uuid,uuid,text)
 grant execute on function factact.registry_return_display_name(uuid,uuid,uuid,text)
   to factact_runtime;
 
--- Match the base migration's ownership procedure without permanent membership
--- or schema CREATE. The executor remains unable to own business tables.
-grant factact_registry_executor to current_user;
-grant create on schema factact to factact_registry_executor;
-alter function factact.registry_return_display_name(uuid,uuid,uuid,text)
-  owner to factact_registry_executor;
-revoke create on schema factact from factact_registry_executor;
-revoke factact_registry_executor from current_user;
+-- G3 A2 defers restricted ownership to the atomic 01100 Finalization after
+-- all seven Registry functions have their final definitions.

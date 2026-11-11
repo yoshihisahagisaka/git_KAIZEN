@@ -11,6 +11,12 @@ begin
   if not exists(select 1 from pg_roles
     where rolname='factact_registry_executor' and not rolcanlogin
       and not rolsuper and not rolbypassrls)
+   or not exists(select 1 from pg_auth_members m
+     where m.roleid='factact_registry_executor'::regrole
+       and m.member=current_user::regrole and m.admin_option
+       and not m.set_option and not m.inherit_option)
+   or (select count(*) from pg_auth_members
+     where roleid='factact_registry_executor'::regrole)<>1
    or (select count(*) from pg_proc p
      where p.proowner='factact_registry_executor'::regrole
        and p.oid=any(array[
@@ -26,8 +32,11 @@ begin
   end if;
 end $preflight$;
 
--- Temporary membership is never committed; no owner transfer is required.
-grant factact_registry_executor to current_user;
+-- ADMIN-only is the committed maintenance state. Enable SET only inside this
+-- transaction, then restore the exact ADMIN TRUE / SET FALSE / INHERIT FALSE
+-- relationship before commit.
+grant factact_registry_executor to current_user
+  with set true, inherit false;
 set local role factact_registry_executor;
 
 revoke execute on function
@@ -62,7 +71,14 @@ begin
 end $verify$;
 
 reset role;
-revoke factact_registry_executor from current_user;
+do $maintenance_restore$
+begin
+  if (select rolsuper from pg_roles where rolname=current_user) then
+    execute format('grant factact_registry_executor to %I with admin true, set false, inherit false',current_user);
+  else
+    execute format('revoke factact_registry_executor from %I granted by %I',current_user,current_user);
+  end if;
+end $maintenance_restore$;
 commit;
 
 -- Operator must separately read back role membership, function ACL and

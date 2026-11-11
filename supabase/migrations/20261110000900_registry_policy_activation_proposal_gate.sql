@@ -98,5 +98,7 @@ exception when no_data_found or too_many_rows then
   raise exception 'Registry target context unavailable or ambiguous' using errcode='42501';
 end $$;
 
--- The previous function's owner remains the non-login Registry executor. Its
--- signature, allowed runtime EXECUTE and direct-update protections are intact.
+-- The Migration principal still owns this unpublished function at this point.
+-- G3 A2 transfers the final definition to the non-login Registry executor in
+-- atomic 01100 Finalization. Runtime EXECUTE and direct-update protections are
+-- re-asserted there without changing this authorization logic.

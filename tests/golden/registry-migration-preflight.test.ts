@@ -11,14 +11,15 @@ beforeEach(async()=>{await db.reset();},60_000);
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('Registry migration preflight / fail-closed disablement',()=>{
-  it('reports installed function owner and 13 FORCE RLS tables using SELECT only',async()=>{
+  it('reports exact owner, ADMIN-only maintenance and 31 FORCE RLS tables using SELECT only',async()=>{
     const before=await db.admin.query(`select count(*)::integer as n from factact.audit_events`);
     const result=await readRegistryPreflight(db.admin);
     expect(result).toMatchObject({phase:'RETURN_INSTALLED',go:true,
       checks:{postgres16Plus:true,forcedTenantRls:true,runtimeNoNameUpdate:true,
         runtimeNoPrivateHelper:true,runtimeExpectedRpcs:true,returnRpcInstalled:true,
         executorNoLoginBypass:true,executorOwnsTargetFunctions:true,
-        executorNoMembership:true,executorNoBusinessTables:true,
+        executorExactAdminOnly:true,runtimeNoExecutorMembership:true,
+        executorNoBusinessTables:true,
         executorNoSchemaCreate:true,executorThirteenRlsPolicies:true,
         executorOnlyNameNotOrganization:true,executorNoGrantMutation:true}});
     const after=await db.admin.query(`select count(*)::integer as n from factact.audit_events`);
@@ -42,7 +43,7 @@ describe('Registry migration preflight / fail-closed disablement',()=>{
     expect((await readRegistryPreflight(db.admin)).go).toBe(true);
   });
 
-  it('disables all four Registry RPCs, preserves Person and leaves no role membership',async()=>{
+  it('disables all four Registry RPCs, preserves Person and restores ADMIN-only',async()=>{
     const sql=await readFile('scripts/registry-disable-execution.sql','utf8');
     await db.admin.query(sql);
     const result=await readRegistryPreflight(db.admin);
@@ -61,6 +62,6 @@ describe('Registry migration preflight / fail-closed disablement',()=>{
     expect(person.rows).toEqual([{display_name:'田中 一郎',registry_revision:'0'}]);
     const memberships=await db.admin.query(`select count(*)::integer as n from pg_auth_members m
       where m.roleid='factact_registry_executor'::regrole`);
-    expect(memberships.rows).toEqual([{n:0}]);
+    expect(memberships.rows).toEqual([{n:1}]);
   });
 });

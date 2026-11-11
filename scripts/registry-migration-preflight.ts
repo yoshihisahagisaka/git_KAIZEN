@@ -12,6 +12,7 @@ interface RegistryPreflightRow {
   actor_function_owner_count:number;actor_table_owner_count:number;
   executor_exists:boolean;executor_no_login_safe:boolean;
   executor_function_owner_count:number;executor_member_count:number;
+  executor_admin_only:boolean;runtime_executor_member:boolean;
   executor_business_table_owner_count:number;executor_schema_create:boolean;
   force_rls_count:number;executor_rls_policy_count:number;
   executor_name_update:boolean;executor_org_update:boolean;executor_grant_write:boolean;
@@ -35,13 +36,15 @@ with migration_actor as (
    and not rolcreaterole and not rolcreatedb and not rolinherit as safe
  from pg_roles where rolname='factact_registry_executor'
 ), target_functions as (
- select p.proowner from pg_proc p where p.oid=any(array[
-  'factact_private.registry_edit_authorized(uuid,uuid,uuid,uuid,uuid,text)'::regprocedure,
-  'factact.registry_propose_display_name(uuid,uuid,uuid,uuid,uuid,uuid,text,text,bigint)'::regprocedure,
-  'factact.registry_verify_display_name(uuid,uuid,uuid,text)'::regprocedure,
-  'factact.registry_commit_display_name(uuid,uuid,uuid)'::regprocedure,
-  to_regprocedure('factact.registry_return_display_name(uuid,uuid,uuid,text)')
- ])
+ select p.proowner from unnest(array[
+  'factact_private.registry_edit_authorized(uuid,uuid,uuid,uuid,uuid,text)',
+  'factact.registry_propose_display_name(uuid,uuid,uuid,uuid,uuid,uuid,text,text,bigint)',
+  'factact.registry_verify_display_name(uuid,uuid,uuid,text)',
+  'factact.registry_commit_display_name(uuid,uuid,uuid)',
+  'factact.registry_return_display_name(uuid,uuid,uuid,text)',
+  'factact_private.registry_display_name_policy_eligibility(uuid,uuid,uuid,uuid,uuid)',
+  'factact_private.registry_policy_activation_decision(uuid,uuid,uuid,uuid,uuid)'
+ ]) f(signature) join pg_proc p on p.oid=to_regprocedure(f.signature)
 ), target_tables as (
  select unnest(array['tenants','operators','organizations','people','services',
   'contract_profiles','service_recipients','scoped_actor_grants',
@@ -68,6 +71,14 @@ select current_database() as database_name,current_user as actor_name,
  (select count(*)::integer from pg_auth_members m
   where m.roleid=(select oid from executor)
    or m.member=(select oid from executor)) as executor_member_count,
+ (select count(*)=1 and bool_and(m.member=current_user::regrole
+    and m.admin_option and not m.set_option and not m.inherit_option
+    and g.rolsuper)
+  from pg_auth_members m join pg_roles g on g.oid=m.grantor
+  where m.roleid=(select oid from executor)) as executor_admin_only,
+ exists(select 1 from pg_auth_members m
+  where m.roleid=(select oid from executor)
+    and m.member='factact_runtime'::regrole) as runtime_executor_member,
  (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname in ('factact','factact_private')
    and c.relowner=(select oid from executor)) as executor_business_table_owner_count,
@@ -75,8 +86,9 @@ select current_database() as database_name,current_user as actor_name,
   has_schema_privilege('factact_registry_executor','factact','CREATE') or
   has_schema_privilege('factact_registry_executor','factact_private','CREATE')
   else false end) as executor_schema_create,
- (select count(*)::integer from tables t
-  where t.relrowsecurity and t.relforcerowsecurity) as force_rls_count,
+ (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
+  where n.nspname='factact' and c.relkind='r'
+    and c.relrowsecurity and c.relforcerowsecurity) as force_rls_count,
  (select count(*)::integer from pg_policies p join target_tables t
   on t.name=p.tablename where p.schemaname='factact'
    and p.policyname='registry_executor_tenant') as executor_rls_policy_count,
@@ -119,8 +131,8 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
   const {rows}=await db.query(SQL);const r=rows[0];
   if(!r)throw Error('REGISTRY_PREFLIGHT_UNAVAILABLE');
   const expectedRpcCount=r.return_rpc_exists?4:3;
-  const expectedFunctionCount=r.return_rpc_exists?5:4;
-  const common=r.server_version>=160000 && r.force_rls_count===13
+  const expectedFunctionCount=r.return_rpc_exists?7:4;
+  const common=r.server_version>=160000 && r.force_rls_count===31
     && !r.runtime_name_update && !r.runtime_source_insert
     && !r.runtime_private_helper && r.runtime_rpc_count===expectedRpcCount;
   const before=!r.executor_exists && !r.return_rpc_exists && r.may_create_role
@@ -129,7 +141,8 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
   const installed=r.executor_exists && r.executor_no_login_safe
     && r.executor_function_owner_count===expectedFunctionCount
     && (!r.return_rpc_exists || r.return_rpc_executor_owned)
-    && r.executor_member_count===0
+    && r.executor_member_count===1 && r.executor_admin_only
+    && !r.runtime_executor_member
     && r.executor_business_table_owner_count===0 && !r.executor_schema_create
     && r.executor_rls_policy_count===13 && r.executor_name_update
     && !r.executor_org_update && !r.executor_grant_write;
@@ -137,7 +150,7 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
     installed?(r.return_rpc_exists?'RETURN_INSTALLED':'INSTALLED'):'INCONSISTENT';
   return {phase,go:common&&(before||installed),database:r.database_name,
     actor:r.actor_name,serverVersion:r.server_version,
-    checks:{postgres16Plus:r.server_version>=160000,forcedTenantRls:r.force_rls_count===13,
+    checks:{postgres16Plus:r.server_version>=160000,forcedTenantRls:r.force_rls_count===31,
       runtimeNoNameUpdate:!r.runtime_name_update,runtimeNoSourceInsert:!r.runtime_source_insert,
       runtimeNoPrivateHelper:!r.runtime_private_helper,
       runtimeExpectedRpcs:r.runtime_rpc_count===expectedRpcCount,
@@ -148,7 +161,8 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
       migratorSchemaCreate:r.actor_schema_create,
       executorNoLoginBypass:r.executor_no_login_safe,
       executorOwnsTargetFunctions:r.executor_function_owner_count===expectedFunctionCount,
-      executorNoMembership:r.executor_member_count===0,
+      executorExactAdminOnly:r.executor_member_count===1&&r.executor_admin_only,
+      runtimeNoExecutorMembership:!r.runtime_executor_member,
       executorNoBusinessTables:r.executor_business_table_owner_count===0,
       executorNoSchemaCreate:!r.executor_schema_create,
       executorThirteenRlsPolicies:r.executor_rls_policy_count===13,

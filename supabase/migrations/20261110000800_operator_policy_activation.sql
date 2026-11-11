@@ -123,11 +123,8 @@ revoke all on function factact_private.operator_policy_set_activation(
 grant execute on function factact_private.operator_policy_set_activation(
   text,uuid,uuid,uuid,text) to factact_runtime;
 
--- Only the non-login Registry executor may inspect activation state to decide
--- whether the existing proposal command uses legacy checks, policy, or DENY.
-grant select(tenant_id,service_id,id,operation,policy_version_id,
-  publication_event_id,recorded_at)
-  on factact_private.operator_policy_activation_events to factact_registry_executor;
+-- G3 A2 grants the non-login Executor the exact activation read columns only
+-- during atomic 01100 Finalization.
 
 create function factact_private.registry_policy_activation_decision(
   p_tenant uuid,p_actor uuid,p_service uuid,p_contract uuid,p_recipient uuid
@@ -173,9 +170,5 @@ begin
 end $$;
 revoke all on function factact_private.registry_policy_activation_decision(
   uuid,uuid,uuid,uuid,uuid) from public;
-grant factact_registry_executor to current_user;
-grant create on schema factact_private to factact_registry_executor;
-alter function factact_private.registry_policy_activation_decision(
-  uuid,uuid,uuid,uuid,uuid) owner to factact_registry_executor;
-revoke create on schema factact_private from factact_registry_executor;
-revoke factact_registry_executor from current_user;
+
+-- G3 A2 defers restricted ownership and final EXECUTE ACLs to 01100.

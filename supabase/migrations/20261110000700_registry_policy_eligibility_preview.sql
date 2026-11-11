@@ -3,15 +3,8 @@
 -- from approved Grant-only Registry behavior requires a separate Go decision.
 -- This function is callable by the non-login Registry executor only; it does
 -- not give the runtime pool a private policy read or an effective permission.
--- The executor owns the function with only the exact read columns required;
--- it never inherits the migrator's broader SECURITY DEFINER privileges.
-
-grant select(tenant_id,service_id,actor_operator_id,operator_level,recorded_at,id)
-  on factact_private.operator_policy_assignment_events to factact_registry_executor;
-grant select(tenant_id,service_id,operation,policy_version_id,recorded_at,id)
-  on factact_private.operator_policy_publication_events to factact_registry_executor;
-grant select(tenant_id,service_id,id,category_code,cells)
-  on factact_private.operator_policy_versions to factact_registry_executor;
+-- Atomic 01100 Finalization gives the executor only the exact read columns
+-- required; this definition Migration does not create or reference that role.
 
 create function factact_private.registry_display_name_policy_eligibility(
   p_tenant uuid,p_actor uuid,p_service uuid,p_contract uuid,p_recipient uuid
@@ -70,14 +63,4 @@ end $$;
 revoke all on function factact_private.registry_display_name_policy_eligibility(
   uuid,uuid,uuid,uuid,uuid) from public;
 
--- Transfer ownership in this DDL transaction, without a persistent membership
--- or CREATE privilege. No runtime Role can directly invoke the helper.
-grant factact_registry_executor to current_user;
-grant create on schema factact_private to factact_registry_executor;
-alter function factact_private.registry_display_name_policy_eligibility(
-  uuid,uuid,uuid,uuid,uuid) owner to factact_registry_executor;
-revoke create on schema factact_private from factact_registry_executor;
-revoke factact_registry_executor from current_user;
-
-grant execute on function factact_private.registry_display_name_policy_eligibility(
-  uuid,uuid,uuid,uuid,uuid) to factact_registry_executor;
+-- G3 A2 defers restricted ownership and final EXECUTE ACLs to 01100.
