@@ -13,12 +13,19 @@ export async function freePort() {
   await new Promise<void>((ok,fail)=>server.close(e=>e?fail(e):ok()));
   return address.port;
 }
-export async function testDatabase() {
+interface TestDatabaseOptions {
+  stopBeforeMigration?: string;
+  skipSeed?: boolean;
+  migrationAsNonSuperuser?: boolean;
+}
+
+export async function testDatabase(options:TestDatabaseOptions={}) {
   const directory=await mkdtemp(resolve('.factact-db-test-')), port=await freePort();
   // The fixture and its clients use TCP only. Disable Unix sockets so tests
   // also run in sandboxes where creating local socket files is restricted.
   const embedded=new EmbeddedPostgres({databaseDir:directory,user:'postgres',password:'test-admin',port,persistent:true,createPostgresUser:false,initdbFlags:['--encoding=UTF8','--locale=C'],postgresFlags:['-c','listen_addresses=127.0.0.1','-c','unix_socket_directories='],onLog:()=>{},onError:()=>{}});
   const admin=new Pool({host:'127.0.0.1',port,user:'postgres',password:'test-admin',database:'postgres'});
+  const migrator=new Pool({host:'127.0.0.1',port,user:'factact_migrator',password:'test-migrator',database:'postgres',max:1});
   const runtime=new Pool({host:'127.0.0.1',port,user:'factact_runtime',password:'test-runtime',database:'postgres',max:5});
   const oidc=new Pool({host:'127.0.0.1',port,user:'factact_oidc_session_minter',password:'test-oidc',database:'postgres',max:1});
   // PostgreSQL sends SQLSTATE 57P01 to any connection still finishing socket
@@ -30,28 +37,39 @@ export async function testDatabase() {
     throw error;
   };
   admin.on('error',poolError);
+  migrator.on('error',poolError);
   runtime.on('error',poolError);
   oidc.on('error',poolError);
   async function close() {
     shuttingDown=true;
-    await runtime.end();await oidc.end();await admin.end();await embedded.stop();
+    await runtime.end();await oidc.end();await migrator.end();await admin.end();await embedded.stop();
     const root=await realpath(process.cwd()),target=await realpath(directory);
     if(!target.startsWith(root+sep+'.factact-db-test-')) throw new Error('Unsafe fixture cleanup target');
     await rm(target,{recursive:true,force:true});
   }
   try {
     await embedded.initialise();await embedded.start();
+    const migrationClient=options.migrationAsNonSuperuser?migrator:admin;
+    if(options.migrationAsNonSuperuser){
+      // G3 explicitly exercises PostgreSQL 17 with CREATEROLE but without
+      // SUPERUSER/BYPASSRLS. Existing suites keep their prior fixture unless
+      // they opt into this hosted-compatibility condition.
+      await admin.query(`create role factact_migrator login password 'test-migrator'
+        createrole nosuperuser nocreatedb noreplication nobypassrls noinherit`);
+      await admin.query('grant create on database postgres to factact_migrator');
+    }
     for(const name of (await readdir('supabase/migrations')).filter(n=>n.endsWith('.sql')).sort()) {
-      await admin.query('BEGIN');
-      try {await admin.query(await readFile(resolve('supabase/migrations',name),'utf8'));await admin.query('COMMIT');}
-      catch(e) {await admin.query('ROLLBACK');throw e;}
+      if(name===options.stopBeforeMigration)break;
+      await migrationClient.query('BEGIN');
+      try {await migrationClient.query(await readFile(resolve('supabase/migrations',name),'utf8'));await migrationClient.query('COMMIT');}
+      catch(e) {await migrationClient.query('ROLLBACK');throw e;}
     }
     await admin.query("alter role factact_runtime password 'test-runtime'");
     await admin.query("alter role factact_oidc_session_minter password 'test-oidc'");
     const seed=await readFile('supabase/seed.sql','utf8');
     async function reset() {await admin.query('truncate factact.tenants, factact_private.login_transactions restart identity cascade');await admin.query(seed);}
-    await reset();
-    return {admin,runtime,oidc,reset,close};
+    if(!options.skipSeed)await reset();
+    return {admin,migrator,runtime,oidc,reset,close};
   } catch(e) {await close();throw e;}
 }
 export const ids={tenant:'10000000-0000-4000-8000-000000000001',operator:'20000000-0000-4000-8000-000000000001',organization:'30000000-0000-4000-8000-000000000001',person:'40000000-0000-4000-8000-000000000001',device:'50000000-0000-4000-8000-000000000001',service:'60000000-0000-4000-8000-000000000001',contract:'70000000-0000-4000-8000-000000000001'};

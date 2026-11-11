@@ -7,7 +7,7 @@ beforeEach(async()=>{await db.reset();},60_000);
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('Registry privileged functions use a restricted NOLOGIN / FORCE RLS owner',()=>{
-  it('owns exactly the four Registry RPC/helper functions without login or RLS bypass',async()=>{
+  it('owns exactly seven Registry functions with one ADMIN-only maintenance relation',async()=>{
     const {rows:roles}=await db.admin.query(`select rolcanlogin,rolsuper,rolbypassrls,
       rolcreaterole,rolcreatedb,rolinherit from pg_roles
       where rolname='factact_registry_executor'`);
@@ -19,13 +19,20 @@ describe('Registry privileged functions use a restricted NOLOGIN / FORCE RLS own
         'factact_private.registry_edit_authorized(uuid,uuid,uuid,uuid,uuid,text)'::regprocedure,
         'factact.registry_propose_display_name(uuid,uuid,uuid,uuid,uuid,uuid,text,text,bigint)'::regprocedure,
         'factact.registry_verify_display_name(uuid,uuid,uuid,text)'::regprocedure,
-        'factact.registry_commit_display_name(uuid,uuid,uuid)'::regprocedure
+        'factact.registry_commit_display_name(uuid,uuid,uuid)'::regprocedure,
+        'factact.registry_return_display_name(uuid,uuid,uuid,text)'::regprocedure,
+        'factact_private.registry_display_name_policy_eligibility(uuid,uuid,uuid,uuid,uuid)'::regprocedure,
+        'factact_private.registry_policy_activation_decision(uuid,uuid,uuid,uuid,uuid)'::regprocedure
       ]) order by p.proname`);
-    expect(owners).toHaveLength(4);
+    expect(owners).toHaveLength(7);
     expect(owners.every(row=>row.owner==='factact_registry_executor')).toBe(true);
-    const {rows:members}=await db.admin.query(`select 1 from pg_auth_members m
-      join pg_roles r on r.oid=m.roleid where r.rolname='factact_registry_executor'`);
-    expect(members).toEqual([]);
+    const {rows:members}=await db.admin.query(`select m.admin_option,m.set_option,
+      m.inherit_option,g.rolsuper as grantor_super,member::regrole::text as member
+      from pg_auth_members m join pg_roles r on r.oid=m.roleid
+      join pg_roles g on g.oid=m.grantor
+      where r.rolname='factact_registry_executor'`);
+    expect(members).toEqual([{admin_option:true,set_option:false,inherit_option:false,
+      grantor_super:true,member:'postgres'}]);
     const {rows:schemas}=await db.admin.query(`select
       has_schema_privilege('factact_registry_executor','factact','CREATE') as factact_create,
       has_schema_privilege('factact_registry_executor','factact_private','CREATE') as private_create`);
