@@ -24,23 +24,25 @@ const syntheticSeedTables=['tenants','operators','operator_roles','organizations
   'devices','services','contract_profiles'];
 
 export async function loadSyntheticSeedWithRls(migrator:Pool,seed:string,injectFailure=false){
-  await migrator.query('begin');
+  const client=await migrator.connect();
   try{
-    await migrator.query(`select set_config('factact.tenant_id',$1,true)`,[ids.tenant]);
-    await migrator.query(`create policy g4_synthetic_seed_migration_principal
+    await client.query('begin');
+    await client.query(`select set_config('factact.tenant_id',$1,true)`,[ids.tenant]);
+    await client.query(`create policy g4_synthetic_seed_migration_principal
       on factact.tenants to factact_migrator
       using(id=factact.current_tenant_id()) with check(id=factact.current_tenant_id())`);
     for(const table of syntheticSeedTables.filter(table=>table!=='tenants'))
-      await migrator.query(`create policy g4_synthetic_seed_migration_principal
+      await client.query(`create policy g4_synthetic_seed_migration_principal
         on factact.${table} to factact_migrator
         using(tenant_id=factact.current_tenant_id())
         with check(tenant_id=factact.current_tenant_id())`);
-    await migrator.query(seed);
-    if(injectFailure)await migrator.query('select 1/0');
-    for(const table of syntheticSeedTables) await migrator.query(`drop policy
+    await client.query(seed);
+    if(injectFailure)await client.query('select 1/0');
+    for(const table of syntheticSeedTables) await client.query(`drop policy
       g4_synthetic_seed_migration_principal on factact.${table}`);
-    await migrator.query('commit');
-  }catch(error){await migrator.query('rollback');throw error;}
+    await client.query('commit');
+  }catch(error){await client.query('rollback');throw error;}
+  finally{client.release();}
 }
 
 export async function testDatabase(options:TestDatabaseOptions={}) {

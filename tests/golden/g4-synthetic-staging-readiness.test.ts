@@ -40,19 +40,30 @@ describe('G4 synthetic seed under FORCE RLS',()=>{
       .toEqual([{events:0,work:0,changes:0,relations:0,audit:0}]);
   });
 
-  it('rejects a foreign Tenant write and leaves no partial row',async()=>{
+  it('rejects a foreign Tenant write while the temporary seed policy is active',async()=>{
     const foreignTenant='10000000-0000-4000-8000-000000000099';
     const client=await db.migrator.connect();
     try{
       await client.query('begin');
       await client.query(`select set_config('factact.tenant_id',$1,true)`,[ids.tenant]);
+      await client.query(`create policy g4_synthetic_seed_migration_principal
+        on factact.tenants to factact_migrator
+        using(id=factact.current_tenant_id()) with check(id=factact.current_tenant_id())`);
+      await client.query('savepoint foreign_tenant_insert');
       await expect(client.query(`insert into factact.tenants(id,name,status)
         values($1,'Foreign synthetic tenant','ACTIVE')`,[foreignTenant]))
         .rejects.toMatchObject({code:'42501'});
+      await client.query('rollback to savepoint foreign_tenant_insert');
+      await client.query('drop policy g4_synthetic_seed_migration_principal on factact.tenants');
+      await client.query('commit');
+    }catch(error){
       await client.query('rollback');
+      throw error;
     }finally{client.release();}
     expect((await db.admin.query('select count(*)::integer as n from factact.tenants where id=$1',
       [foreignTenant])).rows).toEqual([{n:0}]);
+    expect((await db.admin.query(`select count(*)::integer as n from pg_policies
+      where policyname='g4_synthetic_seed_migration_principal'`)).rows).toEqual([{n:0}]);
   });
 
   it('keeps Runtime separate from seed and maintenance authority',async()=>{
