@@ -17,6 +17,32 @@ interface TestDatabaseOptions {
   stopBeforeMigration?: string;
   skipSeed?: boolean;
   migrationAsNonSuperuser?: boolean;
+  seedAsNonSuperuserWithRls?: boolean;
+}
+
+const syntheticSeedTables=['tenants','operators','operator_roles','organizations','people',
+  'devices','services','contract_profiles'];
+
+export async function loadSyntheticSeedWithRls(migrator:Pool,seed:string,injectFailure=false){
+  const client=await migrator.connect();
+  try{
+    await client.query('begin');
+    await client.query(`select set_config('factact.tenant_id',$1,true)`,[ids.tenant]);
+    await client.query(`create policy g4_synthetic_seed_migration_principal
+      on factact.tenants to factact_migrator
+      using(id=factact.current_tenant_id()) with check(id=factact.current_tenant_id())`);
+    for(const table of syntheticSeedTables.filter(table=>table!=='tenants'))
+      await client.query(`create policy g4_synthetic_seed_migration_principal
+        on factact.${table} to factact_migrator
+        using(tenant_id=factact.current_tenant_id())
+        with check(tenant_id=factact.current_tenant_id())`);
+    await client.query(seed);
+    if(injectFailure)await client.query('select 1/0');
+    for(const table of syntheticSeedTables) await client.query(`drop policy
+      g4_synthetic_seed_migration_principal on factact.${table}`);
+    await client.query('commit');
+  }catch(error){await client.query('rollback');throw error;}
+  finally{client.release();}
 }
 
 export async function testDatabase(options:TestDatabaseOptions={}) {
@@ -68,7 +94,11 @@ export async function testDatabase(options:TestDatabaseOptions={}) {
     await admin.query("alter role factact_oidc_session_minter password 'test-oidc'");
     const seed=await readFile('supabase/seed.sql','utf8');
     async function reset() {await admin.query('truncate factact.tenants, factact_private.login_transactions restart identity cascade');await admin.query(seed);}
-    if(!options.skipSeed)await reset();
+    if(options.seedAsNonSuperuserWithRls&&!options.migrationAsNonSuperuser)
+      throw new Error('RLS seed validation requires the non-superuser Migration principal');
+    if(!options.skipSeed&&options.seedAsNonSuperuserWithRls)
+      await loadSyntheticSeedWithRls(migrator,seed);
+    else if(!options.skipSeed)await reset();
     return {admin,migrator,runtime,oidc,reset,close};
   } catch(e) {await close();throw e;}
 }
