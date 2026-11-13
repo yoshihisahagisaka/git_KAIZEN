@@ -14,19 +14,23 @@ export function assertDistinctDatabaseCredentials(config: Pick<Config, 'database
 }
 
 // ADAPT: atlib-msp-customer-portal/src/db/pool.ts; transaction context is FACTACT-specific.
-export function createPool(config: Pick<Config, 'databaseUrl' | 'databaseSsl'>): Pool {
+function databaseSslOption(config: Pick<Config, 'databaseSsl' | 'databaseLocalProxy'>) {
+  return config.databaseLocalProxy ? false : config.databaseSsl ? { rejectUnauthorized: true } : false;
+}
+
+export function createPool(config: Pick<Config, 'databaseUrl' | 'databaseSsl' | 'databaseLocalProxy'>): Pool {
   return new Pool({
     connectionString: config.databaseUrl,
-    ssl: config.databaseSsl ? { rejectUnauthorized: true } : false,
+    ssl: databaseSslOption(config),
     max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000,
     statement_timeout: 10000, application_name: 'factact',
   });
 }
 
-export function createOidcSessionPool(config: Pick<Config, 'oidcSessionDatabaseUrl' | 'databaseSsl'>): Pool {
+export function createOidcSessionPool(config: Pick<Config, 'oidcSessionDatabaseUrl' | 'databaseSsl' | 'databaseLocalProxy'>): Pool {
   return new Pool({
     connectionString: config.oidcSessionDatabaseUrl,
-    ssl: config.databaseSsl ? { rejectUnauthorized: true } : false,
+    ssl: databaseSslOption(config),
     max: 1, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000,
     statement_timeout: 10000, application_name: 'factact_oidc_session',
   });

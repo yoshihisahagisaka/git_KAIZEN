@@ -7,6 +7,7 @@ const schema = z.object({
   DATABASE_URL: z.url().refine(value => { try { return ['postgres:', 'postgresql:'].includes(new URL(value).protocol); } catch { return false; } }),
   OIDC_SESSION_DATABASE_URL: z.url().refine(value => { try { return ['postgres:', 'postgresql:'].includes(new URL(value).protocol); } catch { return false; } }),
   DATABASE_SSL: z.enum(['true', 'false']).default('true'),
+  DATABASE_CONNECTION_MODE: z.enum(['direct', 'local-proxy']).default('direct'),
   OIDC_ISSUER: z.literal('https://accounts.google.com'),
   OIDC_CLIENT_ID: z.string().min(1).refine(value => value !== 'REPLACE_ME'),
   OIDC_CLIENT_SECRET: z.string().min(1).refine(value => value !== 'REPLACE_ME'),
@@ -29,11 +30,25 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
   if (origin.protocol !== 'https:' && !(c.NODE_ENV !== 'production' && local && origin.protocol === 'http:')) {
     throw new Error('APP_ORIGIN requires HTTPS except on local development loopback');
   }
-  if (c.NODE_ENV === 'production' && c.DATABASE_SSL !== 'true') throw new Error('Production database TLS is required');
+  const localProxy = c.DATABASE_CONNECTION_MODE === 'local-proxy';
+  if (localProxy && c.DATABASE_SSL !== 'false') throw new Error('Local database proxy mode requires DATABASE_SSL=false');
+  if (!localProxy && c.NODE_ENV === 'production' && c.DATABASE_SSL !== 'true') throw new Error('Production database TLS is required');
+  if (localProxy || c.NODE_ENV === 'production') {
+    for (const key of ['DATABASE_URL', 'OIDC_SESSION_DATABASE_URL'] as const) {
+      const url = new URL(c[key]);
+      if (['sslmode', 'sslcert', 'sslkey', 'sslrootcert'].some(option => url.searchParams.has(option))) {
+        throw new Error(`${key} must not override database TLS settings`);
+      }
+      if (localProxy && (url.hostname !== '127.0.0.1' || !url.port || url.search || url.hash)) {
+        throw new Error(`${key} must use an explicit local TCP proxy endpoint`);
+      }
+    }
+  }
   return {
     nodeEnv: c.NODE_ENV, port: c.PORT, origin: c.APP_ORIGIN,
     databaseUrl: c.DATABASE_URL, oidcSessionDatabaseUrl: c.OIDC_SESSION_DATABASE_URL,
     databaseSsl: c.DATABASE_SSL === 'true',
+    ...(localProxy ? { databaseLocalProxy: true as const } : {}),
     issuer: c.OIDC_ISSUER, clientId: c.OIDC_CLIENT_ID, clientSecret: c.OIDC_CLIENT_SECRET,
     redirectUri: c.OIDC_REDIRECT_URI,
   };
