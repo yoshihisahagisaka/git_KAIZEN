@@ -10,14 +10,15 @@ Status: **LOCAL PREPARATION PASS / HOSTED EXECUTION NO-GO**, 2026-11-14.
 
 2026-11-14の確認結果:
 
-- GitHub PR #68 HEAD: `44ac24c06dc4a86694e3f2df583da7e2ab977b72`
+- Review baseline GitHub PR #68 HEAD: `30d163a923d95d8e142045317a511260c0126642`
 - GitHub branch: `feat/factact-g5-local-proxy-mode-20261113`
 - PR #68 CI: PASS（push / pull_request）
-- このworktreeの開始HEAD: GitHubと同じ`44ac24c06dc4a86694e3f2df583da7e2ab977b72`
+- この文書更新の開始HEAD: GitHubと同じ`30d163a923d95d8e142045317a511260c0126642`
 - PR #68 base側には、G4の単一connection修正`a5a2ef3`が含まれる
-- 提示されたlocal HEAD `6fcf93c76a8bf146ccf83b4c4ebc7de99cad1a9a`は、このPCの全worktree、Git object database、GitHub repositoryのいずれにも存在しない
+- local HEAD `6fcf93c76a8bf146ccf83b4c4ebc7de99cad1a9a`は別実行環境で作成された未Push commitである
+- 統括側の照合により、同commitの対象4ファイルとReview baseline HEADのGit Blob SHAはすべて一致している
 
-したがって`6fcf93c`との差分内容と理由はUNKNOWNである。別実行環境だけにある未Push commitの可能性を残す。強制Push、履歴書換え、推測による再現は行わず、GitHub PR #68 HEADから継続する。
+したがってGit Fit/Gapは解消済みであり、実装欠落はない。追加のcherry-pick、force push、履歴書換えは行わない。GitHub PR #68 branchの現行HEADをCanonicalとする。
 
 ## 2. Hard stop before any Hosted action
 
@@ -32,6 +33,10 @@ Status: **LOCAL PREPARATION PASS / HOSTED EXECUTION NO-GO**, 2026-11-14.
 7. 操作ごとのGo判断が記録される。
 
 現在は1と2が未完了なので、Hosted executionはNo-Goである。
+
+2026-11-13の既存承認により、Synthetic Stagingに限り、Ownerの最終承認を第三者レビュー要件の例外として認める。この例外はSQL / securityの技術確認と証跡照合を省略せず、Productionには適用しない。GCP実環境のIAM、Principal、Network、RLSのread-backも引き続き必須である。
+
+Billing quota増加が承認されても、Hosted Migration / Deployへ自動的に進まない。Billing紐づけ、API有効化、G2境界、実Principalを順に確認し、操作ごとのGo条件を個別に判断する。
 
 ## 3. Target and Principal preflight
 
@@ -182,6 +187,8 @@ select count(*) from factact.audit_events; -- 0
 | Policy STOP / drift | `registry-policy-activation-integration.test.ts` | PASS |
 | error rollback | Grant失効、Audit failure、Finalization failure tests | PASS |
 
+Synthetic Stagingに対するOwner最終承認の例外は、上記E2Eのproposer / reviewer分離を置換せず、SQL / securityの技術確認や証跡照合も緩和しない。
+
 ### 6.2 Hosted prerequisites still missing
 
 `supabase/seed.sql`だけでは4 Actorを作らない。Hosted E2Eには次が別途必要である。
@@ -270,13 +277,15 @@ credential、Secret value、token、実メールアドレスは証跡へ出力�
 
 ## 10. Current decision
 
-- Git Fit/Gap: GitHub HEADとこのworktreeは一致。`6fcf93c`はUNKNOWN
+- Git Fit/Gap: RESOLVED。`6fcf93c`の対象4ファイルはReview baseline HEADとBlob一致し、実装欠落なし
 - Synthetic seed Runbook: COMPLETE locally
 - Synthetic E2E logic: PASS locally
+- Synthetic Staging review: 2026-11-13承認によりOwner最終承認の例外あり。SQL / security技術確認と証跡照合は必須
+- Production review: 上記例外は適用しない
 - Hosted E2E actor provisioning: UNKNOWN
 - Auth Proxy application mode: PASS locally
 - Auth Proxy / network / IAM runtime: UNKNOWN
 - Billing link / required APIs: BLOCKED by external Billing quota
 - Hosted Migration / Deploy: **No-Go**
 
-Billing quota解除だけでHosted実行Goにはならない。レビュー、G2 read-back、実Principal、空DB、Proxy digest、Synthetic identities、個別Goをすべて満たしてから開始する。
+Billing quota解除だけでHosted実行Goにはならず、Hosted Migration / Deployへ自動進行しない。レビュー、G2 read-back、実Principal、空DB、Proxy digest、Synthetic identities、個別Goをすべて満たしてから開始する。
