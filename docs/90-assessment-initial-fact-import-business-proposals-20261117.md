@@ -1,6 +1,6 @@
-# 設計Assessment 初期FACT取込 — 6つのBusiness判断案（2026-11-17）
+# 設計Assessment 初期FACT取込 — 6つのBusiness判断（2026-11-17）
 
-Status: **BUSINESS PROPOSAL — NOT YET APPROVED**
+Status: **BUSINESS DECISION — APPROVED FOR PRODUCT CONTRACT DESIGN; IMPLEMENTATION NOT AUTHORIZED**
 Owner: IT経営KAIZEN Business Lane
 Sources:
 - docs/87-design-assessment-analysis-and-initial-fact-import-business-decisions-20261117.md (DECIDED)
@@ -12,9 +12,9 @@ Sources:
 - FACTACT Product Lane read-only Fit/Gap response (2026-11-17), including Draft PR #68 head e03b660.
 
 ## Purpose
-Carry already approved requirement "Assessment converts customer Excel/CSV into reusable initial operational FACT in FACTACT" toward a bounded implementation contract without conflating source statements, human verification, and authoritative current state. This document proposes new choices, **not an approved decision**.
+Carry already approved requirement "Assessment converts customer Excel/CSV into reusable initial operational FACT in FACTACT" toward a bounded implementation contract without conflating source statements, human verification, and authoritative current state. The six business rules below are accepted for Product contract design. Technical contracts, migrations, code, hosted rollout and production remain separately gated.
 
-## Six business proposals for approval
+## Six approved business directions
 ### 1. First subject
 Use an existing `Device` asset table as the initial end-to-end validation case because registry and SUPPORT already read Device. This is a validation slice, not an Assessment standard scope reduction or a restriction against Person/Account/Application/Procedure in future. No mandatory full-asset census.
 
@@ -25,7 +25,7 @@ Human-facing categories: 新規登録候補 / 既存更新候補 / 差分なし 
 Use existing canonical identification rules (asset tag etc.) first; comparison keys and normalization are Product decisions. If absent, ambiguous, colliding or inconsistent, send that row to 要確認; do not fabricate IDs, merge records, infer primary user relation or silently overwrite. A non-unique serial may support human inquiry but is not sufficient for silent commit.
 
 ### 4. Human verification / authority
-Assessment operator may prepare and submit the batch as candidates but does not gain Commit Authority by doing Assessment. For initial validated case, propose a separately authorized verifier/committer (may be the same distinct reviewing human if Product policy explicitly allows). Exact actor/grant, 2-human rule and batched verification UX are Product Lane decisions. Preserve Change→Verify→Commit, before/after/provenance, tenant isolation, audit and per-row exception status.
+Assessment operator may prepare and submit the batch as candidates but does not gain Commit Authority by doing Assessment. For the initial validation case, require a separately authorized verifier/committer (may be the same distinct reviewing human if Product policy explicitly allows). Exact actor/grant, 2-human rule and batched verification UX are Product Lane decisions. Preserve Change→Verify→Commit, before/after/provenance, tenant isolation, audit and per-row exception status.
 
 ### 5. Source/Evidence handling
 Source spreadsheets are input Evidence, not a second managed registry. Preserve auditable provenance and the minimum source content necessary for claims and corrections; unnecessary whole-file retention must not be assumed. Existing docs/66 sets raw diagnosis and approved-evidence handling but may not fully specify Assessment file and operational Fact lifecycle; Product/Security/Business must check retention, sensitive data, purpose limitation, access, deletion and AI provider processing. Do **not** mechanically classify all source files as 5-year approved Evidence or all as 1-year diagnosis data.
@@ -50,4 +50,4 @@ No per-file manual catalog naming, no separate SUPPORT-specific Device table, no
 - Do not expand PR #60 Registry First Edit, merge Draft PRs, touch DB/Production, or implement unapproved migrations. Keep G3-G5 constraints.
 
 ## Decision gate
-Business Owner approval pending for the six proposals. Product Lane must not treat this document as implementation authorization.
+The six Business directions are accepted as the next design baseline by the Business Owner's instruction to proceed. Product Lane may define the bounded Device import contract and return evidence-backed design and unresolved choices. This is **not** approval to change code, migration, DB, GCP, existing PRs, or deploy. Product-specific grant/review rules and Assessment source-file retention remain subject to their existing governance and further approval.
