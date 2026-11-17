@@ -37,3 +37,11 @@ Business Decision: docs/87-design-assessment-analysis-and-initial-fact-import-bu
 5. Return evidence-backed Fit/Gap; no code, DB, migration or deployment changes.
 
 Business Lane must not infer Core GAP or implement importer before Product Lane verification.
+
+## Addendum: authoritative implementation location discovered (same date)
+- **Correction:** FACTACT Domain/Application/SUPPORT implementation exists in this same `git_KAIZEN` repository, main branch; previous statement that the authoritative implementation location was unidentified is superseded for this repository.
+- Inspected: `packages/domain/src/support.ts`, `packages/application/src/support-commands.ts`, `docs/support-round3-core-fit-gap.md`, `docs/assessment-connection-architecture-validation.md`, and the complete main tree (239 entries).
+- Domain SUPPORT defines `SupportDeviceContext`, `SupportTargetObservation`, `SupportRecord` and other deterministic work records. This is **evidence of support-side structured context**, not evidence of an Excel importer.
+- The 2026-09-12 architecture validation explicitly records Assessment-to-operational-context inheritance and generic external Evidence ingestion as open Application/Product boundaries. This is a historical checkpoint; latest branch/PR evidence remains to be checked.
+- No verified Excel/CSV mapping and bulk import contract identified in inspected paths. **UNKNOWN, not proven GAP**.
+- Updated Product verification request: start with `git_KAIZEN` Domain/Application/DB/API and active branches/PRs, then check other FACTACT sources only as indicated by current Canonical. Do not use `atlib-sales-tools` main as a proxy for FACTACT Core.
