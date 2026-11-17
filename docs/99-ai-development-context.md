@@ -657,13 +657,23 @@ Examples of prohibited coupling:
 
 # 20. Platform / Infrastructure Decision
 
-Current V1 decision:
+Decision history:
 
-> **Supabase + Shared PostgreSQL + RLS**
+- 2026-09-09 bootstrap: Supabase PostgreSQL, Supabase CLI-managed SQL
+  migrations, shared PostgreSQL and Tenant RLS were accepted. This remains the
+  local-development and migration-history baseline.
+- 2026-11-10 hosted-platform amendment: the hosted staging target is GCP Cloud
+  Run plus a FACTACT-dedicated Cloud SQL for PostgreSQL instance. `pj-factact`
+  is the GCP project candidate. Staging starts with synthetic data only and
+  does not share another service's Cloud SQL instance.
+- Production may use Cloud Run plus a Cloud SQL instance isolated from staging
+  in data, credentials and operational authority, but its construction,
+  migration and deployment require a separate Go decision.
 
-But:
+Therefore:
 
-> **Use Supabase, but do not make FACTACT Core depend on Supabase.**
+> **Keep Supabase CLI + PostgreSQL locally; do not make FACTACT Core depend on
+> Supabase or Cloud SQL.**
 
 Guidelines:
 - shared DB/schema with explicit `tenant_id` where applicable;
@@ -677,6 +687,18 @@ Guidelines:
 - do not use Supabase Auth ID as Person PK.
 
 Physical isolation / dedicated project can be considered for contractual/compliance/enterprise requirements, not as the default tenant model.
+
+The dedicated hosted database is an environment and service boundary, not a
+replacement for the shared-database Tenant RLS model. Hosted adoption must
+preserve `ENABLE/FORCE ROW LEVEL SECURITY`, the dedicated Runtime, OIDC Session
+Minter and Registry Executor roles, and the separation of Migration/Admin from
+Runtime. Supabase CLI v2 migration compatibility, database-role creation and
+ownership changes must be verified before any Cloud SQL migration is run.
+
+See `docs/adr/0009-hosted-cloud-sql-platform.md` and
+`docs/factact-hosted-platform-decision-accepted-20261110.md`. This decision does
+not authorize GCP resource creation, hosted migration, real customer data,
+production deployment or Registry Policy activation on a real Service.
 
 ---
 
