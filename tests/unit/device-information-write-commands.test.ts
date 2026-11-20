@@ -94,7 +94,7 @@ class FakeTransactions implements DeviceWriteUnitOfWork {
       recordProposal:async (change,hash)=>{
         if(this.state.changes[change.id])throw Error('duplicate');
         this.state.changes[change.id]={change:structuredClone(change),
-          requestFingerprint:hash,committedDevice:null};
+          requestFingerprint:hash,verificationSummary:null,committedDevice:null};
       },
       recordCommit:async (verified,committed,summary)=>{
         if(!summary || !this.state.changes[committed.change.id])throw Error('invalid commit');
@@ -103,7 +103,8 @@ class FakeTransactions implements DeviceWriteUnitOfWork {
         this.state.devices[committed.device.id]=structuredClone(committed.device);
         this.state.changes[committed.change.id]={
           ...this.state.changes[committed.change.id]!,
-          change:structuredClone(committed.change),committedDevice:structuredClone(committed.device),
+          change:structuredClone(committed.change),verificationSummary:summary,
+          committedDevice:structuredClone(committed.device),
         };
       },
       audit:async(ctx,type,metadata)=>{
@@ -187,6 +188,27 @@ describe('S2a Device application command boundary / synthetic transactional fixt
     const first=await commands.confirm(reviewer,proposal.id,'verify');
     const replay=await commands.confirm(reviewer,proposal.id,'verify');
     expect(replay.device.id).toBe(first.device.id);
+    expect(fake.state.audits).toHaveLength(3);
+  });
+
+
+  it('conflicting retry summary is rejected without altering committed Evidence or Audit',async()=>{
+    const {fake,commands}=setup();
+    const proposal=await commands.proposeInitial(proposer,targetA,'request-0001',
+      {assetTag:'PC-018',displayName:'営業PC',source:sheet});
+    await commands.confirm(reviewer,proposal.id,'確認した証跡');
+    await expect(commands.confirm(reviewer,proposal.id,'別の確認証跡')).rejects.toThrow();
+    expect(fake.state.audits).toHaveLength(3);
+    expect(fake.state.changes[proposal.id]?.verificationSummary).toBe('確認した証跡');
+  });
+
+  it('rejects unknown correction fields rather than silently ignoring browser payload',async()=>{
+    const {fake,commands}=setup();
+    const device=await createInitial(fake,commands);
+    await expect(commands.proposeCorrection(proposer,targetA,'request-0002',device.id,
+      {displayName:{value:'営業2課PC',source:sheet},
+       assetTag:{value:'UNAUTHORIZED-ID',source:sheet}} as any)).rejects.toThrow();
+    expect(fake.state.devices[device.id]?.fields.assetTag.value).toBe('PC-018');
     expect(fake.state.audits).toHaveLength(3);
   });
 
