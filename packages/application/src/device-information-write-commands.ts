@@ -166,7 +166,7 @@ export class DeviceInformationWriteCommands {
       const [t,o,tag] = deviceAssetKey(context.tenantId,context.organizationId,input.assetTag);
       requireCondition(t === actor.tenantId && o === context.organizationId,
         'DEVICE_CONTEXT_UNAVAILABLE', '対象が見つかりません。', 404);
-      requireCondition(await tx.deviceByAssetTag(context,tag) === null,
+      requireCondition(await tx.deviceByAssetTag(context,tag!) === null,
         'DEVICE_ALREADY_EXISTS', '既存Deviceとの照合が必要です。');
       const change = proposeDeviceInitialInformation(context, grants, this.now(),
         {id:this.newId(),requestId:key,deviceId:this.newId()}, input);
