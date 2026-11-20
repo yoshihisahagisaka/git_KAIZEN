@@ -9,7 +9,7 @@ ALTER TABLE factact.evidence
   DROP CONSTRAINT evidence_evidence_type_check;
 ALTER TABLE factact.evidence
   ADD CONSTRAINT evidence_evidence_type_check
-    CHECK (evidence_type IN ('EXECUTION_ATTESTATION','VERIFICATION','SOURCE_REFERENCE'));
+    CHECK (evidence_type IN ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','SOURCE_REFERENCE'));
 
 CREATE TABLE factact.device_change_requests (
   id uuid PRIMARY KEY,
