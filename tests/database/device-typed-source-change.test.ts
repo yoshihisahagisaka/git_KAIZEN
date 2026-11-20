@@ -82,6 +82,20 @@ describe('S2b Device typed source / common Change invariants — synthetic DB',(
       evidence_type:'SOURCE_REFERENCE',content_text:'sha256:synthetic-only'});
   });
 
+  it('SOURCE_REFERENCE is invisible to generic Runtime Evidence read and cannot be spoofed by Runtime insert',async()=>{
+    const ev=await evidence();
+    const {rows}=await withTenant(db.runtime,ids.tenant,c=>c.query(
+      'select id from factact.evidence where id=$1',[ev]));
+    expect(rows).toHaveLength(0);
+    await expect(withTenant(db.runtime,ids.tenant,c=>c.query(
+      "insert into factact.evidence(id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at) values ($1,$2,'SOURCE_REFERENCE','fake','no source',$3,now())",
+      [randomUUID(),ids.tenant,ids.operator]))).rejects.toMatchObject({code:'42501'});
+    // Existing SUPPORT and JOIN Evidence kinds remain unaffected.
+    await expect(withTenant(db.runtime,ids.tenant,c=>c.query(
+      "insert into factact.evidence(id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at) values ($1,$2,'DIAGNOSTIC','synthetic','allowed SUPPORT',$3,now())",
+      [randomUUID(),ids.tenant,ids.operator]))).resolves.toMatchObject({rowCount:1});
+  });
+
   it('typed Device request and common PROPOSED Change share exact immutable identity',async()=>{
     const req=await request();
     const c=await change(req);
