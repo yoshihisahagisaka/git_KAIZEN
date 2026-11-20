@@ -11,6 +11,16 @@ ALTER TABLE factact.evidence
   ADD CONSTRAINT evidence_evidence_type_check
     CHECK (evidence_type IN ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','SOURCE_REFERENCE'));
 
+-- Existing Evidence had tenant-wide Runtime read/insert grants. New source
+-- references can contain customer-specific provenance and must not inherit
+-- unrestricted Tenant-level exposure or impersonated inserts.
+CREATE POLICY source_reference_runtime_select_deny ON factact.evidence
+  AS RESTRICTIVE FOR SELECT TO factact_runtime
+  USING (evidence_type <> 'SOURCE_REFERENCE');
+CREATE POLICY source_reference_runtime_insert_deny ON factact.evidence
+  AS RESTRICTIVE FOR INSERT TO factact_runtime
+  WITH CHECK (evidence_type <> 'SOURCE_REFERENCE');
+
 CREATE TABLE factact.device_change_requests (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL,
