@@ -36,6 +36,7 @@ export interface DeviceCommandReceipt {
 export interface DeviceChangeRecord {
   change: DeviceInformationChange;
   requestFingerprint: string;
+  verificationSummary: string | null;
   committedDevice: RegisteredDeviceInformation | null;
 }
 export interface DeviceWriteTransaction {
@@ -182,6 +183,9 @@ export class DeviceInformationWriteCommands {
     changes: Partial<Record<'displayName' | 'serialNumber', DeviceFieldInput>>,
   ): Promise<DeviceInformationChange> {
     ensureActor(actor); requestId(key);
+    requireCondition(Boolean(changes) && typeof changes === 'object' &&
+      Object.keys(changes).every(field => field === 'displayName' || field === 'serialNumber'),
+      'INVALID_DEVICE_FIELD', '変更対象の項目が不正です。', 400);
     return this.unit.run(actor, async tx => {
       const {context,grants} = await requireScope(tx, actor, target);
       requireDeviceRegistryGrant(context,grants,'UPDATE',this.now(),context.tenantId,context.organizationId);
@@ -254,7 +258,8 @@ export class DeviceInformationWriteCommands {
         'SELF_REVIEW_FORBIDDEN','申請者と異なる確認者が必要です。',403);
       if(change.status==='COMMITTED') {
         requireCondition(change.committedByActorId===actor.operatorId &&
-          stored.committedDevice!==null,'DEVICE_CHANGE_UNAVAILABLE','対象が見つかりません。',404);
+          stored.committedDevice!==null && stored.verificationSummary===verificationSummary.trim(),
+          'DEVICE_RETRY_CONFLICT','確定済みの確認内容と一致しません。',409);
         return {change,device:stored.committedDevice};
       }
       requireCondition(change.status==='PROPOSED',
