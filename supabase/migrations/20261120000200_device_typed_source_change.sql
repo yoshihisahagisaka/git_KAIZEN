@@ -119,6 +119,8 @@ ALTER TABLE factact.changes
 -- tied to the immutable request, not an FK to devices before Commit.
 DO $device_change_exactly_one_source$
 DECLARE person_branch text := '';
+        join_registry_absent text := '';
+        device_registry_absent text := '';
 BEGIN
  IF EXISTS (SELECT 1 FROM pg_constraint
    WHERE conrelid='factact.changes'::regclass
@@ -128,10 +130,13 @@ BEGIN
 
  -- Preserve the exact Person First Edit branch only if its Source exists.
  IF to_regclass('factact.registry_edit_requests') IS NOT NULL THEN
+   join_registry_absent := 'AND registry_edit_request_id IS NULL';
+   device_registry_absent := 'AND registry_edit_request_id IS NULL';
    person_branch := '
      OR (work_id IS NULL AND action_id IS NULL
        AND registry_edit_request_id IS NOT NULL
        AND device_change_request_id IS NULL AND device_subject_id IS NULL
+       ' || join_registry_absent || '
        AND subject_type = ''PERSON'' AND subject_id IS NOT NULL
        AND proposed_by_operator_id IS NOT NULL
        AND change_type = ''KNOWLEDGE_STATE_CHANGE''
@@ -150,6 +155,7 @@ BEGIN
      OR (work_id IS NULL AND action_id IS NULL
        AND device_change_request_id IS NOT NULL
        AND device_subject_id IS NOT NULL
+       ' || device_registry_absent || '
        AND subject_type = ''DEVICE'' AND subject_id IS NULL
        AND proposed_by_operator_id IS NOT NULL
        AND change_type = ''KNOWLEDGE_STATE_CHANGE''
@@ -160,6 +166,9 @@ END $device_change_exactly_one_source$;
 
 -- Existing runtime still legitimately uses JOIN Change rows. Never allow it
 -- to insert or edit a Device Change via the pre-existing generic grants.
+CREATE POLICY device_changes_runtime_select_deny ON factact.changes
+  AS RESTRICTIVE FOR SELECT TO factact_runtime
+  USING (device_change_request_id IS NULL AND device_subject_id IS NULL);
 CREATE POLICY device_changes_runtime_insert_deny ON factact.changes
   AS RESTRICTIVE FOR INSERT TO factact_runtime
   WITH CHECK (device_change_request_id IS NULL AND device_subject_id IS NULL);
