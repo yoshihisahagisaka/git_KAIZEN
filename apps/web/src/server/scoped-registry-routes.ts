@@ -2,12 +2,14 @@ import {Router} from 'express';
 import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedRegistryPeopleCursor,ScopedRegistryPeoplePage} from './persistence/scoped-access-reader.js';
+import type {ScopedRegistryDeviceCursor,ScopedRegistryDevicePage,ScopedRegistryPeopleCursor,ScopedRegistryPeoplePage} from './persistence/scoped-access-reader.js';
 import type {RegistryEditCommands} from '../../../../packages/application/src/registry-edit-commands.js';
 
 export interface ScopedRegistryReader {
  registryPeople(tenantId:string,actorId:string,serviceId:string,organizationId:string,
   limit:number,cursor:ScopedRegistryPeopleCursor|null):Promise<ScopedRegistryPeoplePage|null>;
+ registryDevices(tenantId:string,actorId:string,serviceId:string,organizationId:string,
+  limit:number,cursor:ScopedRegistryDeviceCursor|null):Promise<ScopedRegistryDevicePage|null>;
 }
 
 /** No broad Registry list, contact email, write, inferred Caller access, or
@@ -31,6 +33,26 @@ export function scopedRegistryRoutes(reader:ScopedRegistryReader,commands?:Regis
   }
   const actor=(res.locals.session as {operator:Operator}).operator;
   const result=found(await reader.registryPeople(actor.tenantId,actor.id,query.serviceId,organizationId,query.limit,cursor));
+  res.json({ok:true,data:result});
+ });
+ const deviceCursorInput=z.strictObject({assetTag:z.string().min(1).max(200),deviceId:z.uuid()});
+ router.get('/scoped/registry/organizations/:organizationId/devices',async(req,res)=>{
+  const organizationId=z.uuid().parse(req.params.organizationId);
+  const query=queryInput.parse(req.query);
+  let cursor:ScopedRegistryDeviceCursor|null=null;
+  if(query.cursor){
+   try{
+    const candidate=JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown;
+    const parsed=deviceCursorInput.safeParse(candidate);
+    if(!parsed.success)throw Error('Bad cursor');
+    cursor=parsed.data;
+   }catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+  }
+  // Tenant and Actor are bound to the verified session; neither is accepted
+  // from params, query or body.
+  const actor=(res.locals.session as {operator:Operator}).operator;
+  const result=found(await reader.registryDevices(actor.tenantId,actor.id,query.serviceId,
+   organizationId,query.limit,cursor));
   res.json({ok:true,data:result});
  });
  if(commands){

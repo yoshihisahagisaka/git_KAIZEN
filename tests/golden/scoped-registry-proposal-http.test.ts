@@ -21,7 +21,7 @@ const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',
  issuer:'https://accounts.google.com' as const,clientId:'test',clientSecret:'test',
  redirectUri:'http://localhost:5173/auth/callback'};
 let db:Awaited<ReturnType<typeof testDatabase>>;
-let store:PgIdentityStore,app:ReturnType<typeof createApp>;
+let store:PgIdentityStore,reader:PgScopedAccessReader,app:ReturnType<typeof createApp>;
 let recipientA:string,personB:string;
 
 const body=()=>({serviceId:ids.service,requestId:randomUUID(),requestKey:randomUUID(),
@@ -31,6 +31,9 @@ const post=(personId:string,input:Record<string,unknown>,csrf='csrf')=>request(a
  .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(input);
 const directory=(organizationId:string)=>request(app)
  .get(`/api/scoped/registry/organizations/${organizationId}/people?serviceId=${ids.service}`)
+ .set('Cookie',cookie);
+const devices=(organizationId:string,query='')=>request(app)
+ .get(`/api/scoped/registry/organizations/${organizationId}/devices?serviceId=${ids.service}${query}`)
  .set('Cookie',cookie);
 const grant=async(operations:string[])=>{
  const grantId=randomUUID();
@@ -45,7 +48,7 @@ const grant=async(operations:string[])=>{
 beforeAll(async()=>{
  db=await testDatabase();
  store=new PgIdentityStore(db.runtime,db.oidc);
- const reader=new PgScopedAccessReader(db.runtime);
+ reader=new PgScopedAccessReader(db.runtime);
  app=createApp(config,store,{authorizationUrl:()=>'',verifyCallback:async()=>({issuer:config.issuer,subject})},
   pino({level:'silent'}),undefined,undefined,undefined,undefined,undefined,reader,
   new RegistryEditCommands(new PgRegistryEditStore(db.runtime)));
@@ -146,5 +149,58 @@ describe('SCOPED Registry display-name HTTP proposal',()=>{
   await post(ids.person,body()).expect(404);
   expect((await db.admin.query(`select count(*)::integer as n from factact.registry_edit_requests`))
    .rows[0].n).toBe(0);
+ });
+
+ it('lists only customer-scoped Devices with bounded verification projection and stable cursor',async()=>{
+  await grant(['READ']);
+  const deviceA1=randomUUID(),deviceA2=randomUUID(),deviceB=randomUUID();
+  await db.admin.query(`insert into factact.devices
+   (id,tenant_id,organization_id,asset_tag,display_name,serial_number,device_status,registry_revision)
+   values($1,$2,$3,'A-001','Customer A one','SER-A1','AVAILABLE',2),
+         ($4,$2,$3,'A-002','Customer A two',null,'UNKNOWN',1),
+         ($5,$2,$6,'B-SECRET','Customer B secret','SER-B','AVAILABLE',2)`,
+   [deviceA1,ids.tenant,ids.organization,deviceA2,deviceB,companyB]);
+  const assetEvidence=randomUUID(),statusEvidence=randomUUID();
+  for(const [id,title] of [[assetEvidence,'asset'],[statusEvidence,'status']]) await db.admin.query(`insert into factact.evidence
+   (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+   values($1,$2,'SOURCE_REFERENCE',$3,'synthetic',$4,now())`,[id,ids.tenant,title,ids.operator]);
+  await db.admin.query(`insert into factact.device_field_events
+   (id,tenant_id,device_id,organization_id,device_revision,field_key,event_kind,field_value,
+    source_kind,source_evidence_id,source_locator,source_observed_at,source_change_id,
+    recorded_by_operator_id,verified_by_operator_id,verified_at)
+   values(gen_random_uuid(),$1,$2,$3,2,'assetTag','FIELD_VERIFIED','A-001','PHYSICAL_INVENTORY',$4,
+    'synthetic:asset',now(),null,$5,$5,now()),
+    (gen_random_uuid(),$1,$2,$3,2,'deviceStatus','FIELD_VERIFIED','AVAILABLE','PHYSICAL_INVENTORY',$6,
+    'synthetic:status',now(),null,$5,$5,now())`,
+   [ids.tenant,deviceA1,ids.organization,assetEvidence,ids.operator,statusEvidence]);
+  const projected=await reader.registryDevices(ids.tenant,actor,ids.service,ids.organization,1,null);
+  expect(projected?.items).toHaveLength(1);
+  const first=(await devices(ids.organization,'&limit=1').expect(200)).body.data;
+  expect(first.items).toEqual([expect.objectContaining({deviceId:deviceA1,assetTag:'A-001',
+   operationalStatus:'AVAILABLE',sourceState:'VERIFIED',assetTagVerifiedAt:expect.any(String),
+   operationalStatusVerifiedAt:expect.any(String)})]);
+  expect(first.nextCursor).toEqual(expect.any(String));
+  const second=(await devices(ids.organization,`&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`)
+   .expect(200)).body.data;
+  expect(second.items).toEqual([expect.objectContaining({deviceId:deviceA2,assetTag:'A-002',
+   sourceState:'SOURCE_BACKED_UNVERIFIED'})]);
+  expect(JSON.stringify(first)+JSON.stringify(second)).not.toContain('B-SECRET');
+  expect(JSON.stringify(first)).not.toContain('synthetic:asset');
+  await devices(companyB).expect(404);
+  // Legacy Tenant Device remains invisible because organization_id is NULL.
+  expect(JSON.stringify(first)+JSON.stringify(second)).not.toContain(ids.device);
+ });
+
+ it('requires a verified session and exact REGISTRY READ rather than Role or SERVICE scope',async()=>{
+  await request(app).get(`/api/scoped/registry/organizations/${ids.organization}/devices?serviceId=${ids.service}`)
+   .expect(401);
+  await devices(ids.organization).expect(404);
+  await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+    service_recipient_id,object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE',null,'REGISTRY',array['READ'],now()-interval '1 day',$6)`,
+   [randomUUID(),ids.tenant,actor,ids.service,ids.contract,ids.operator]);
+  expect(await reader.registryDevices(ids.tenant,actor,ids.service,ids.organization,20,null)).toBeNull();
+  await devices(ids.organization).expect(404);
  });
 });

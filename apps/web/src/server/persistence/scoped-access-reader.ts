@@ -55,6 +55,16 @@ export interface ScopedRegistryPeoplePage {
  nextCursor:string|null;
 }
 
+export interface ScopedRegistryDeviceCursor {assetTag:string;deviceId:string}
+export interface ScopedRegistryDevicePage {
+ organizationId:string;organizationName:string;
+ items:Array<{deviceId:string;assetTag:string;displayName:string;serialNumber:string|null;
+  operationalStatus:'UNKNOWN'|'AVAILABLE'|'UNAVAILABLE'|'RETIRED';registryRevision:number;
+  assetTagVerifiedAt:string|null;operationalStatusVerifiedAt:string|null;
+  sourceState:'SOURCE_BACKED_UNVERIFIED'|'PARTIALLY_VERIFIED'|'VERIFIED'}>;
+ nextCursor:string|null;
+}
+
 interface StoredSupportHistoryEntry {
  id:string;revision:number;kind:string;occurred_at:Date;
  response_text:string|null;disposition:ScopedSupportHistoryEntry['disposition'];
@@ -146,6 +156,67 @@ export class PgScopedAccessReader {
     nextCursor:rows.length===limit&&last
      ?Buffer.from(JSON.stringify({displayName:last.display_name,personId:last.id})).toString('base64url')
      :null};
+  },true);
+ }
+
+ /** Customer-scoped Device identification only. Raw source locator/Evidence is
+  * deliberately excluded. Legacy organization-null rows and other customers
+  * can neither affect pagination nor be inferred from result counts. */
+ async registryDevices(tenantId:string,actorId:string,serviceId:string,organizationId:string,
+  limit:number,cursor:ScopedRegistryDeviceCursor|null):Promise<ScopedRegistryDevicePage|null>{
+  if(![tenantId,actorId,serviceId,organizationId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>50||
+    (cursor&&(!cursor.assetTag||cursor.assetTag.length>200||!z.uuid().safeParse(cursor.deviceId).success)))return null;
+  const at=this.clock.now();if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const {rows:contexts}=await db.query<{recipient_id:string;contract_id:string;organization_name:string}>(`
+    select r.id as recipient_id,c.id as contract_id,o.name as organization_name
+    from factact.service_recipients r
+    join factact.organizations o on o.tenant_id=r.tenant_id and o.id=r.recipient_organization_id
+      and o.status='ACTIVE'
+    join factact.services s on s.tenant_id=r.tenant_id and s.id=r.service_id and s.status='ACTIVE'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id and c.service_id=s.id
+      and c.status='ACTIVE' and c.effective_from<=$4::timestamptz
+      and (c.effective_to is null or c.effective_to>$4::timestamptz)
+    where r.tenant_id=$1 and r.service_id=$2 and r.recipient_organization_id=$3
+      and r.recipient_type='ORGANIZATION' and r.status='ACTIVE'
+    order by c.version desc`,[tenantId,serviceId,organizationId,at]);
+   let organizationName:string|null=null,selectedRecipient:string|null=null,selectedContract:string|null=null;
+   for(const context of contexts){
+    const exact=(await db.query(`select 1 from factact.scoped_actor_grants g
+      where g.tenant_id=$1 and g.actor_operator_id=$2 and g.service_id=$3
+        and g.contract_profile_id=$4 and g.scope_kind='SERVICE_RECIPIENT'
+        and g.service_recipient_id=$5 and g.work_id is null
+        and g.object_kind='REGISTRY' and 'READ'=any(g.operations)
+        and g.status='ACTIVE' and g.effective_from<=$6::timestamptz
+        and (g.effective_until is null or g.effective_until>$6::timestamptz) limit 1`,
+      [tenantId,actorId,serviceId,context.contract_id,context.recipient_id,at])).rowCount===1;
+    if(exact&&await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId,contractProfileId:context.contract_id,
+     scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:context.recipient_id},
+     objectKind:'REGISTRY',operation:'READ',
+    },at)){organizationName=context.organization_name;selectedRecipient=context.recipient_id;
+      selectedContract=context.contract_id;break;}
+   }
+   if(organizationName===null||selectedRecipient===null||selectedContract===null)return null;
+   const {rows}=await db.query<{id:string;asset_tag:string;display_name:string;
+    serial_number:string|null;device_status:'UNKNOWN'|'AVAILABLE'|'UNAVAILABLE'|'RETIRED';
+    registry_revision:string;asset_verified_at:Date|null;status_verified_at:Date|null}>(`
+    select d.id,d.asset_tag,d.display_name,d.serial_number,d.device_status,d.registry_revision,
+      d.asset_verified_at,d.status_verified_at
+    from factact.device_scoped_registry_read($1,$2,$3,$4,$5,$6,$7,$8,$9) d`,
+    [tenantId,actorId,serviceId,selectedContract,selectedRecipient,organizationId,limit,
+      cursor?.assetTag??null,cursor?.deviceId??null]);
+   const last=rows.at(-1);
+   return {organizationId,organizationName,items:rows.map(d=>({deviceId:d.id,
+    assetTag:d.asset_tag,displayName:d.display_name,serialNumber:d.serial_number,
+    operationalStatus:d.device_status,registryRevision:Number(d.registry_revision),
+    assetTagVerifiedAt:d.asset_verified_at?.toISOString()??null,
+    operationalStatusVerifiedAt:d.status_verified_at?.toISOString()??null,
+    sourceState:d.asset_verified_at&&d.status_verified_at?'VERIFIED':
+      d.asset_verified_at||d.status_verified_at?'PARTIALLY_VERIFIED':'SOURCE_BACKED_UNVERIFIED'})),
+    nextCursor:rows.length===limit&&last?Buffer.from(JSON.stringify({
+     assetTag:last.asset_tag,deviceId:last.id})).toString('base64url'):null};
   },true);
  }
 
