@@ -96,7 +96,18 @@ describe('concurrency, authority and HTTP guards',()=>{
   });
   it('rechecks current Device verification at proposal, review and commit',async()=>{
     const first=await proposed();
-    await db.admin.query("update factact.devices set registry_revision=registry_revision+1 where id=$1",[ids.device]);
+    const laterSource=randomUUID();
+    await db.admin.query(`insert into factact.evidence
+      (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+      values($1,$2,'SOURCE_REFERENCE','Later asset source','Synthetic invalidation',$3,now())`,
+      [laterSource,ids.tenant,ids.operator]);
+    await db.admin.query("update factact.devices set registry_revision=2 where id=$1",[ids.device]);
+    await db.admin.query(`insert into factact.device_field_events
+      (id,tenant_id,device_id,organization_id,device_revision,field_key,event_kind,field_value,
+       source_kind,source_evidence_id,source_locator,source_observed_at,recorded_by_operator_id)
+      values(gen_random_uuid(),$1,$2,$3,2,'assetTag','SOURCE_ACCEPTED','PC-0073',
+       'TRUSTED_SYSTEM',$4,'cmdb:later-asset-source',now(),$5)`,
+      [ids.tenant,ids.device,ids.organization,laterSource,ids.operator]);
     await expect(c.verifyChange(actor,first.changeId,'stale Device')).rejects.toMatchObject({code:'NOT_FOUND'});
     await db.reset();await verifyExistingDevice(db.admin,ids.device,'PC-0073');
     const second=await proposed();await c.verifyChange(actor,second.changeId,'current Device');
