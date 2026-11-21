@@ -17,7 +17,8 @@ class PgExploreSearchRepository implements ExploreSearchRepository {
   }
   operator(id: string) {
     return this.db.query<Operator>(`select o.id,o.tenant_id as "tenantId",o.display_name as "displayName",t.name as "tenantName",
-      array(select role from factact.operator_roles r where r.operator_id=o.id and r.tenant_id=o.tenant_id) as roles
+      array(select role from factact.operator_roles r where r.operator_id=o.id and r.tenant_id=o.tenant_id
+        and o.read_authority_mode='INTERNAL_V1') as roles
       from factact.operators o join factact.tenants t on t.id=o.tenant_id
       where o.id=$1 and o.status='ACTIVE' and t.status='ACTIVE'`,[id]).then(result=>result.rows[0]??null);
   }

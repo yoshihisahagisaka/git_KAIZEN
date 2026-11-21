@@ -35,7 +35,7 @@ beforeAll(async () => {
   const port = await freePort();
   embedded = new EmbeddedPostgres({ databaseDir: directory, user: 'postgres', password: 'test-admin', port,
     persistent: true, createPostgresUser: false, initdbFlags: ['--encoding=UTF8', '--locale=C'],
-    postgresFlags: ['-c', 'listen_addresses=127.0.0.1'], onLog: () => {}, onError: () => {},
+    postgresFlags: ['-c', 'listen_addresses=127.0.0.1', '-c', 'unix_socket_directories='], onLog: () => {}, onError: () => {},
   });
   await embedded.initialise();
   await embedded.start();
@@ -48,7 +48,9 @@ beforeAll(async () => {
   // Second tenant is a test fixture, not demo seed or a second customer-as-tenant model.
   await admin.query("insert into factact.tenants (id,name,status) values ($1,'Isolation fixture','ACTIVE')", [tenantB]);
   runtime = new Pool({ host: '127.0.0.1', port, user: 'factact_runtime', password: 'test-runtime', database: 'postgres', max: 1 });
-  store = new PgIdentityStore(runtime);
+  // This historical baseline-only test predates the dedicated OIDC minter.
+  // It uses compatibility sessions exclusively; verified minting is never called.
+  store = new PgIdentityStore(runtime,runtime);
 });
 afterAll(async () => {
   await runtime?.end(); await admin?.end();
@@ -124,6 +126,10 @@ describe('PostgreSQL migration, identity and RLS baseline', () => {
     expect(await store.consumeLogin(hash)).toBeNull();
   });
   it('session expiry, revocation and inactive Operator are enforced server-side', async () => {
+    // Baseline-only fixture intentionally does not apply later migrations.
+    // Add a test-local compatibility column just for the current Operator loader;
+    // all preceding baseline table/permission assertions ran on the original DDL.
+    await admin.query("alter table factact.operators add column read_authority_mode text not null default 'INTERNAL_V1'");
     const hash = tokenHash('session');
     await store.createSession(hash, { tenantId: tenantA, operatorId: operatorA }, 'csrf');
     expect((await authenticateSession(store, hash))?.operator.id).toBe(operatorA);

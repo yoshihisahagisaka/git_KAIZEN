@@ -1,7 +1,13 @@
 ﻿import type { JoinRepository, JoinRuntime } from './join-ports.js';
 import type { Action } from '../../domain/src/join.js';
-import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision } from '../../domain/src/support.js';
+import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,SupportBeneficiaryDecision } from '../../domain/src/support.js';
 export interface SupportRepository {
+ beneficiaryDecisions(eventId:string):Promise<SupportBeneficiaryDecision[]>;
+ insertBeneficiaryDecision(decision:SupportBeneficiaryDecision):Promise<void>;
+ organizations():Promise<{id:string;name:string;status:string}[]>;
+ insertCallerOrganization(id:string,name:string):Promise<void>;
+ insertCallerPerson(id:string,organizationId:string,name:string,email:string|null):Promise<void>;
+ lockCallerKey(key:string):Promise<void>;
  managementRows():Promise<SupportManagementRow[]>;
  deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
  insertDeviceContext(context:import('../../domain/src/support.js').SupportDeviceContext):Promise<void>;
@@ -12,6 +18,7 @@ export interface SupportRepository {
  followUps(workId:string):Promise<SupportFollowUp[]>;
  insertFollowUp(followUp:SupportFollowUp):Promise<void>;
  closeDecision(workId:string):Promise<SupportCloseDecision|null>;
+ closeDecisions(workId:string):Promise<SupportCloseDecision[]>;
  insertCloseDecision(decision:SupportCloseDecision):Promise<void>;
  verificationItems(workId:string):Promise<{actionType:string;changeStatus:string|null}[]>;
  records(workId:string):Promise<import('../../domain/src/support.js').SupportRecord[]>;
@@ -45,4 +52,22 @@ export interface SupportManagementRow extends SupportWork {
  ownerStatus:'ACTIVE'|'INACTIVE'|null;
 }
 export interface SupportUnitOfWork {run<T>(tenantId:string,fn:(r:SupportRepository)=>Promise<T>,readOnly?:boolean):Promise<T>}
+/** Only operations needed by the existing response command, bound to one Work
+ * by the persistence adapter for an external Actor. */
+export type SupportResponseRepository=Pick<SupportRepository,
+ 'work'|'event'|'records'|'lifecycleEvents'|'followUps'|'closeDecisions'|
+ 'insertRecord'|'insertLifecycleEvent'|'insertFollowUp'|'insertCloseDecision'|
+ 'verificationItems'|'progress'|'audit'> & {
+ core:Pick<JoinRepository,'service'|'contract'>;
+};
+export interface ScopedSupportWorkUpdateContext {
+ work():Promise<SupportWork|null>;
+ progress(work:SupportWork):Promise<void>;
+ audit(eventType:string,metadata:Record<string,unknown>):Promise<void>;
+ response:SupportResponseRepository;
+}
+export interface ScopedSupportUpdateBoundary {
+ runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
+  mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>;
+}
 export type SupportRuntime=JoinRuntime;
