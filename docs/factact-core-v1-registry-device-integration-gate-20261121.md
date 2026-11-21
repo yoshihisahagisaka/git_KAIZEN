@@ -101,4 +101,3 @@ The Registry/Authority and Device S0–S2b-1 candidates are compatible after the
 bounded SQL/preflight fixes above. FACTACT Core V1 is not claimed complete:
 S2b-2, S3 and Hosted G5 remain required. Production migration and deployment
 remain **NO-GO**.
-
