@@ -1,7 +1,7 @@
 # FACTACT S3c-0 — Work-driven Device field Evidence Fit/Gap and contract
 
-Status: **FIT/GAP ACCEPTANCE ARTIFACT — DEVICE WRITE REMAINS NO-GO**  
-Baseline: `8ee89fe4147c1215af97f0a5920e817c6da1c8be`  
+Status: **FIT/GAP ACCEPTANCE ARTIFACT — DEVICE WRITE REMAINS NO-GO**
+Baseline: `8ee89fe4147c1215af97f0a5920e817c6da1c8be`
 Scope: Issue #82 only. No hosted/Production activation and no Device mutation HTTP endpoint.
 
 ## 1. Fixed semantics
@@ -159,4 +159,3 @@ but those source routes must fail closed until separately accepted.
   `apps/web/src/server/persistence/device-information-executor.ts:1-28`.
 - Existing two-actor Application contract:
   `packages/application/src/device-information-write-commands.ts:167-244`.
-
