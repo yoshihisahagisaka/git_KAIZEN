@@ -83,7 +83,11 @@ describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
     const command=initial();
     const first=await propose(command);const replay=await propose(command);
     expect(replay.rows[0]?.id).toBe(first.rows[0]?.id);
-    await expect(propose({...command,fingerprint:'b'.repeat(64)})).rejects.toMatchObject({code:'23505'});
+    // Caller fingerprints are not trusted security proofs and are ignored.
+    expect((await propose({...command,fingerprint:'b'.repeat(64)})).rows[0]?.id).toBe(command.changeId);
+    await expect(propose({...command,effect:{...command.effect,
+      displayName:{...command.effect.displayName,value:'Changed payload'}}}))
+      .rejects.toMatchObject({code:'23505'});
     await confirm(command.changeId);
     await expect(confirm(command.changeId,'different')).rejects.toMatchObject({code:'40001'});
     await expect(confirm(command.changeId,'Synthetic human review',ids.operator)).rejects.toMatchObject({code:'42501'});
@@ -116,6 +120,22 @@ describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
     expect((await db.admin.query('select status from factact.changes where id=$1',[command.changeId])).rows[0]?.status)
       .toBe('PROPOSED');
     expect((await db.admin.query('select 1 from factact.devices where id=$1',[command.deviceId])).rowCount).toBe(0);
+  });
+
+  it('requires current authority and exact full sources before replaying a proposal',async()=>{
+    const command=initial();await propose(command);
+    const changed=structuredClone(command);
+    changed.sources[0]!.locator='forged:other-source';
+    await expect(propose(changed)).rejects.toMatchObject({code:'23505'});
+    const empty={...command,sources:[]};
+    await expect(propose(empty)).rejects.toMatchObject({code:'22023'});
+    await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+      revoked_by_operator_id=$2,revoked_at=now(),revocation_reason='replay revoked'
+      where actor_operator_id=$1`,[ids.operator,reviewer]);
+    await expect(propose(command)).rejects.toMatchObject({code:'42501'});
+    expect((await db.admin.query('select 1 from factact.device_change_requests')).rowCount).toBe(1);
+    expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+      where aggregate_id=$1`,[command.changeId])).rows[0]?.n).toBe(1);
   });
 
   it('rolls back Device, Change, field events and commit Audit when Audit insertion fails',async()=>{
