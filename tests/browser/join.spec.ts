@@ -2,7 +2,7 @@ import { test,expect } from '@playwright/test';
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
-import { testDatabase,freePort } from '../fixtures/database.js';
+import { testDatabase,freePort,ids,verifyExistingDevice } from '../fixtures/database.js';
 import { PgIdentityStore } from '../../apps/web/src/server/persistence/identity-store.js';
 import { PgJoinUnitOfWork } from '../../apps/web/src/server/persistence/join-repository.js';
 import { JoinCommands } from '../../packages/application/src/join-commands.js';
@@ -24,7 +24,7 @@ test.beforeAll(async()=>{
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((ok,fail)=>server.close(e=>e?fail(e):ok()));await db?.close();});
 
-test.beforeEach(async()=>{await db.reset();});
+test.beforeEach(async()=>{await db.reset();await verifyExistingDevice(db.admin,ids.device,'PC-0073');});
 
 async function openPreparation(page:import('@playwright/test').Page) {
   await page.goto(origin);
@@ -152,7 +152,7 @@ test('unknown guidance and unavailable candidates do not invent standards or rec
     body.data.work.contractProfileId='70000000-0000-4000-8000-000000000099';
     await route.fulfill({response,json:body});
   });
-  await page.route('**/api/devices',route=>route.fulfill({json:{ok:true,data:[]}}));
+  await page.route('**/api/devices?workId=*',route=>route.fulfill({json:{ok:true,data:[]}}));
   await page.reload();
   await expect(page.getByText('適用する標準設定・手順: 未確認。',{exact:false})).toBeVisible();
   await expect(page.getByText('入社PC準備の標準手順を見る',{exact:true})).not.toBeVisible();

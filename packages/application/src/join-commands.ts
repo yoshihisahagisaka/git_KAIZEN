@@ -90,7 +90,7 @@ export class JoinCommands {
       requireCondition(!(await r.changes(work.id)).some(c => ['PROPOSED','VERIFIED'].includes(c.status)), 'CHANGE_PENDING', '未確定の変更を先に確認してください。');
       const person = found(await r.recipientPerson(event.serviceRecipientId));
       await r.person(person.id, true);
-      const device = found(await r.device(input.deviceId, true));
+      const device = found(await r.assignableDevice(work.id,input.deviceId,true));
       const previous = await r.currentRelation(person.id);
       requireCondition(device.deviceStatus === 'AVAILABLE' && !(await r.deviceRelation(device.id)), 'DEVICE_NOT_ASSIGNABLE', 'このPCは割当できません。');
       requireCondition((input.replacesRelationId ?? null) === (previous?.id ?? null), 'REPLACEMENT_CONFIRMATION_REQUIRED', '現在の利用PCとの置換を明示的に確認してください。');
@@ -119,7 +119,7 @@ export class JoinCommands {
   private async validateEffect(r: JoinRepository, change: Change) {
     const effect = change.proposedEffectJson;
     found(await r.person(effect.personId, true));
-    const device = found(await r.device(effect.deviceId, true));
+    const device = found(await r.assignableDevice(change.workId,effect.deviceId,true));
     assertExpectedRelation(effect, await r.currentRelation(effect.personId));
     requireCondition(device.deviceStatus === 'AVAILABLE' && !(await r.deviceRelation(effect.deviceId)), 'DEVICE_NOT_ASSIGNABLE', '割当先PCの状態が変わりました。');
   }

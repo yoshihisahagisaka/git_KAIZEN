@@ -12,6 +12,7 @@ export class JoinQueries {
     const device = found(await r.device(relation.toEntityId));
     return { relationId: relation.id, deviceId: device.id, assetTag: device.assetTag, semanticType: 'FACT' as const, reliability: relation.reliability, sourceChangeId: relation.sourceChangeId, verifiedAt: relation.verifiedAt, effectiveFrom: relation.effectiveFrom };
   }
+  assertReadAuthority(actor:Operator){return this.run(actor,async()=>undefined);}
   home(actor: Operator) {
     return this.run(actor, async r => {
       const events = await r.events();
@@ -49,7 +50,10 @@ export class JoinQueries {
       return { person, organization:found(await r.organization(person.organizationId)), currentRelations: relations.filter(x=>x.status==='ACTIVE'), relationHistory: relations, verifiedFacts: facts.filter(x=>x!==null), unknowns: facts.length ? [] : ['利用PCは未確認です。'], openWork: works.filter(w=>w.status!=='COMPLETED'), recentChanges: (await Promise.all(works.map(w=>r.changes(w.id)))).flat(), timeline: (await Promise.all(events.map(id=>r.timeline(id)))).flat().sort((a,b)=>Number(a.sequence)-Number(b.sequence)) };
     });
   }
-  assignableDevices(actor: Operator) { return this.run(actor,r=>r.devices()); }
+  assignableDevices(actor: Operator,workId:string) { return this.run(actor,async r=>{
+    found(await r.work(workId));
+    return r.devices(workId);
+  }); }
 }
 export type HomeView = Awaited<ReturnType<JoinQueries['home']>>;
 export type JoinWorkspaceView = Awaited<ReturnType<JoinQueries['joinWorkspace']>>;

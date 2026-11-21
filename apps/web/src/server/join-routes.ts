@@ -45,7 +45,11 @@ export function joinRoutes({ commands: c, queries: q }: JoinServices) {
     res.json({ok:true,data:await c.rejectChange(actor(res.locals),id.parse(req.params.id),input.reason),warnings:[],correlationId:req.id});
   });
   router.get('/people/:id/context', async (req,res) => res.json({ok:true,data:await q.personContext(actor(res.locals),id.parse(req.params.id)),warnings:[]}));
-  router.get('/devices', async (_req,res) => res.json({ok:true,data:await q.assignableDevices(actor(res.locals)),warnings:[]}));
+  router.get('/devices', async (req,res) => {
+    await q.assertReadAuthority(actor(res.locals));
+    const query=z.strictObject({workId:id}).parse(req.query);
+    res.json({ok:true,data:await q.assignableDevices(actor(res.locals),query.workId),warnings:[]});
+  });
   router.post('/work/:id/complete', async (req,res) => {
     const input = z.strictObject({outcome:z.literal('COMPLETED')}).parse(req.body);
     res.json({ok:true,data:await c.completeWork(actor(res.locals),id.parse(req.params.id),input.outcome),warnings:[],correlationId:req.id});
