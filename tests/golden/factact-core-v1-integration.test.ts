@@ -63,8 +63,8 @@ describe('FACTACT Core V1 integrated Registry / JOIN / Device gate',()=>{
     try{
       const migrations=(await readdir('supabase/migrations'))
         .filter(name=>/^\d+.*\.sql$/u.test(name)).sort();
-      expect(migrations).toHaveLength(39);
-      expect(migrations.at(-1)).toBe('20261121000300_join_device_assignment_gate.sql');
+      expect(migrations).toHaveLength(40);
+      expect(migrations.at(-1)).toBe('20261121000400_join_independent_field_verification.sql');
       expect((await isolated.admin.query(`select rolsuper,rolbypassrls from pg_roles
         where rolname='factact_migrator'`)).rows)
         .toEqual([{rolsuper:false,rolbypassrls:false}]);

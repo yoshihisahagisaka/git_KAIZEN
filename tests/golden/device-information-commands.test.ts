@@ -1,6 +1,10 @@
 import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import {withTenant} from '../../apps/web/src/server/persistence/database.js';
+import {PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {JoinCommands} from '../../packages/application/src/join-commands.js';
+import {JoinQueries} from '../../packages/application/src/join-queries.js';
+import type {Operator} from '../../packages/domain/src/operator.js';
 import {ids,testDatabase} from '../fixtures/database.js';
 
 type Db=Awaited<ReturnType<typeof testDatabase>>;
@@ -59,6 +63,40 @@ async function confirm(changeId:string,summary='Synthetic human review',actor=re
 }
 async function committedInitial(){
   const command=initial();await propose(command);await confirm(command.changeId);return command;
+}
+async function verifyField(deviceId:string,field:'assetTag'|'deviceStatus',value:string,
+  expectedRevision:number,requestKey:string){
+  const fieldEvidence=randomUUID();
+  await db.admin.query(`insert into factact.evidence
+    (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+    values($1,$2,'SOURCE_REFERENCE',$3,'Synthetic physical verification',$4,now())`,
+    [fieldEvidence,ids.tenant,`Verify ${field}`,ids.operator]);
+  const source={kind:'PHYSICAL_INVENTORY',evidenceId:fieldEvidence,
+    locator:`inspection:${deviceId}:${field}`,observedAt:'2026-11-21T04:00:00.000Z'};
+  const command={changeId:randomUUID(),serviceId:ids.service,contractProfileId:ids.contract,
+    serviceRecipientId:recipient,organizationId:ids.organization,deviceId,workId:'',
+    kind:'DEVICE_FIELD_VERIFICATION',requestKey,expectedRevision,
+    effect:{field,observedValue:value,verificationSource:source},fingerprint:'e'.repeat(64),
+    sources:[{fieldKey:field,fieldValue:value,evidenceId:fieldEvidence,
+      sourceKind:'PHYSICAL_INVENTORY',locator:source.locator,observedAt:source.observedAt}]};
+  await propose(command);await confirm(command.changeId,`verified ${field}`);
+}
+async function correctField(deviceId:string,field:'displayName',value:string,
+  expectedRevision:number,requestKey:string){
+  const fieldEvidence=randomUUID();
+  await db.admin.query(`insert into factact.evidence
+    (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+    values($1,$2,'SOURCE_REFERENCE',$3,'Synthetic trusted correction',$4,now())`,
+    [fieldEvidence,ids.tenant,`Correct ${field}`,ids.operator]);
+  const source={kind:'TRUSTED_SYSTEM',evidenceId:fieldEvidence,
+    locator:`cmdb:${deviceId}:${field}`,observedAt:'2026-11-21T04:30:00.000Z'};
+  const command={changeId:randomUUID(),serviceId:ids.service,contractProfileId:ids.contract,
+    serviceRecipientId:recipient,organizationId:ids.organization,deviceId,workId:'',
+    kind:'DEVICE_INFORMATION_CORRECTION',requestKey,expectedRevision,
+    effect:{changes:{[field]:{value,source}}},fingerprint:'f'.repeat(64),
+    sources:[{fieldKey:field,fieldValue:value,evidenceId:fieldEvidence,
+      sourceKind:'TRUSTED_SYSTEM',locator:source.locator,observedAt:source.observedAt}]};
+  await propose(command);await confirm(command.changeId,`corrected ${field}`);
 }
 
 describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
@@ -227,5 +265,71 @@ describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
       {field_key:'deviceStatus',event_kind:'FIELD_VERIFIED'}]);
     expect((await db.admin.query('select 1 from factact.relations where to_entity_id=$1',[original.deviceId])).rowCount)
       .toBe(0);
+  });
+
+  it('keeps independently current assetTag/status verification eligible through real Device and JOIN commands',async()=>{
+    const original=await committedInitial();
+    await verifyField(original.deviceId,'assetTag',assetTag,1,'device-command-asset-verify');
+    await verifyField(original.deviceId,'deviceStatus','AVAILABLE',2,'device-command-status-verify');
+    await correctField(original.deviceId,'displayName','Updated display only',3,
+      'device-command-display-correct');
+    expect((await db.admin.query(`select registry_revision from factact.devices where id=$1`,
+      [original.deviceId])).rows[0]?.registry_revision).toBe('4');
+    expect((await db.admin.query(`select field_key,device_revision,event_kind from
+      factact.device_field_events where device_id=$1 and event_kind='FIELD_VERIFIED'
+      order by device_revision`,[original.deviceId])).rows).toEqual([
+      {field_key:'assetTag',device_revision:'2',event_kind:'FIELD_VERIFIED'},
+      {field_key:'deviceStatus',device_revision:'3',event_kind:'FIELD_VERIFIED'},
+    ]);
+
+    const joinActor:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Synthetic Operator',
+      tenantName:'atLIB Development',roles:['ADMIN','OPERATOR','REVIEWER']};
+    const joinUow=new PgJoinUnitOfWork(db.runtime);
+    const joinCommands=new JoinCommands(joinUow,{id:randomUUID,now:()=> '2026-11-21T05:00:00.000Z'});
+    const joinQueries=new JoinQueries(joinUow);
+    const event=await joinCommands.createJoinEvent(joinActor,{organizationId:ids.organization,
+      personId:ids.person,serviceId:ids.service,joinDate:'2026-11-22'});
+    const evaluation=await joinCommands.evaluateJoinRequirements(joinActor,event.eventId);
+    const workId=evaluation.works[0]!.id;
+    expect((await joinQueries.assignableDevices(joinActor,workId)).map(x=>x.id))
+      .toContain(original.deviceId);
+    const action=await joinCommands.startAssignDeviceAction(joinActor,{workId,
+      deviceId:original.deviceId,executionSummary:'Assign independently verified Device',
+      effectiveFrom:'2026-11-21T05:00:00.000Z'});
+    await joinCommands.verifyChange(joinActor,action.changeId,'Independent fields verified');
+    const relation=await joinCommands.commitChange(joinActor,action.changeId);
+    expect(relation.toEntityId).toBe(original.deviceId);
+  });
+
+  it('rejects an older assetTag verification after a later same-field source event',async()=>{
+    const original=await committedInitial();
+    await verifyField(original.deviceId,'assetTag',assetTag,1,'device-command-asset-verify');
+    await verifyField(original.deviceId,'deviceStatus','AVAILABLE',2,'device-command-status-verify');
+    const laterSource=randomUUID();
+    await db.admin.query(`insert into factact.evidence
+      (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+      values($1,$2,'SOURCE_REFERENCE','Later asset source','Synthetic invalidation',$3,now())`,
+      [laterSource,ids.tenant,ids.operator]);
+    await db.admin.query(`update factact.devices set registry_revision=4 where id=$1`,[original.deviceId]);
+    await db.admin.query(`insert into factact.device_field_events
+      (id,tenant_id,device_id,organization_id,device_revision,field_key,event_kind,field_value,
+       source_kind,source_evidence_id,source_locator,source_observed_at,recorded_by_operator_id)
+      values(gen_random_uuid(),$1,$2,$3,4,'assetTag','SOURCE_ACCEPTED',$4,'TRUSTED_SYSTEM',$5,
+       'cmdb:later-asset-source',now(),$6)`,
+      [ids.tenant,original.deviceId,ids.organization,assetTag,laterSource,ids.operator]);
+    const joinActor:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Synthetic Operator',
+      tenantName:'atLIB Development',roles:['ADMIN','OPERATOR','REVIEWER']};
+    const joinUow=new PgJoinUnitOfWork(db.runtime);
+    const joinCommands=new JoinCommands(joinUow,{id:randomUUID,now:()=> '2026-11-21T05:00:00.000Z'});
+    const joinQueries=new JoinQueries(joinUow);
+    const event=await joinCommands.createJoinEvent(joinActor,{organizationId:ids.organization,
+      personId:ids.person,serviceId:ids.service,joinDate:'2026-11-22'});
+    const evaluation=await joinCommands.evaluateJoinRequirements(joinActor,event.eventId);
+    const workId=evaluation.works[0]!.id;
+    expect((await joinQueries.assignableDevices(joinActor,workId)).map(x=>x.id))
+      .not.toContain(original.deviceId);
+    await expect(joinCommands.startAssignDeviceAction(joinActor,{workId,
+      deviceId:original.deviceId,executionSummary:'Must reject stale field verification',
+      effectiveFrom:'2026-11-21T05:00:00.000Z'})).rejects.toMatchObject({code:'NOT_FOUND'});
   });
 });
