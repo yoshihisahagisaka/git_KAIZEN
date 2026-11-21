@@ -86,6 +86,10 @@ export class PgJoinRepository implements JoinRepository {
   }
   works(eventId: string) { return this.many<Work>('select * from factact.work where source_event_id=$1 order by created_at,id',[eventId]); }
   device(id: string, lock=false) { return this.one<Device>(`select * from factact.devices where id=$1 ${lock?'for update':''}`,[id]); }
+  assignableDevice(workId:string,deviceId:string,lock=false) {
+    return this.one<Device>('select * from factact.join_assignable_devices($1,$2,$3,$4)',
+      [this.tenantId,workId,deviceId,lock]);
+  }
   deviceRelation(deviceId: string) { return this.one<Relation>("select * from factact.relations where to_entity_id=$1 and status='ACTIVE'",[deviceId]); }
   currentRelation(personId: string) { return this.one<Relation>("select * from factact.relations where from_entity_id=$1 and status='ACTIVE'",[personId]); }
   insertAction(action: Action, deviceId: string) { return this.insert('actions',{...action,actionType:'ASSIGN_DEVICE',status:'COMPLETED',inputJson:{deviceId}}); }
@@ -108,7 +112,8 @@ export class PgJoinRepository implements JoinRepository {
   people() { return this.many<Person>('select * from factact.people order by display_name,id'); }
   services() { return this.many<Service>("select * from factact.services where status='ACTIVE' order by name,id"); }
   events() { return this.many<JoinEvent>('select * from factact.join_events order by created_at desc,id'); }
-  devices() { return this.many<Device>("select d.* from factact.devices d where d.device_status='AVAILABLE' and not exists(select 1 from factact.relations r where r.to_entity_id=d.id and r.tenant_id=d.tenant_id and r.status='ACTIVE') order by asset_tag"); }
+  devices(workId:string) { return this.many<Device>(
+    'select * from factact.join_assignable_devices($1,$2,null,false)',[this.tenantId,workId]); }
   relations(personId: string) { return this.many<Relation>('select * from factact.relations where from_entity_id=$1 order by effective_from,id',[personId]); }
   personWorks(personId: string) { return this.many<Work>(`select w.* from factact.work w join factact.service_recipients r on r.id=w.service_recipient_id and r.tenant_id=w.tenant_id where w.lane='CHANGE' and r.recipient_id=$1 order by w.created_at,w.id`,[personId]); }
 }

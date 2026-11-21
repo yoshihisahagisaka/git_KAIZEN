@@ -23,6 +23,7 @@ export interface JoinRepository {
   saveWorkProgress(work: Work): Promise<void>;
   works(eventId: string): Promise<Work[]>;
   device(id: string, lock?: boolean): Promise<Device | null>;
+  assignableDevice(workId: string, deviceId: string, lock?: boolean): Promise<Device | null>;
   deviceRelation(deviceId: string): Promise<Relation | null>;
   currentRelation(personId: string): Promise<Relation | null>;
   insertAction(action: Action, deviceId: string): Promise<void>;
@@ -45,7 +46,7 @@ export interface JoinRepository {
   people(): Promise<Person[]>;
   services(): Promise<Service[]>;
   events(): Promise<JoinEvent[]>;
-  devices(): Promise<Device[]>;
+  devices(workId: string): Promise<Device[]>;
   relations(personId: string): Promise<Relation[]>;
   personWorks(personId: string): Promise<Work[]>;
 }

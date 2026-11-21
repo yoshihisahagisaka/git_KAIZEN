@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { createServer } from 'node:net';
+import { randomUUID } from 'node:crypto';
 
 export async function freePort() {
   const server=createServer();
@@ -103,3 +104,34 @@ export async function testDatabase(options:TestDatabaseOptions={}) {
   } catch(e) {await close();throw e;}
 }
 export const ids={tenant:'10000000-0000-4000-8000-000000000001',operator:'20000000-0000-4000-8000-000000000001',organization:'30000000-0000-4000-8000-000000000001',person:'40000000-0000-4000-8000-000000000001',device:'50000000-0000-4000-8000-000000000001',service:'60000000-0000-4000-8000-000000000001',contract:'70000000-0000-4000-8000-000000000001'};
+
+/** Disposable-test helper: create an explicitly customer-scoped Device with
+ * independent current assetTag and AVAILABLE verification. */
+export async function insertVerifiedDevice(admin:Pool,id:string,assetTag:string,
+  organizationId=ids.organization,tenantId=ids.tenant,actorId=ids.operator){
+  await admin.query(`insert into factact.devices
+    (id,tenant_id,organization_id,asset_tag,display_name,device_status,registry_revision)
+    values($1,$2,$3,$4,$4,'AVAILABLE',1)`,[id,tenantId,organizationId,assetTag]);
+  await verifyExistingDevice(admin,id,assetTag,organizationId,tenantId,actorId);
+}
+
+export async function verifyExistingDevice(admin:Pool,id:string,assetTag:string,
+  organizationId=ids.organization,tenantId=ids.tenant,actorId=ids.operator){
+  const assetEvidence=randomUUID(),statusEvidence=randomUUID();
+  await admin.query(`update factact.devices set organization_id=$3,registry_revision=1
+    where tenant_id=$1 and id=$2`,[tenantId,id,organizationId]);
+  for(const [evidenceId,title] of [[assetEvidence,'assetTag'],[statusEvidence,'AVAILABLE']])
+    await admin.query(`insert into factact.evidence
+      (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
+      values($1,$2,'SOURCE_REFERENCE',$3,'Disposable test fixture',$4,now())`,
+      [evidenceId,tenantId,title,actorId]);
+  await admin.query(`insert into factact.device_field_events
+    (id,tenant_id,device_id,organization_id,device_revision,field_key,event_kind,field_value,
+     source_kind,source_evidence_id,source_locator,source_observed_at,recorded_by_operator_id,
+     verified_by_operator_id,verified_at)
+    values(gen_random_uuid(),$1,$2,$3,1,'assetTag','FIELD_VERIFIED',$4,'TRUSTED_SYSTEM',$5,
+      'synthetic:test:asset',now(),$7,$7,now()),
+     (gen_random_uuid(),$1,$2,$3,1,'deviceStatus','FIELD_VERIFIED','AVAILABLE','TRUSTED_SYSTEM',$6,
+      'synthetic:test:status',now(),$7,$7,now())`,
+    [tenantId,id,organizationId,assetTag,assetEvidence,statusEvidence,actorId]);
+}

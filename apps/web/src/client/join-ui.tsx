@@ -66,7 +66,7 @@ function Guidance({v}:{v:WorkDetailView}) {
   </section>;
 }
 function WorkPage({id,csrf,operator,revision,run,busy,onActiveTitle}:Controls&{id:string;onActiveTitle?:(title:string)=>void}) {
-  const {value:v,error}=useData<WorkDetailView>(`/api/work/${id}`,revision),{value:devices,error:deviceError}=useData<Device[]>('/api/devices',revision);
+  const {value:v,error}=useData<WorkDetailView>(`/api/work/${id}`,revision),{value:devices,error:deviceError}=useData<Device[]>(`/api/devices?workId=${encodeURIComponent(id)}`,revision);
   const [candidate,setCandidate]=useState(''),[replacement,setReplacement]=useState(false);
   useEffect(()=>{if(v)onActiveTitle?.(`${v.recipient.displayName}さんのPC準備`);},[onActiveTitle,v]);
   if(error)return <p role="alert">{error}</p>;if(!v)return <p>確認しています…</p>;

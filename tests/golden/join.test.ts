@@ -2,7 +2,7 @@ import { afterAll,beforeAll,beforeEach,describe,expect,it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import pino from 'pino';
-import { testDatabase,ids } from '../fixtures/database.js';
+import { testDatabase,ids,insertVerifiedDevice,verifyExistingDevice } from '../fixtures/database.js';
 import { PgJoinUnitOfWork } from '../../apps/web/src/server/persistence/join-repository.js';
 import { PgIdentityStore } from '../../apps/web/src/server/persistence/identity-store.js';
 import { withTenant } from '../../apps/web/src/server/persistence/database.js';
@@ -18,13 +18,13 @@ let db:Awaited<ReturnType<typeof testDatabase>>, c:JoinCommands,q:JoinQueries,uo
 const actor:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'開発オペレーター',tenantName:'atLIB Development',roles:['ADMIN','OPERATOR','REVIEWER']};
 const time={id:randomUUID,now:()=> '2026-10-01T09:00:00.000Z'};
 beforeAll(async()=>{db=await testDatabase();uow=new PgJoinUnitOfWork(db.runtime);c=new JoinCommands(uow,time);q=new JoinQueries(uow);});
-beforeEach(async()=>db.reset());
+beforeEach(async()=>{await db.reset();await verifyExistingDevice(db.admin,ids.device,'PC-0073');});
 afterAll(async()=>db?.close());
 const create=()=>c.createJoinEvent(actor,{organizationId:ids.organization,personId:ids.person,serviceId:ids.service,joinDate:'2026-10-02'});
 async function work() {const e=await create();const result=await c.evaluateJoinRequirements(actor,e.eventId);return {eventId:e.eventId,workId:result.works[0]!.id,evaluationId:result.evaluations[0]!.id};}
 async function proposed() {const w=await work();const a=await c.startAssignDeviceAction(actor,{workId:w.workId,deviceId:ids.device,executionSummary:'資産ラベルを確認して本人へ割当済み',effectiveFrom:'2026-10-01T08:00:00.000Z'});return {...w,...a};}
 async function committed() {const p=await proposed();await c.verifyChange(actor,p.changeId,'資産ラベルと実機を確認');const relation=await c.commitChange(actor,p.changeId);return {...p,relation};}
-async function secondDevice() {const id=randomUUID();await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,display_name,device_status) values($1,$2,'PC-0088','Replacement','AVAILABLE')",[id,ids.tenant]);return id;}
+async function secondDevice() {const id=randomUUID();await insertVerifiedDevice(db.admin,id,'PC-0088');return id;}
 async function policy(value:string) {await db.admin.query("update factact.contract_profiles set configuration_json=jsonb_set(configuration_json,'{requirements,COMPANY_PC,policy}',to_jsonb($1::text)) where id=$2",[value,ids.contract]);}
 async function setReadRoles(roles:Operator['roles']) {await db.admin.query('delete from factact.operator_roles where tenant_id=$1 and operator_id=$2',[ids.tenant,ids.operator]);for(const role of roles)await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[ids.tenant,ids.operator,role]);}
 
@@ -80,6 +80,30 @@ describe('document 15 Golden Tests',()=>{
 });
 
 describe('concurrency, authority and HTTP guards',()=>{
+  it('lists only independently verified Devices for the Work customer and rejects a global list',async()=>{
+    const w=await work(),legacy=randomUUID(),unverified=randomUUID(),otherOrg=randomUUID(),other=randomUUID();
+    await db.admin.query("insert into factact.devices(id,tenant_id,asset_tag,display_name,device_status) values($1,$2,'LEGACY-AVAILABLE','Legacy','AVAILABLE')",[legacy,ids.tenant]);
+    await db.admin.query("insert into factact.devices(id,tenant_id,organization_id,asset_tag,display_name,device_status,registry_revision) values($1,$2,$3,'UNVERIFIED','Unverified','AVAILABLE',1)",[unverified,ids.tenant,ids.organization]);
+    await db.admin.query("insert into factact.organizations(id,tenant_id,name,status) values($1,$2,'Other customer','ACTIVE')",[otherOrg,ids.tenant]);
+    await insertVerifiedDevice(db.admin,other,'OTHER-VERIFIED',otherOrg);
+    expect((await q.assignableDevices(actor,w.workId)).map(d=>d.id)).toEqual([ids.device]);
+    const config:Config={nodeEnv:'test',port:8080,origin:'http://localhost:8080',databaseUrl:'postgresql://unused',oidcSessionDatabaseUrl:'postgresql://test-oidc',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:8080/auth/callback'};
+    const store=new PgIdentityStore(db.runtime,db.oidc);await store.createSession(tokenHash('device-list-session'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
+    const app=createApp(config,store,{authorizationUrl:()=>'',verifyCallback:async()=>{throw new Error('not used');}},pino({level:'silent'}),{commands:c,queries:q});
+    await request(app).get('/api/devices').set('Cookie','factact_session=device-list-session').expect(400);
+    const response=await request(app).get(`/api/devices?workId=${w.workId}`).set('Cookie','factact_session=device-list-session').expect(200);
+    expect(response.body.data.map((d:{id:string})=>d.id)).toEqual([ids.device]);
+  });
+  it('rechecks current Device verification at proposal, review and commit',async()=>{
+    const first=await proposed();
+    await db.admin.query("update factact.devices set registry_revision=registry_revision+1 where id=$1",[ids.device]);
+    await expect(c.verifyChange(actor,first.changeId,'stale Device')).rejects.toMatchObject({code:'NOT_FOUND'});
+    await db.reset();await verifyExistingDevice(db.admin,ids.device,'PC-0073');
+    const second=await proposed();await c.verifyChange(actor,second.changeId,'current Device');
+    await db.admin.query("update factact.devices set device_status='UNAVAILABLE',registry_revision=registry_revision+1 where id=$1",[ids.device]);
+    await expect(c.commitChange(actor,second.changeId)).rejects.toMatchObject({code:'NOT_FOUND'});
+    expect((await q.personContext(actor,ids.person)).currentRelations).toEqual([]);
+  });
   it('different concurrent proposals for one Person cannot both commit',async()=>{
     const first=await proposed(),secondWork=await work(),deviceId=await secondDevice();
     const second=await c.startAssignDeviceAction(actor,{workId:secondWork.workId,deviceId,executionSummary:'別の実施記録',effectiveFrom:'2026-10-01T08:10:00.000Z'});

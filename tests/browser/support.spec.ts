@@ -1,7 +1,7 @@
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
 import {SupportCommands} from '../../packages/application/src/support-commands.js';
 import {SupportQueries} from '../../packages/application/src/support-queries.js';
-import {ids} from '../fixtures/database.js';
+import {ids,verifyExistingDevice} from '../fixtures/database.js';
 import type {Operator} from '../../packages/domain/src/operator.js';
 import { test,expect } from '@playwright/test';
 import type { Server } from 'node:http';
@@ -35,7 +35,7 @@ test.afterAll(async()=>{if(server)await new Promise<void>((ok,fail)=>server.clos
 const actor:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Demo',tenantName:'Demo',roles:['ADMIN','OPERATOR','REVIEWER']};
 let relationId:string,joinWorkId:string;
 test.beforeEach(async()=>{
- await db.reset();const c=new JoinCommands(new PgJoinUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});
+ await db.reset();await verifyExistingDevice(db.admin,ids.device,'PC-0073');const c=new JoinCommands(new PgJoinUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()});
  const e=await c.createJoinEvent(actor,{personId:ids.person,organizationId:ids.organization,serviceId:ids.service,joinDate:'2026-10-02'});
  const evaluation=await c.evaluateJoinRequirements(actor,e.eventId);joinWorkId=evaluation.works[0]!.id;
  const proposal=await c.startAssignDeviceAction(actor,{workId:joinWorkId,deviceId:ids.device,executionSummary:'デモ: 実機照合・引き渡し済み',effectiveFrom:new Date(Date.now()-60000).toISOString()});
