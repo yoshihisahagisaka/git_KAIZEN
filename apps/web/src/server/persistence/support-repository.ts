@@ -2,13 +2,23 @@
 import {withTenant} from './database.js';
 import {PgJoinRepository} from './join-repository.js';
 import type {SupportRepository,SupportUnitOfWork} from '../../../../../packages/application/src/support-ports.js';
-import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision} from '../../../../../packages/domain/src/support.js';
+import type {SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,SupportBeneficiaryDecision} from '../../../../../packages/domain/src/support.js';
 import type {Action} from '../../../../../packages/domain/src/join.js';
 export class PgSupportUnitOfWork implements SupportUnitOfWork {
  constructor(private pool:Pool){}
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
-class PgSupportRepository implements SupportRepository {
+export class PgSupportRepository implements SupportRepository {
+ beneficiaryDecisions(eventId:string){return this.many<SupportBeneficiaryDecision>(`select d.*,o.name as organization_name
+  from factact.support_event_beneficiary_decisions d
+  left join factact.service_recipients r on r.tenant_id=d.tenant_id and r.id=d.service_recipient_id
+  left join factact.organizations o on o.tenant_id=r.tenant_id and o.id=r.recipient_organization_id
+  where d.support_event_id=$1 order by d.revision`,[eventId]);}
+ insertBeneficiaryDecision(decision:SupportBeneficiaryDecision){const {organizationName:_name,...row}=decision;return this.insert('support_event_beneficiary_decisions',row);}
+ organizations(){return this.many<{id:string;name:string;status:string}>("select id,name,status from factact.organizations where status='ACTIVE' order by name,id");}
+ insertCallerOrganization(id:string,name:string){return this.insert('organizations',{id,tenantId:this.tenant,name,status:'ACTIVE'});}
+ insertCallerPerson(id:string,organizationId:string,name:string,email:string|null){return this.insert('people',{id,tenantId:this.tenant,organizationId,displayName:name,email,lifecycleStatus:'ACTIVE'});}
+ async lockCallerKey(key:string){await this.db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[this.tenant+':caller:'+key]);}
  managementRows(){return this.many<import('../../../../../packages/application/src/support-ports.js').SupportManagementRow>(`select w.*,e.id as support_event_id,p.display_name as person_name,s.name as service_name,
   o.display_name as owner_name,o.status as owner_status
   from factact.work w
@@ -27,7 +37,8 @@ class PgSupportRepository implements SupportRepository {
  insertLifecycleEvent(event:SupportLifecycleEvent){return this.insert('support_work_lifecycle_events',event);}
  followUps(id:string){return this.many<SupportFollowUp>('select * from factact.support_work_follow_ups where work_id=$1 order by revision',[id]);}
  insertFollowUp(followUp:SupportFollowUp){return this.insert('support_work_follow_ups',followUp);}
- closeDecision(id:string){return this.one<SupportCloseDecision>('select * from factact.support_work_close_decisions where work_id=$1',[id]);}
+ closeDecision(id:string){return this.one<SupportCloseDecision>('select * from factact.support_work_close_decisions where work_id=$1 order by close_sequence desc',[id]);}
+ closeDecisions(id:string){return this.many<SupportCloseDecision>('select * from factact.support_work_close_decisions where work_id=$1 order by close_sequence',[id]);}
  insertCloseDecision(decision:SupportCloseDecision){return this.insert('support_work_close_decisions',decision);}
  verificationItems(workId:string){return this.many<{actionType:string;changeStatus:string|null}>(`select a.action_type,c.status as change_status from factact.actions a left join factact.changes c on c.tenant_id=a.tenant_id and c.action_id=a.id where a.work_id=$1 order by a.started_at,a.id`,[workId]);}
  records(id:string){return this.many<import('../../../../../packages/domain/src/support.js').SupportRecord>('select * from factact.support_work_records where work_id=$1 order by revision',[id]);}

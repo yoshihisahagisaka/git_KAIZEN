@@ -62,6 +62,8 @@ describe('document 15 Golden Tests',()=>{
     const p=await committed(),tenant=randomUUID(),operatorId=randomUUID();
     await db.admin.query("insert into factact.tenants(id,name,status) values($1,'Other','ACTIVE')",[tenant]);
     await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'other@example.invalid','Other','ACTIVE')",[operatorId,tenant]);
+    // Preserve the historical internal v1 actor so this tests cross-Tenant isolation.
+    await db.admin.query("update factact.operators set read_authority_mode='INTERNAL_V1' where id=$1",[operatorId]);
     for(const role of actor.roles) await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[tenant,operatorId,role]);
     const other={...actor,id:operatorId,tenantId:tenant};
     for(const op of [()=>q.personContext(other,ids.person),()=>q.workDetail(other,p.workId),()=>q.joinWorkspace(other,p.eventId),()=>c.verifyChange(other,p.changeId,'forged'),()=>c.commitChange(other,p.changeId),()=>c.completeWork(other,p.workId,'COMPLETED'),()=>c.takeWorkOwnership(other,p.workId)]) await expect(op()).rejects.toMatchObject({code:'NOT_FOUND'});
@@ -94,8 +96,8 @@ describe('concurrency, authority and HTTP guards',()=>{
   it('decision-required and missing information do not fabricate Facts or Work',async()=>{await policy('DECISION_REQUIRED');const e=await create();const v=await c.evaluateJoinRequirements(actor,e.eventId);expect(v.works).toEqual([]);expect(v.evaluations[0]?.basisSnapshot.primaryDeviceState).toBe('UNKNOWN');expect((await q.joinWorkspace(actor,e.eventId)).readiness).toBe('DECISION_WAITING');});
   it('rejected proposals retain history and allow an explicit new proposal',async()=>{const p=await proposed();await c.rejectChange(actor,p.changeId,'実施内容を訂正');const next=await c.startAssignDeviceAction(actor,{workId:p.workId,deviceId:ids.device,executionSummary:'訂正した実施内容',effectiveFrom:'2026-10-01T08:00:00.000Z'});expect(next.changeId).not.toBe(p.changeId);expect((await q.workDetail(actor,p.workId)).changes.map(c=>c.status)).toContain('REJECTED');});
   it('every command URL and unsafe method passes the same exact Origin/CSRF boundary',async()=>{
-    const config:Config={nodeEnv:'test',port:8080,origin:'http://localhost:8080',databaseUrl:'postgresql://unused',databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:8080/auth/callback'};
-    const store=new PgIdentityStore(db.runtime);await store.createSession(tokenHash('test-session'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
+    const config:Config={nodeEnv:'test',port:8080,origin:'http://localhost:8080',databaseUrl:'postgresql://unused',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:8080/auth/callback'};
+    const store=new PgIdentityStore(db.runtime,db.oidc);await store.createSession(tokenHash('test-session'),{tenantId:ids.tenant,operatorId:ids.operator},'csrf');
     const app=createApp(config,store,{authorizationUrl:()=>'',verifyCallback:async()=>{throw new Error('not used');}},pino({level:'silent'}),{commands:c,queries:q});
     const urls=['/api/join-events',`/api/join-events/${randomUUID()}/evaluate-requirements`,`/api/work/${randomUUID()}/take-ownership`,`/api/work/${randomUUID()}/actions/assign-device`,`/api/changes/${randomUUID()}/verify`,`/api/changes/${randomUUID()}/commit`,`/api/changes/${randomUUID()}/reject`,`/api/work/${randomUUID()}/complete`,'/auth/logout'];
     for(const url of urls){await request(app).post(url).expect(401);await request(app).post(url).set('Cookie','factact_session=test-session').expect(403);await request(app).post(url).set('Cookie','factact_session=test-session').set('Origin',config.origin+'.evil').set('x-csrf-token','csrf').expect(403);}

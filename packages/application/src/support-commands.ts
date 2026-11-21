@@ -1,9 +1,128 @@
 ﻿import type {Operator} from '../../domain/src/operator.js';
-import {assertRole,found,requireCondition} from '../../domain/src/join.js';
-import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision} from '../../domain/src/support.js';
+import {assertRole,found,requireCondition,DomainError} from '../../domain/src/join.js';
+import type {SupportEvent,SupportWork,SupportDecision,SupportDeviceContext,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,ResponseDisposition,SupportResponseDraftNotes,SupportResponseNotes,SupportBeneficiaryDecision} from '../../domain/src/support.js';
 import {supportActionLabels,supportResultLabels,type SupportNotes,type SupportRecord} from '../../domain/src/support.js';
-import type {SupportRepository,SupportRuntime,SupportUnitOfWork} from './support-ports.js';
+import type {SupportRepository,SupportRuntime,SupportUnitOfWork,SupportResponseRepository,ScopedSupportUpdateBoundary} from './support-ports.js';
+import type {JoinRepository} from './join-ports.js';
+type SupportResponseInput={requestId:string;expectedLifecycleRevision:number;expectedRecordRevision:number;responseText:string;
+ disposition:ResponseDisposition;followUpAt:string|null;
+ close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined};
+type ScopedResponseCorrectionInput={requestId:string;expectedRecordRevision:number;
+ supersedesRecordId:string;responseText:string;correctionReason:string};
 export class SupportCommands {
+ recordBeneficiary(actor:Operator,eventId:string,input:{requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string}){return this.run(actor,async(r,a)=>{
+  // Lock the parent: revisions for the same inquiry serialize in the same transaction.
+  const event=found(await r.event(eventId,true));await this.context(r,a,event);
+  const history=await r.beneficiaryDecisions(eventId),old=history.find(x=>x.requestId===input.requestId);
+  const reason=input.reason.trim();
+  if(old){const originalOrg=old.serviceRecipientId?await r.core.recipientOrganization(old.serviceRecipientId):null;
+   requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&originalOrg?.id===(input.organizationId??undefined)&&old.reason===reason&&old.revision===input.expectedRevision+1,'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(history.length===(input.expectedRevision)&& (history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','支援対象企業の確認記録が更新されています。');
+  requireCondition(reason.length>=1&&reason.length<=1000,'REASON_REQUIRED','支援対象企業の確認根拠・解除理由を入力してください。',400);
+  requireCondition(input.kind==='CONFIRMED'?!!input.organizationId:input.organizationId===null,'INVALID_INPUT','支援対象企業の指定を確認してください。',400);
+  const recipientId=input.organizationId?await r.core.ensureOrganizationRecipient(this.runtime.id(),event.serviceId,input.organizationId):null;
+  const decision:SupportBeneficiaryDecision={id:this.runtime.id(),tenantId:a.tenantId,supportEventId:event.id,serviceId:event.serviceId,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,serviceRecipientId:recipientId,recipientType:'ORGANIZATION',reason,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  await r.insertBeneficiaryDecision(decision);
+  await this.audit(r,a,event.id,'SUPPORT_BENEFICIARY_'+input.kind,{decisionId:decision.id,serviceRecipientId:recipientId,reason,revision:decision.revision});
+  return decision;
+ });}
+ recordSupportResponse(actor:Operator,workId:string,input:SupportResponseInput){
+  return this.run(actor,(r,a)=>this.applySupportResponse(r,a,workId,input,'INTERNAL'));
+ }
+ /** External Actors use the same response transitions, but only within a
+  * verified Work-scoped UPDATE transaction. UPDATE cannot Close the Work. */
+ async recordScopedSupportResponse(actor:Operator,workId:string,input:SupportResponseInput):Promise<SupportRecord>{
+  requireCondition(input.disposition!=='COMPLETED'&&!input.close,
+   'SCOPED_CLOSE_NOT_AUTHORIZED','対応終了には別の承認権限が必要です。',403);
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'));
+  return found(result);
+ }
+ /** A correction is an append-only attestation, never a second response Action,
+  * Follow-up change, disposition change, Work transition or Close command. */
+ async correctScopedSupportResponse(actor:Operator,workId:string,
+  input:ScopedResponseCorrectionInput):Promise<SupportRecord>{
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.applyScopedResponseCorrection(response,actor,workId,input));
+  return found(result);
+ }
+ private async applyScopedResponseCorrection(r:SupportResponseRepository,a:Operator,workId:string,
+  input:ScopedResponseCorrectionInput):Promise<SupportRecord>{
+  const w=found(await r.work(workId,true));
+  await this.context(r,a,found(await r.event(w.supportEventId)),'SCOPED');
+  requireCondition(w.lifecycleVersion===2,'WORK_STATE_CONFLICT','この対応は訂正できません。');
+  const records=await r.records(workId);
+  const normalized={supersedesRecordId:input.supersedesRecordId,responseText:input.responseText.trim()};
+  const reason=input.correctionReason.trim();
+  const old=records.find(x=>x.requestId===input.requestId);
+  if(old){
+   requireCondition(old.kind==='RESPONSE_CORRECTION'&&old.recordedByOperatorId===a.id&&
+    old.revision===input.expectedRecordRevision+1&&old.correctionReason===reason&&
+    this.stable(old.notes)===this.stable(normalized),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');
+   return old;
+  }
+  requireCondition((records.at(-1)?.revision??0)===input.expectedRecordRevision,
+   'STALE_REVISION','記録が更新されています。最新の履歴を確認してください。');
+  requireCondition(normalized.responseText.length>=1&&normalized.responseText.length<=4000&&
+   reason.length>=1&&reason.length<=1000,'INVALID_INPUT','訂正本文と訂正理由を確認してください。',400);
+  const source=found(records.find(x=>x.id===input.supersedesRecordId)??null);
+  if(source.kind!=='RESPONSE'&&source.kind!=='RESPONSE_CORRECTION')
+   throw new DomainError('INVALID_CORRECTION_TARGET','訂正対象は対応本文の記録のみです。',400);
+  // Only the author may correct their own response; never alter a completed
+  // response's Close provenance through a scoped UPDATE grant.
+  requireCondition(source.recordedByOperatorId===a.id,'INVALID_CORRECTION_TARGET',
+   '他の担当者が記録した対応は訂正できません。',403);
+  if(source.kind==='RESPONSE')requireCondition(source.notes.disposition!=='COMPLETED',
+   'SCOPED_CLOSE_NOT_AUTHORIZED','終了済みの対応記録は訂正できません。',403);
+  else {
+   // Follow the provenance to its original response and verify its Author
+   // and disposition, including when correcting a prior correction.
+   let ancestor:SupportRecord=source;
+   const visited=new Set<string>();
+   while(ancestor.kind==='RESPONSE_CORRECTION'){
+    requireCondition(!visited.has(ancestor.id),'INVALID_CORRECTION_TARGET','訂正元が不正です。',400);
+    visited.add(ancestor.id);
+    const parentId:string=ancestor.notes.supersedesRecordId;
+    ancestor=found(records.find(x=>x.id===parentId)??null);
+   }
+   if(ancestor.kind!=='RESPONSE')throw new DomainError('INVALID_CORRECTION_TARGET','訂正元が不正です。',400);
+   requireCondition(ancestor.recordedByOperatorId===a.id&&ancestor.notes.disposition!=='COMPLETED',
+    'INVALID_CORRECTION_TARGET',
+    '訂正対象は本人の継続対応記録のみです。',403);
+  }
+  requireCondition(!records.some(x=>x.kind==='RESPONSE_CORRECTION'&&
+   x.notes.supersedesRecordId===source.id),'STALE_REVISION',
+   'この本文には新しい訂正があります。最新の履歴を確認してください。');
+  const record:SupportRecord={id:this.runtime.id(),tenantId:a.tenantId,workId,
+   requestId:input.requestId,revision:input.expectedRecordRevision+1,
+   kind:'RESPONSE_CORRECTION',notes:normalized,correctionReason:reason,
+   recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  await r.insertRecord(record);
+  await this.audit(r,a,w.supportEventId,'SUPPORT_RESPONSE_CORRECTED',
+   {workId,recordId:record.id,supersedesRecordId:source.id,revision:record.revision,correctionReason:reason});
+  return record;
+ }
+ private async applySupportResponse(r:SupportResponseRepository,a:Operator,workId:string,
+  input:SupportResponseInput,authority:'INTERNAL'|'SCOPED'):Promise<SupportRecord>{
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)),authority);
+  const records=await r.records(workId),events=await r.lifecycleEvents(workId),followUps=await r.followUps(workId),closeDecisions=await r.closeDecisions(workId),old=records.find(x=>x.requestId===input.requestId),requestEvent=events.find(x=>x.requestId===input.requestId),requestFollowUp=followUps.find(x=>x.requestId===input.requestId),requestClose=closeDecisions.find(x=>x.requestId===input.requestId)??null;
+  const normalized={expectedLifecycleRevision:input.expectedLifecycleRevision,expectedRecordRevision:input.expectedRecordRevision,responseText:input.responseText.trim(),disposition:input.disposition,followUpAt:input.followUpAt,close:input.close?{...input.close,closeReason:input.close.closeReason.trim()}:null};
+  if(old||requestEvent||requestFollowUp||requestClose){const sideEffectPresent=input.disposition==='COMPLETED'?!!requestClose:requestFollowUp?.kind==='SET';this.retry(old?.kind==='RESPONSE'&&requestEvent?.kind==='RESPONSE_RECORDED'&&sideEffectPresent&&old.recordedByOperatorId===a.id,requestEvent?.commandPayload??{},normalized);return old!;}
+  requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','対応を記録できない状態です。');
+  requireCondition(w.lifecycleRevision===input.expectedLifecycleRevision&&(records.at(-1)?.revision??0)===input.expectedRecordRevision,'STALE_REVISION','対応の状態が更新されています。');
+  requireCondition(normalized.responseText.length>=1&&normalized.responseText.length<=4000&&['CUSTOMER_WAIT','INVESTIGATING','MONITORING','COMPLETED'].includes(input.disposition),'INVALID_INPUT','対応内容と対応後の状態を確認してください。',400);
+  const completed=input.disposition==='COMPLETED';requireCondition(completed?input.followUpAt===null&&!!input.close:!input.close&&!!input.followUpAt&&!Number.isNaN(Date.parse(input.followUpAt)),'INVALID_INPUT',completed?'完了時は終了確認が必要です。':'継続時は次回確認予定が必要です。',400);
+  if(completed)requireCondition(input.close!.confirmsOutstandingResponsibilityEnded===true&&input.close!.closeReason.trim().length>0&&input.close!.closeReason.length<=1000,'CLOSE_PROVENANCE_REQUIRED','終了理由と残る責任の終了確認が必要です。',400);
+  const at=this.runtime.now(),record:SupportRecord={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRecordRevision+1,kind:'RESPONSE',notes:{responseText:normalized.responseText,disposition:input.disposition},correctionReason:'',recordedByOperatorId:a.id,recordedAt:at};
+  const nextAction:Record<ResponseDisposition,string>={CUSTOMER_WAIT:'顧客からの連絡・回答を確認する',INVESTIGATING:'調査結果を確認し次の対応を判断する',MONITORING:'状況を確認し継続要否を判断する',COMPLETED:'問い合わせ対応はClose済み'};
+  const event:SupportLifecycleEvent={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:w.lifecycleRevision+1,kind:'RESPONSE_RECORDED',nextAction:nextAction[input.disposition],waitingParty:'',waitingReason:'',commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at};
+  await r.insertRecord(record);await r.insertLifecycleEvent(event);
+  if(!completed){const follow:SupportFollowUp={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'SET',followUpAt:input.followUpAt,sourceType:'HUMAN_DECISION',basisText:'担当者が次回確認予定を指定',reason:'今回の対応状況に基づく次回確認',supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at};await r.insertFollowUp(follow);w.status='IN_PROGRESS';w.waiting=input.disposition==='CUSTOMER_WAIT';w.waitingParty=null;w.waitingReason=null;w.nextActionOpen=true;w.followUpAt=input.followUpAt;w.outcome=null;w.closedAt=null;}
+  else {const verification=await this.verificationGuard(r,workId);requireCondition(!verification.requiredVerificationOpen,'CLOSE_GUARD_UNMET','未完の必須Verificationが残っています。');requireCondition(!verification.verificationRequirementUnknown,'CLOSE_GUARD_UNMET','Verification要否を確認できません。');const guard={previousWaiting:w.waiting,previousNextActionOpen:w.nextActionOpen,previousFollowUpAt:w.followUpAt,confirmsOutstandingResponsibilityEnded:true,requiredVerificationOpen:false,verificationRequirementUnknown:false,verificationBasis:verification.basis,lifecycleRevision:w.lifecycleRevision};if(w.followUpAt){await r.insertFollowUp({id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'CLEARED',followUpAt:null,sourceType:'HUMAN_DECISION',basisText:'対応終了の明示確認',reason:'対応終了',supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at});}const close:SupportCloseDecision={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,closeSequence:(closeDecisions.at(-1)?.closeSequence??0)+1,outcome:input.close!.outcome,closeReason:input.close!.closeReason.trim(),provenanceType:'HUMAN_DECISION',provenanceReference:record.id,evidenceId:null,guardSnapshot:guard,commandPayload:normalized,decidedByOperatorId:a.id,decidedAt:at};await r.insertCloseDecision(close);w.status='COMPLETED';w.outcome=close.outcome;w.waiting=false;w.waitingParty=null;w.waitingReason=null;w.nextActionOpen=false;w.followUpAt=null;w.closedAt=at;}
+  w.nextAction=nextAction[input.disposition];w.updatedAt=at;w.lifecycleRevision=event.revision;await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_RESPONSE_RECORDED',{workId,recordId:record.id,disposition:input.disposition});return record;
+ }
  recordContinuation(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;notes:SupportNotes;nextAction:string;nextActionOpen:boolean}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
   const events=await r.lifecycleEvents(workId),old=events.find(x=>x.requestId===input.requestId);
@@ -40,15 +159,30 @@ export class SupportCommands {
  });}
  setFollowUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;followUpAt:string;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.followUp(actor,workId,{...input,kind:'SET'});}
  clearFollowUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.followUp(actor,workId,{...input,kind:'CLEARED',followUpAt:null});}
+ reopenSupportWork(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedCloseDecisionId:string|null;reason:string;disposition:Exclude<ResponseDisposition,'COMPLETED'>;followUpAt:string}){return this.run(actor,async(r,a)=>{
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+  const events=await r.lifecycleEvents(workId),followUps=await r.followUps(workId),records=await r.records(workId),closes=await r.closeDecisions(workId),old=events.find(x=>x.requestId===input.requestId),collision=records.some(x=>x.requestId===input.requestId)||followUps.some(x=>x.requestId===input.requestId)||closes.some(x=>x.requestId===input.requestId);
+  const normalized={expectedLifecycleRevision:input.expectedLifecycleRevision,expectedCloseDecisionId:input.expectedCloseDecisionId,reason:input.reason.trim(),disposition:input.disposition,followUpAt:input.followUpAt};
+  if(old||collision){this.retry(old?.kind==='REOPENED'&&old.recordedByOperatorId===a.id,(old?.commandPayload.input??{}) as Record<string,unknown>,normalized);return old!;}
+  requireCondition(w.status==='COMPLETED','WORK_STATE_CONFLICT','完了した対応だけを対応中に戻せます。');
+  requireCondition(w.lifecycleRevision===input.expectedLifecycleRevision,'STALE_REVISION','対応の状態が更新されています。');
+  const latestClose=closes.at(-1)??null;requireCondition((latestClose?.id??null)===input.expectedCloseDecisionId,'STALE_REVISION','終了記録が更新されています。');const previousWorkState={outcome:w.outcome,closedAt:w.closedAt,closeDecisionId:latestClose?.id??null};
+  requireCondition(normalized.reason.length>=1&&normalized.reason.length<=1000&&['CUSTOMER_WAIT','INVESTIGATING','MONITORING'].includes(input.disposition)&&!Number.isNaN(Date.parse(input.followUpAt)),'INVALID_INPUT','再開理由・再開後の状態・次回確認予定を確認してください。',400);
+  const at=this.runtime.now(),nextAction={CUSTOMER_WAIT:'顧客からの連絡・回答を確認する',INVESTIGATING:'調査結果を確認し次の対応を判断する',MONITORING:'状況を確認し継続要否を判断する'}[input.disposition];
+  const event:SupportLifecycleEvent={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:w.lifecycleRevision+1,kind:'REOPENED',nextAction,waitingParty:'',waitingReason:'',commandPayload:{input:normalized,previousWorkState},recordedByOperatorId:a.id,recordedAt:at};
+  const follow:SupportFollowUp={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'SET',followUpAt:input.followUpAt,sourceType:'HUMAN_DECISION',basisText:'担当者が対応再開時に指定',reason:normalized.reason,supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at};
+  w.status='IN_PROGRESS';w.outcome=null;w.closedAt=null;w.lifecycleVersion=2;w.waiting=input.disposition==='CUSTOMER_WAIT';w.waitingParty=null;w.waitingReason=null;w.nextAction=nextAction;w.nextActionOpen=true;w.followUpAt=input.followUpAt;w.updatedAt=at;w.lifecycleRevision=event.revision;
+  await r.insertLifecycleEvent(event);await r.insertFollowUp(follow);await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_REOPENED',{workId,eventId:event.id,previousCloseDecisionId:latestClose?.id??null});return event;
+ });}
  private followUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportFollowUp['kind'];followUpAt:string|null;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const history=await r.followUps(workId),old=history.find(x=>x.requestId===input.requestId),payload={expectedRevision:input.expectedRevision,kind:input.kind,followUpAt:input.followUpAt,sourceType:input.sourceType,basisText:input.basisText,reason:input.reason};if(old){this.retry(old.recordedByOperatorId===a.id,old.commandPayload,payload);return old;}
   requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','Follow-upを変更できない対応です。');requireCondition(w.lifecycleRevision===input.expectedRevision,'STALE_REVISION','対応の状態が更新されています。');requireCondition(input.reason.trim()&&input.basisText.trim()&&['HUMAN_DECISION','CONTRACT','RULE','CUSTOMER_COMMITMENT','OTHER'].includes(input.sourceType)&&(!input.followUpAt||!Number.isNaN(Date.parse(input.followUpAt))),'INVALID_INPUT','Follow-upの根拠と理由を入力してください。',400);
   const event:SupportFollowUp={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(history.at(-1)?.revision??0)+1,kind:input.kind,followUpAt:input.followUpAt,sourceType:input.sourceType,basisText:input.basisText,reason:input.reason,supersedesFollowUpId:history.at(-1)?.id??null,commandPayload:payload,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};w.followUpAt=input.followUpAt;w.updatedAt=event.recordedAt;w.lifecycleRevision++;await r.insertFollowUp(event);await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_FOLLOW_UP_'+input.kind,{workId,followUpId:event.id});return event;
  });}
  closeWork(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;outcome:SupportCloseDecision['outcome'];closeReason:string;provenanceType:SupportCloseDecision['provenanceType'];provenanceReference:string;evidenceId?:string|null}){return this.run(actor,async(r,a)=>{
-  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const old=await r.closeDecision(workId),payload={expectedRevision:input.expectedRevision,outcome:input.outcome,closeReason:input.closeReason,provenanceType:input.provenanceType,provenanceReference:input.provenanceReference,evidenceId:input.evidenceId??null};if(old){this.retry(old.requestId===input.requestId&&old.decidedByOperatorId===a.id,old.commandPayload,payload);return old;}
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const closes=await r.closeDecisions(workId),old=closes.find(x=>x.requestId===input.requestId),payload={expectedRevision:input.expectedRevision,outcome:input.outcome,closeReason:input.closeReason,provenanceType:input.provenanceType,provenanceReference:input.provenanceReference,evidenceId:input.evidenceId??null};if(old){this.retry(old.decidedByOperatorId===a.id,old.commandPayload,payload);return old;}
   requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','Closeできない対応です。');requireCondition(w.lifecycleRevision===input.expectedRevision,'STALE_REVISION','対応の状態が更新されています。');requireCondition(!w.waiting&&!w.nextActionOpen,'CLOSE_GUARD_UNMET','Waitingまたは未完の次の対応が残っています。');requireCondition(input.closeReason.trim()&&input.provenanceReference.trim(),'CLOSE_PROVENANCE_REQUIRED','Close理由と根拠を入力してください。',400);
-  if(input.evidenceId) found(await r.evidence(input.evidenceId));const verification=await this.verificationGuard(r,workId);requireCondition(!verification.requiredVerificationOpen,'CLOSE_GUARD_UNMET','未完の必須Verificationが残っています。');requireCondition(!verification.verificationRequirementUnknown,'CLOSE_GUARD_UNMET','Verification要否を確認できません。');const at=this.runtime.now(),guard={waiting:w.waiting,nextActionOpen:w.nextActionOpen,requiredVerificationOpen:verification.requiredVerificationOpen,verificationRequirementUnknown:verification.verificationRequirementUnknown,verificationBasis:verification.basis,lifecycleRevision:w.lifecycleRevision};const decision:SupportCloseDecision={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,outcome:input.outcome,closeReason:input.closeReason,provenanceType:input.provenanceType,provenanceReference:input.provenanceReference,evidenceId:input.evidenceId??null,guardSnapshot:guard,commandPayload:payload,decidedByOperatorId:a.id,decidedAt:at};w.status='COMPLETED';w.outcome=input.outcome;w.closedAt=at;w.updatedAt=at;w.nextAction='問い合わせ対応はClose済み';await r.insertCloseDecision(decision);await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_CLOSED',{workId,closeDecisionId:decision.id,outcome:decision.outcome,guard});return decision;
+  if(input.evidenceId) found(await r.evidence(input.evidenceId));const verification=await this.verificationGuard(r,workId);requireCondition(!verification.requiredVerificationOpen,'CLOSE_GUARD_UNMET','未完の必須Verificationが残っています。');requireCondition(!verification.verificationRequirementUnknown,'CLOSE_GUARD_UNMET','Verification要否を確認できません。');const at=this.runtime.now(),guard={waiting:w.waiting,nextActionOpen:w.nextActionOpen,requiredVerificationOpen:verification.requiredVerificationOpen,verificationRequirementUnknown:verification.verificationRequirementUnknown,verificationBasis:verification.basis,lifecycleRevision:w.lifecycleRevision};const decision:SupportCloseDecision={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,closeSequence:(closes.at(-1)?.closeSequence??0)+1,outcome:input.outcome,closeReason:input.closeReason,provenanceType:input.provenanceType,provenanceReference:input.provenanceReference,evidenceId:input.evidenceId??null,guardSnapshot:guard,commandPayload:payload,decidedByOperatorId:a.id,decidedAt:at};const followUps=await r.followUps(workId);if(w.followUpAt)await r.insertFollowUp({id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'CLEARED',followUpAt:null,sourceType:'HUMAN_DECISION',basisText:'対応終了の明示確認',reason:'対応終了',supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:payload,recordedByOperatorId:a.id,recordedAt:at});w.status='COMPLETED';w.outcome=input.outcome;w.closedAt=at;w.updatedAt=at;w.waiting=false;w.waitingParty=null;w.waitingReason=null;w.followUpAt=null;w.nextAction='問い合わせ対応はClose済み';w.lifecycleRevision++;await r.insertCloseDecision(decision);await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_CLOSED',{workId,closeDecisionId:decision.id,outcome:decision.outcome,guard});return decision;
  });}
  recordUnidentifiedTarget(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;sourceType:SupportTargetObservation['sourceType'];detail:string}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
@@ -59,18 +193,26 @@ export class SupportCommands {
   requireCondition(!history.length||history.at(-1)?.kind==='ENDED','CONTEXT_STATE_CONFLICT','現在の対象がある場合は、訂正または取り消しを選択してください。');
   requireCondition(['OPERATOR','CALLER','OTHER'].includes(input.sourceType)&&input.detail.length<=1000,'INVALID_INPUT','入力内容を確認してください。',400);
   const at=this.runtime.now(),context:SupportDeviceContext={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:'UNIDENTIFIED',deviceId:null,confirmationSource:input.sourceType,evidenceId:null,reason:'',supersedesContextId:history.at(-1)?.id??null,recordedByOperatorId:a.id,recordedAt:at};
-  const observations=await r.targetObservations(workId);await r.insertDeviceContext(context);await r.insertTargetObservation({id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context.id,requestId:input.requestId,revision:(observations.at(-1)?.revision??0)+1,kind:'IDENTIFICATION',value:'UNIDENTIFIED',detail:input.detail,sourceType:input.sourceType,evidenceId:null,supersedesObservationId:null,recordedByOperatorId:a.id,recordedAt:at});
+  const observations=await r.targetObservations(workId);await r.insertDeviceContext(context);await r.insertTargetObservation({id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context.id,requestId:input.requestId,revision:(observations.at(-1)?.revision??0)+1,kind:'IDENTIFICATION',value:'UNIDENTIFIED',detail:input.detail,sourceType:input.sourceType,evidenceId:null,sourceSnapshot:{},supersedesObservationId:null,recordedByOperatorId:a.id,recordedAt:at});
   await this.audit(r,a,w.supportEventId,'SUPPORT_CONTEXT_TARGET_UNIDENTIFIED',{workId,contextId:context.id});return context;
  });}
  recordTargetObservation(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportTargetObservation['kind'];value:SupportTargetObservation['value'];detail:string;sourceType:SupportTargetObservation['sourceType'];evidenceId?:string|null}){return this.run(actor,async(r,a)=>{
-  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+  const history=await r.targetObservations(workId),old=history.find(x=>x.requestId===input.requestId);if(old){requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&old.value===input.value&&old.detail===input.detail&&old.sourceType===input.sourceType&&old.evidenceId===(input.evidenceId??null)&&old.revision===input.expectedRevision+1,'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  requireCondition(w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応の対象は変更できません。');
   const context=(await r.deviceContexts(workId)).at(-1);requireCondition(!!context&&context.kind!=='ENDED','CONTEXT_STATE_CONFLICT','現在の対象を記録してから対象情報を追加してください。');
-  const history=await r.targetObservations(workId),old=history.find(x=>x.requestId===input.requestId);if(old){requireCondition(old.kind===input.kind&&old.value===input.value&&old.detail===input.detail&&old.sourceType===input.sourceType&&old.evidenceId===(input.evidenceId??null),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
   requireCondition((history.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','対象情報が更新されています。');
-  const permitted:Record<SupportTargetObservation['kind'],readonly string[]>={IDENTIFICATION:['UNIDENTIFIED','PARTIALLY_IDENTIFIED','UNKNOWN'],OWNERSHIP:['PERSONALLY_OWNED','COMPANY_OWNED','UNKNOWN'],MANAGEMENT_STATE:['MANAGED','UNMANAGED','UNKNOWN']};
-  requireCondition(permitted[input.kind].includes(input.value)&&['OPERATOR','CALLER','OTHER'].includes(input.sourceType)&&input.detail.length<=1000,'INVALID_INPUT','入力内容を確認してください。',400);
+  const permitted:Record<SupportTargetObservation['kind'],readonly string[]>={IDENTIFICATION:['UNIDENTIFIED','PARTIALLY_IDENTIFIED','UNKNOWN'],OWNERSHIP:['PERSONALLY_OWNED','COMPANY_OWNED','UNKNOWN'],MANAGEMENT_STATE:['MANAGED','UNMANAGED','UNKNOWN'],REGISTRY_COMPARISON:['MATCH','DIFFERENT','UNKNOWN'],CALLER_STATEMENT:['UNKNOWN']};
+  const sourceValid=input.kind==='REGISTRY_COMPARISON'?input.sourceType==='OPERATOR':input.kind==='CALLER_STATEMENT'?input.sourceType==='CALLER':['OPERATOR','CALLER','OTHER'].includes(input.sourceType);
+  requireCondition(permitted[input.kind].includes(input.value)&&sourceValid&&input.detail.length<=1000&&(input.kind!=='CALLER_STATEMENT'||input.detail.trim().length>0),'INVALID_INPUT','入力内容を確認してください。',400);
   if(input.evidenceId){const d=found(await r.decision(workId));requireCondition(d.evidenceId===input.evidenceId,'EVIDENCE_CONTEXT_MISMATCH','この対応に記録された確認根拠だけを指定できます。',400);}
-  const observation:SupportTargetObservation={id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context!.id,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,value:input.value,detail:input.detail,sourceType:input.sourceType,evidenceId:input.evidenceId??null,supersedesObservationId:history.filter(x=>x.targetContextId===context!.id&&x.kind===input.kind).at(-1)?.id??null,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
+  const at=this.runtime.now();let sourceSnapshot:Record<string,unknown>={};
+  if(input.kind==='REGISTRY_COMPARISON'||input.kind==='CALLER_STATEMENT'){
+   const person=found(await r.core.recipientPerson(w.serviceRecipientId)),relation=await r.core.currentRelation(person.id);
+   if(input.kind==='CALLER_STATEMENT')sourceSnapshot={targetContextId:context!.id,...(relation?{registryRelationId:relation.id}:{})};
+   else {const registryDevice=relation?found(await r.core.device(relation.toEntityId)):null,targetDevice=context!.deviceId?found(await r.core.device(context!.deviceId)):null;sourceSnapshot={confirmedAt:at,...(relation?{registryRelationId:relation.id,registryDeviceId:registryDevice!.id,registryAssetTag:registryDevice!.assetTag,registryVerifiedAt:relation.verifiedAt}:{}),targetContextId:context!.id,...(targetDevice?{targetDeviceId:targetDevice.id,targetAssetTag:targetDevice.assetTag}:{}),targetRecordedAt:context!.recordedAt,targetConfirmationSource:context!.confirmationSource};}
+  }
+  const observation:SupportTargetObservation={id:this.runtime.id(),tenantId:a.tenantId,workId,targetContextId:context!.id,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,value:input.value,detail:input.detail,sourceType:input.sourceType,evidenceId:input.evidenceId??null,sourceSnapshot,supersedesObservationId:history.filter(x=>x.targetContextId===context!.id&&x.kind===input.kind).at(-1)?.id??null,recordedByOperatorId:a.id,recordedAt:at};
   await r.insertTargetObservation(observation);await this.audit(r,a,w.supportEventId,'SUPPORT_CONTEXT_TARGET_OBSERVED',{workId,observationId:observation.id,kind:observation.kind,value:observation.value});return observation;
  });}
  confirmContextDevice(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;deviceId:string;confirmationSource:SupportDeviceContext['confirmationSource'];evidenceId?:string|null}){
@@ -98,14 +240,14 @@ export class SupportCommands {
   const context:SupportDeviceContext={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:input.kind,deviceId:input.deviceId,confirmationSource:input.confirmationSource,evidenceId:input.evidenceId??null,reason:input.reason,supersedesContextId:previous?.id??null,recordedByOperatorId:a.id,recordedAt:this.runtime.now()};
   await r.insertDeviceContext(context);await this.audit(r,a,w.supportEventId,`SUPPORT_CONTEXT_DEVICE_${input.kind}`,{workId,contextId:context.id,deviceId:context.deviceId,supersedesContextId:context.supersedesContextId});return context;
  });}
- recordWork(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportRecord['kind'];notes:SupportNotes;correctionReason:string}){return this.run(actor,async(r,a)=>{
+ recordWork(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:'DRAFT';notes:SupportNotes|SupportResponseDraftNotes;correctionReason:string}|{requestId:string;expectedRevision:number;kind:'COMPLETION'|'CORRECTION';notes:SupportNotes;correctionReason:string}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
   const records=await r.records(workId),old=records.find(x=>x.requestId===input.requestId);
   // Canonical field comparison avoids JSON object key-order dependence on PostgreSQL jsonb.
-  const sameNotes=(x:SupportNotes,y:SupportNotes)=>Object.keys(x).every(k=>x[k as keyof SupportNotes]===y[k as keyof SupportNotes]);
-  if(old){requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&old.correctionReason===input.correctionReason&&sameNotes(old.notes,input.notes),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
+  if(old){requireCondition(old.recordedByOperatorId===a.id&&old.kind===input.kind&&old.correctionReason===input.correctionReason&&this.stable(old.notes)===this.stable(input.notes),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');return old;}
   requireCondition((records.at(-1)?.revision??0)===input.expectedRevision,'STALE_REVISION','別の保存があります。入力を控えて再読み込みし、最新の記録を確認してください。');
-  const n=input.notes;
+  if(input.kind==='DRAFT'&&'form' in input.notes){const n=input.notes;requireCondition(w.lifecycleVersion===2,'INVALID_INPUT','この対応では新形式の下書きを保存できません。',400);requireCondition(w.status!=='COMPLETED','WORK_ALREADY_COMPLETED','完了した対応に下書きは追加できません。');requireCondition(n.form==='SIMPLE_RESPONSE'&&n.responseText.length<=4000&&(!n.disposition||['CUSTOMER_WAIT','INVESTIGATING','MONITORING','COMPLETED'].includes(n.disposition))&&(!n.followUpAt||!Number.isNaN(Date.parse(n.followUpAt))),'INVALID_INPUT','下書きの入力内容を確認してください。',400);const record:SupportRecord={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:input.expectedRevision+1,kind:'DRAFT',notes:n,correctionReason:'',recordedByOperatorId:a.id,recordedAt:this.runtime.now()};await r.insertRecord(record);await this.audit(r,a,w.supportEventId,'SUPPORT_DRAFT_SAVED',{workId,recordId:record.id,revision:record.revision});return record;}
+  const n=input.notes as SupportNotes;
   requireCondition(['DRAFT','COMPLETION','CORRECTION'].includes(input.kind)&&Object.hasOwn(supportActionLabels,n.action)&&Object.hasOwn(supportResultLabels,n.result)&&['CALLER','OPERATOR','UNKNOWN'].includes(n.resultSource),'INVALID_INPUT','入力内容を確認してください。',400);
   requireCondition([n.checks,n.actionDetails,n.resultDetails,n.exceptionReason,input.correctionReason].every(s=>typeof s==='string'&&s.length<=1000),'INVALID_INPUT','各欄は1000文字以内で入力してください。',400);
   requireCondition(input.kind==='CORRECTION'?w.status==='COMPLETED':w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応には訂正を追加してください。');
@@ -138,7 +280,7 @@ export class SupportCommands {
  });}
  private retry(kindMatches:boolean,saved:Record<string,unknown>,payload:Record<string,unknown>){requireCondition(kindMatches&&this.stable(saved)===this.stable(payload),'RETRY_CONFLICT','同じ保存番号の内容が異なります。');}
  private stable(value:unknown):string{if(Array.isArray(value))return '['+value.map(x=>this.stable(x)).join(',')+']';if(value&&typeof value==='object')return '{'+Object.keys(value as Record<string,unknown>).sort().map(k=>JSON.stringify(k)+':'+this.stable((value as Record<string,unknown>)[k])).join(',')+'}';return JSON.stringify(value);}
- private async verificationGuard(r:SupportRepository,workId:string){
+ private async verificationGuard(r:Pick<SupportRepository,'verificationItems'>,workId:string){
   const items=await r.verificationItems(workId);const basis:string[]=[];let requiredVerificationOpen=false,verificationRequirementUnknown=false;
   for(const item of items){
    if(item.changeStatus==='PROPOSED'){requiredVerificationOpen=true;basis.push('CHANGE_PROPOSED_REQUIRES_VERIFICATION');continue;}
@@ -150,18 +292,50 @@ export class SupportCommands {
   if(!items.length)basis.push('NO_ACTION_OR_CHANGE_REQUIRES_VERIFICATION');
   return {requiredVerificationOpen,verificationRequirementUnknown,basis};
  }
- constructor(private uow:SupportUnitOfWork,private runtime:SupportRuntime){}
+ constructor(private uow:SupportUnitOfWork,private runtime:SupportRuntime,
+  private scopedUpdate?:ScopedSupportUpdateBoundary){}
  private run<T>(actor:Operator,fn:(r:SupportRepository,a:Operator)=>Promise<T>){return this.uow.run(actor.tenantId,async r=>{const a=found(await r.core.operator(actor.id));assertRole(a,['ADMIN','OPERATOR']);return fn(r,a);});}
- private async context(r:SupportRepository,a:Operator,e:SupportEvent){const s=found(await r.core.service(e.serviceId)),c=found(await r.core.contract(e.contractProfileId)),now=this.runtime.now();requireCondition(s.status==='ACTIVE'&&c.status==='ACTIVE'&&c.serviceId===s.id&&c.effectiveFrom<=now&&(!c.effectiveTo||c.effectiveTo>now),'SERVICE_NOT_ACTIVE','有効なサービス契約を確認してください。');requireCondition(c.configurationJson.support?.enabled,'SUPPORT_NOT_AUTHORIZED','この契約では問い合わせ対応が許可されていません。',403);assertRole(a,c.configurationJson.support.executeRoles);return c;}
- private audit(r:SupportRepository,a:Operator,eventId:string,type:string,metadata:Record<string,unknown>){return r.audit({id:this.runtime.id(),tenantId:a.tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:eventId,eventType:type,actorOperatorId:a.id,occurredAt:this.runtime.now(),metadataJson:metadata});}
- createEvent(actor:Operator,input:{requestId:string;personId:string;serviceId:string;symptom:string}){return this.run(actor,async(r,a)=>{
-  requireCondition(input.symptom.trim().length>0&&input.symptom.length<=4000,'INVALID_INPUT','本人からの申告を入力してください。',400);
+ private async context(r:{core:Pick<JoinRepository,'service'|'contract'>},a:Operator,e:SupportEvent,
+  authority:'INTERNAL'|'SCOPED'='INTERNAL'){
+  const s=found(await r.core.service(e.serviceId)),c=found(await r.core.contract(e.contractProfileId)),now=this.runtime.now();
+  requireCondition(s.status==='ACTIVE'&&c.status==='ACTIVE'&&c.serviceId===s.id&&c.effectiveFrom<=now&&(!c.effectiveTo||c.effectiveTo>now),
+   'SERVICE_NOT_ACTIVE','有効なサービス契約を確認してください。');
+  requireCondition(c.configurationJson.support?.enabled,'SUPPORT_NOT_AUTHORIZED','この契約では問い合わせ対応が許可されていません。',403);
+  if(authority==='INTERNAL')assertRole(a,c.configurationJson.support.executeRoles);
+  return c;
+ }
+ private audit(r:Pick<SupportRepository,'audit'>,a:Operator,eventId:string,type:string,metadata:Record<string,unknown>){return r.audit({id:this.runtime.id(),tenantId:a.tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:eventId,eventType:type,actorOperatorId:a.id,occurredAt:this.runtime.now(),metadataJson:metadata});}
+ createEvent(actor:Operator,input:{requestId:string;personId?:string|undefined;caller?:import('../../domain/src/support.js').SupportCallerInput|undefined;serviceId:string;symptom:string}){return this.run(actor,async(r,a)=>{
+  requireCondition(input.symptom.trim().length>0&&input.symptom.length<=4000,'INVALID_INPUT','問い合わせ内容を入力してください。',400);
+  requireCondition(!!input.personId!==!!input.caller,'INVALID_INPUT','問い合わせ者を指定してください。',400);
+  const candidate=input.caller??{kind:'EXISTING' as const,personId:input.personId!};
+  const caller=candidate.kind==='NEW'?{
+   kind:'NEW' as const,organizationId:candidate.organizationId??'',organizationName:candidate.organizationName?.normalize('NFKC').trim()??'',
+   displayName:candidate.displayName.normalize('NFKC').trim(),email:candidate.email?.trim().toLowerCase()??'',distinctPersonConfirmed:candidate.distinctPersonConfirmed,
+  }:{kind:'EXISTING' as const,personId:candidate.personId};
   await r.lockRequest(input.requestId);const previous=await r.byRequest(input.requestId);
-  if(previous){await this.context(r,a,previous);const p=found(await r.core.recipientPerson(previous.serviceRecipientId));requireCondition(previous.createdByOperatorId===a.id&&p.id===input.personId&&previous.serviceId===input.serviceId&&(await r.observation(previous.id))?.contentText===input.symptom,'RETRY_CONFLICT','同じ受付番号の内容が異なります。');return previous;}
-  const person=found(await r.core.person(input.personId)),service=found(await r.core.service(input.serviceId));requireCondition(person.organizationId===service.organizationId,'SERVICE_CONTEXT_MISMATCH','対象者とサービスの組織を確認してください。');
+  if(previous){await this.context(r,a,previous);const p=found(await r.core.recipientPerson(previous.serviceRecipientId));const prior=previous.callerInputSnapshot??{kind:'EXISTING',personId:p.id};const stable=(v:Record<string,unknown>)=>JSON.stringify(v,Object.keys(v).sort());requireCondition(previous.createdByOperatorId===a.id&&stable(prior)===stable(caller)&&previous.serviceId===input.serviceId&&(await r.observation(previous.id))?.contentText===input.symptom,'RETRY_CONFLICT','同じ受付番号の内容が異なります。');return previous;}
+  const service=found(await r.core.service(input.serviceId));requireCondition(service.status==='ACTIVE','SERVICE_NOT_ACTIVE','有効なサービスを選択してください。');
   const contracts=await r.core.effectiveContracts(service.id,this.runtime.now());requireCondition(contracts.length===1,'CONTRACT_NOT_UNIQUE','有効な契約を確認してください。');
-  const event:SupportEvent={id:this.runtime.id(),tenantId:a.tenantId,requestId:input.requestId,serviceId:service.id,contractProfileId:contracts[0]!.id,serviceRecipientId:await r.core.ensureRecipient(this.runtime.id(),service.id,person.id),createdByOperatorId:a.id,createdAt:this.runtime.now()};await this.context(r,a,event);
-  await r.insertEvent(event,{id:this.runtime.id(),tenantId:a.tenantId,supportEventId:event.id,contentText:input.symptom,sourceType:'CALLER',semanticType:'OBSERVATION',reliability:'UNVERIFIED',observedAt:event.createdAt,recordedByOperatorId:a.id,reviewPolicy:'REVIEW_FOR_EACH_INQUIRY'});await this.audit(r,a,event.id,'SUPPORT_RECEIVED',{personId:person.id});return event;
+  const contract=contracts[0]!;requireCondition(contract.configurationJson.support?.enabled,'SUPPORT_NOT_AUTHORIZED','この契約では問い合わせ対応が許可されていません。',403);assertRole(a,contract.configurationJson.support.executeRoles);
+  let person;
+  if(caller.kind==='EXISTING') person=found(await r.core.person(caller.personId));
+  else {
+   requireCondition(caller.displayName.length>0&&caller.displayName.length<=200&&caller.email.length<=320,'INVALID_INPUT','問い合わせ者の名前を確認してください。',400);
+   requireCondition(!!caller.organizationId!==!!caller.organizationName,'INVALID_INPUT','所属先を選択または新規入力してください。',400);
+   let organizationId=caller.organizationId;
+   if(!organizationId){requireCondition(caller.organizationName.length<=200,'INVALID_INPUT','所属名を確認してください。',400);await r.lockCallerKey('org:'+caller.organizationName.toLowerCase());const names=await r.organizations();requireCondition(!names.some(o=>o.name.normalize('NFKC').toLowerCase()===caller.organizationName.toLowerCase()),'DUPLICATE_ORGANIZATION','同じ名前の所属があります。既存の所属を選択してください。');organizationId=this.runtime.id();await r.insertCallerOrganization(organizationId,caller.organizationName);}
+   else requireCondition((await r.organizations()).some(o=>o.id===organizationId),'INVALID_AFFILIATION','有効な所属を選択してください。');
+   await r.lockCallerKey('person:'+organizationId+':'+caller.displayName.toLowerCase());const matching=(await r.core.people()).filter(p=>p.organizationId===organizationId&&p.displayName.normalize('NFKC').toLowerCase()===caller.displayName.toLowerCase());
+   requireCondition(!matching.length||caller.distinctPersonConfirmed,'DUPLICATE_PERSON','同じ所属に同名の問い合わせ者がいます。既存登録を確認し、別人の場合だけ新規登録してください。');
+   const personId=this.runtime.id();await r.insertCallerPerson(personId,organizationId,caller.displayName,caller.email||null);person=found(await r.core.person(personId));
+  }
+  // Caller affiliation is a contact provenance, not proof of service eligibility.
+  // Vendor, member-company and employee callers share the same SUPPORT intake.
+  const event:SupportEvent={id:this.runtime.id(),tenantId:a.tenantId,requestId:input.requestId,serviceId:service.id,contractProfileId:contract.id,serviceRecipientId:await r.core.ensureRecipient(this.runtime.id(),service.id,person.id),createdByOperatorId:a.id,createdAt:this.runtime.now(),callerInputSnapshot:caller};await this.context(r,a,event);
+  await r.insertEvent(event,{id:this.runtime.id(),tenantId:a.tenantId,supportEventId:event.id,contentText:input.symptom,sourceType:'CALLER',semanticType:'OBSERVATION',reliability:'UNVERIFIED',observedAt:event.createdAt,recordedByOperatorId:a.id,reviewPolicy:'REVIEW_FOR_EACH_INQUIRY'});
+  if(caller.kind==='NEW')await this.audit(r,a,event.id,'SUPPORT_CONTACT_REGISTERED',{personId:person.id,organizationId:person.organizationId,source:'CALLER_AT_RECEPTION',reliability:'UNVERIFIED',registeredAt:event.createdAt});
+  await this.audit(r,a,event.id,'SUPPORT_RECEIVED',{personId:person.id});return event;
  });}
  evaluate(actor:Operator,eventId:string,decision:'REQUIRED'|'NOT_APPLICABLE',reason:string=''){return this.run(actor,async(r,a)=>{
   if(decision==='REQUIRED'&&!reason.trim()) reason='標準受付: オペレーターが確認・対応を開始することを選択';
@@ -169,7 +343,7 @@ export class SupportCommands {
   const event=found(await r.event(eventId,true)),contract=await this.context(r,a,event),existing=await r.evaluation(eventId);
   if(existing){requireCondition(existing.result===decision&&existing.basisSummary===reason,'RETRY_CONFLICT','受付時の判断は記録済みです。');return {evaluation:existing,work:await r.workForEvent(eventId)};}
   const at=this.runtime.now();const evaluation={id:this.runtime.id(),tenantId:a.tenantId,supportEventId:eventId,requirementCode:'SUPPORT_ASSISTANCE' as const,result:decision,evaluationVersion:1,catalogVersion:'support-v1',basisSummary:reason,basisSnapshot:{contractProfileId:contract.id,contractProfileVersion:contract.version,triageReason:reason,decision},evaluatedByOperatorId:a.id,evaluatedAt:at};await r.insertEvaluation(evaluation);
-  let work:SupportWork|null=null;if(decision==='REQUIRED'){const person=found(await r.core.recipientPerson(event.serviceRecipientId));work={id:this.runtime.id(),tenantId:a.tenantId,serviceId:event.serviceId,contractProfileId:contract.id,serviceRecipientId:event.serviceRecipientId,supportEventId:event.id,sourceRequirementEvaluationId:evaluation.id,title:person.displayName+'さんのVPN接続の問い合わせ',status:'OPEN',outcome:null,workOwnerOperatorId:a.id,nextAction:'VPN利用要否と症状を確認する',nextActionOwnerOperatorId:a.id,createdAt:at,updatedAt:at,closedAt:null,lifecycleVersion:2,waiting:false,waitingParty:null,waitingReason:null,nextActionOpen:true,followUpAt:null,lifecycleRevision:0};await r.insertWork(work);}
+  let work:SupportWork|null=null;if(decision==='REQUIRED'){const person=found(await r.core.recipientPerson(event.serviceRecipientId));work={id:this.runtime.id(),tenantId:a.tenantId,serviceId:event.serviceId,contractProfileId:contract.id,serviceRecipientId:event.serviceRecipientId,supportEventId:event.id,sourceRequirementEvaluationId:evaluation.id,title:person.displayName+'さんからの問い合わせ',status:'OPEN',outcome:null,workOwnerOperatorId:a.id,nextAction:'問い合わせ内容と必要な案内を確認する',nextActionOwnerOperatorId:a.id,createdAt:at,updatedAt:at,closedAt:null,lifecycleVersion:2,waiting:false,waitingParty:null,waitingReason:null,nextActionOpen:true,followUpAt:null,lifecycleRevision:0};await r.insertWork(work);}
   await this.audit(r,a,eventId,'SUPPORT_EVALUATED',{evaluationId:evaluation.id,result:decision,workId:work?.id??null,ownerId:work?.workOwnerOperatorId??null});return {evaluation,work};
  });}
  recordResolution(actor:Operator,workId:string,input:{mode:'GUIDANCE_ONLY'|'NO_ACTION_REQUIRED';diagnosticEvidence:string;rationale:string;actionSummary:string}){return this.run(actor,(r,a)=>this.resolution(r,a,workId,input));}
@@ -183,6 +357,6 @@ export class SupportCommands {
   await r.insertResolution({id:evidenceId,tenantId:a.tenantId,evidenceType:'DIAGNOSTIC',title:'問い合わせの確認根拠',contentText:input.diagnosticEvidence,createdByOperatorId:a.id,createdAt:at},{id:actionId,tenantId:a.tenantId,workId,actorOperatorId:a.id,resultSummary:input.actionSummary,startedAt:at,completedAt:at},d);
   work.status='IN_PROGRESS';work.nextAction='確認結果と参考になる知識を残して完了する';work.updatedAt=at;await r.progress(work);await this.audit(r,a,work.supportEventId,'SUPPORT_GUIDANCE_RECORDED',{workId,evidenceId,decisionId:d.id,actionId,mode:input.mode});return d;
  }
- saveKnowledge(actor:Operator,workId:string,title:string,content:string){return this.run(actor,async(r,a)=>{requireCondition(title.trim()&&content.trim()&&title.length<=200&&content.length<=4000,'INVALID_INPUT','次の対応に役立つ内容を入力してください。',400);const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const d=found(await r.decision(workId)),old=await r.knowledge(workId);if(old){requireCondition(old.title===title&&old.contentText===content,'RETRY_CONFLICT','参考知識は保存済みです。');return old;}const k={id:this.runtime.id(),tenantId:a.tenantId,sourceWorkId:workId,sourceDecisionId:d.id,sourceEvidenceId:d.evidenceId,title,contentText:content,status:'CANDIDATE' as const,topic:'VPN_GUIDANCE' as const,createdByOperatorId:a.id,createdAt:this.runtime.now()};await r.insertKnowledge(k);await this.audit(r,a,w.supportEventId,'SUPPORT_KNOWLEDGE_SAVED',{workId,knowledgeId:k.id,evidenceId:d.evidenceId,decisionId:d.id});return k;});}
+ saveKnowledge(actor:Operator,workId:string,title:string,content:string){return this.run(actor,async(r,a)=>{requireCondition(title.trim()&&content.trim()&&title.length<=200&&content.length<=4000,'INVALID_INPUT','次の対応に役立つ内容を入力してください。',400);const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const d=found(await r.decision(workId)),old=await r.knowledge(workId);if(old){requireCondition(old.title===title&&old.contentText===content,'RETRY_CONFLICT','参考知識は保存済みです。');return old;}const k={id:this.runtime.id(),tenantId:a.tenantId,sourceWorkId:workId,sourceDecisionId:d.id,sourceEvidenceId:d.evidenceId,title,contentText:content,status:'CANDIDATE' as const,topic:'GENERAL_SUPPORT' as const,createdByOperatorId:a.id,createdAt:this.runtime.now()};await r.insertKnowledge(k);await this.audit(r,a,w.supportEventId,'SUPPORT_KNOWLEDGE_SAVED',{workId,knowledgeId:k.id,evidenceId:d.evidenceId,decisionId:d.id});return k;});}
  complete(actor:Operator,workId:string){return this.run(actor,async(r,a)=>{const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));if(w.status==='COMPLETED')return w;const d=found(await r.decision(workId));found(await r.evidence(d.evidenceId));found(await r.core.action(d.actionId));w.status='COMPLETED';w.outcome=d.mode==='GUIDANCE_ONLY'?'COMPLETED':'NO_ACTION_REQUIRED';w.closedAt=this.runtime.now();w.updatedAt=w.closedAt;w.nextAction='問い合わせ対応は完了';await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_COMPLETED',{workId,outcome:w.outcome});return w;});}
 }

@@ -1,12 +1,20 @@
 ﻿import type { Work, Evaluation, Evidence, Audit } from './join.js';
-export interface SupportEvent {id:string;tenantId:string;requestId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;createdByOperatorId:string;createdAt:string}
+export interface SupportEvent {id:string;tenantId:string;requestId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;createdByOperatorId:string;createdAt:string;callerInputSnapshot?:Record<string,unknown>|null}
+export type SupportCallerInput = {kind:'EXISTING';personId:string} | {kind:'NEW';organizationId?:string|undefined;organizationName?:string|undefined;displayName:string;email?:string|undefined;distinctPersonConfirmed:boolean};
+// Confirmed beneficiary is separate from the caller's unverified affiliation.
+// This is a human attribution record, not proof of contract eligibility or Read Authority.
+export interface SupportBeneficiaryDecision {
+ id:string;tenantId:string;supportEventId:string;serviceId:string;requestId:string;revision:number;
+ kind:'CONFIRMED'|'CLEARED';serviceRecipientId:string|null;recipientType:'ORGANIZATION';reason:string;
+ recordedByOperatorId:string;recordedAt:string;organizationName?:string|null;
+}
 export type SupportCloseOutcome='RESOLVED'|'NOT_ELIGIBLE'|'WITHDRAWN'|'FORMALLY_TRANSFERRED'|'OTHER_RESPONSIBILITY_ENDED';
 export interface SupportWork extends Omit<Work,'sourceEventId'|'outcome'> {supportEventId:string;outcome:'COMPLETED'|'NO_ACTION_REQUIRED'|SupportCloseOutcome|null;lifecycleVersion:number;waiting:boolean;waitingParty:string|null;waitingReason:string|null;nextActionOpen:boolean;followUpAt:string|null;lifecycleRevision:number}
 export interface SupportEvaluation extends Omit<Evaluation,'eventId'|'requirementCode'|'basisSnapshot'> {supportEventId:string;requirementCode:'SUPPORT_ASSISTANCE';basisSnapshot:{contractProfileId:string;contractProfileVersion:number;triageReason:string;decision:'REQUIRED'|'NOT_APPLICABLE'}}
 export interface RecipientObservation {id:string;tenantId:string;supportEventId:string;contentText:string;sourceType:'CALLER';semanticType:'OBSERVATION';reliability:'UNVERIFIED';observedAt:string;recordedByOperatorId:string;reviewPolicy:'REVIEW_FOR_EACH_INQUIRY'}
 export interface DiagnosticEvidence extends Omit<Evidence,'evidenceType'> {evidenceType:'DIAGNOSTIC'}
 export interface SupportDecision {id:string;tenantId:string;workId:string;evidenceId:string;actionId:string;mode:'GUIDANCE_ONLY'|'NO_ACTION_REQUIRED';rationale:string;decidedByOperatorId:string;decidedAt:string}
-export interface KnowledgeCandidate {id:string;tenantId:string;sourceWorkId:string;sourceDecisionId:string;sourceEvidenceId:string;title:string;contentText:string;status:'CANDIDATE';topic:'VPN_GUIDANCE';createdByOperatorId:string;createdAt:string}
+export interface KnowledgeCandidate {id:string;tenantId:string;sourceWorkId:string;sourceDecisionId:string;sourceEvidenceId:string;title:string;contentText:string;status:'CANDIDATE';topic:'VPN_GUIDANCE'|'GENERAL_SUPPORT';createdByOperatorId:string;createdAt:string}
 export type SupportAudit=Omit<Audit,'aggregateType'>&{aggregateType:'SUPPORT_EVENT'};
 
 // A bounded procedure record, never an Operational Fact or an editable Registry.
@@ -19,11 +27,19 @@ export interface SupportNotes {
  resultDetails:string;
  exceptionReason:string;
 }
-export interface SupportRecord {
- id:string;tenantId:string;workId:string;requestId:string;revision:number;
- kind:'DRAFT'|'COMPLETION'|'CORRECTION'|'CONTINUATION';notes:SupportNotes;correctionReason:string;
- recordedByOperatorId:string;recordedAt:string;
-}
+export type ResponseDisposition='CUSTOMER_WAIT'|'INVESTIGATING'|'MONITORING'|'COMPLETED';
+export interface SupportResponseNotes {responseText:string;disposition:ResponseDisposition}
+/** An attestation correcting only the text of one earlier response (or its latest correction). */
+export interface SupportResponseCorrectionNotes {supersedesRecordId:string;responseText:string}
+export interface SupportResponseDraftNotes {form:'SIMPLE_RESPONSE';responseText:string;disposition:ResponseDisposition|null;followUpAt:string|null}
+interface SupportRecordBase {id:string;tenantId:string;workId:string;requestId:string;revision:number;correctionReason:string;recordedByOperatorId:string;recordedAt:string}
+export type SupportRecord=
+ | SupportRecordBase&{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION';notes:SupportNotes}
+ | SupportRecordBase&{kind:'DRAFT';notes:SupportNotes|SupportResponseDraftNotes}
+ | SupportRecordBase&{kind:'RESPONSE';notes:SupportResponseNotes}
+ | SupportRecordBase&{kind:'RESPONSE_CORRECTION';notes:SupportResponseCorrectionNotes};
+export const isLegacySupportRecord=(record:SupportRecord):record is Extract<SupportRecord,{kind:'COMPLETION'|'CORRECTION'|'CONTINUATION'}>=>['COMPLETION','CORRECTION','CONTINUATION'].includes(record.kind);
+export const isLegacySupportNotes=(notes:SupportRecord['notes']):notes is SupportNotes=>'checks' in notes;
 // Deliberate Work Context, not a Registry fact and not diagnostic evidence of a cause.
 export interface SupportDeviceContext {
  id:string;tenantId:string;workId:string;requestId:string;revision:number;
@@ -34,14 +50,14 @@ export interface SupportDeviceContext {
 // Work-scoped observations retain what is known about a target without promoting it to Registry fact.
 export interface SupportTargetObservation {
  id:string;tenantId:string;workId:string;targetContextId:string;requestId:string;revision:number;
- kind:'IDENTIFICATION'|'OWNERSHIP'|'MANAGEMENT_STATE';
- value:'UNIDENTIFIED'|'PARTIALLY_IDENTIFIED'|'PERSONALLY_OWNED'|'COMPANY_OWNED'|'MANAGED'|'UNMANAGED'|'UNKNOWN';
+ kind:'IDENTIFICATION'|'OWNERSHIP'|'MANAGEMENT_STATE'|'REGISTRY_COMPARISON'|'CALLER_STATEMENT';
+ value:'UNIDENTIFIED'|'PARTIALLY_IDENTIFIED'|'PERSONALLY_OWNED'|'COMPANY_OWNED'|'MANAGED'|'UNMANAGED'|'MATCH'|'DIFFERENT'|'UNKNOWN';
  detail:string;sourceType:'OPERATOR'|'CALLER'|'OTHER';evidenceId:string|null;
- supersedesObservationId:string|null;recordedByOperatorId:string;recordedAt:string;
+ sourceSnapshot:Record<string,unknown>;supersedesObservationId:string|null;recordedByOperatorId:string;recordedAt:string;
 }
 export interface SupportEligibility {state:'UNKNOWN';reason:'NO_APPLICABLE_RULE';ruleSource:null}
-export interface SupportLifecycleEvent {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'CONTINUATION_RECORDED'|'WAITING_SET'|'RESUMED'|'NEXT_ACTION_CLEARED';nextAction:string;waitingParty:string;waitingReason:string;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
+export interface SupportLifecycleEvent {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'CONTINUATION_RECORDED'|'RESPONSE_RECORDED'|'WAITING_SET'|'RESUMED'|'NEXT_ACTION_CLEARED'|'REOPENED';nextAction:string;waitingParty:string;waitingReason:string;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
 export interface SupportFollowUp {id:string;tenantId:string;workId:string;requestId:string;revision:number;kind:'SET'|'CLEARED';followUpAt:string|null;sourceType:'HUMAN_DECISION'|'CONTRACT'|'RULE'|'CUSTOMER_COMMITMENT'|'OTHER';basisText:string;reason:string;supersedesFollowUpId:string|null;commandPayload:Record<string,unknown>;recordedByOperatorId:string;recordedAt:string}
-export interface SupportCloseDecision {id:string;tenantId:string;workId:string;requestId:string;outcome:SupportCloseOutcome;closeReason:string;provenanceType:'HUMAN_DECISION'|'EVIDENCE'|'RULE'|'FORMAL_TRANSFER'|'OTHER';provenanceReference:string;evidenceId:string|null;guardSnapshot:Record<string,unknown>;commandPayload:Record<string,unknown>;decidedByOperatorId:string;decidedAt:string}
+export interface SupportCloseDecision {id:string;tenantId:string;workId:string;requestId:string;closeSequence:number;outcome:SupportCloseOutcome;closeReason:string;provenanceType:'HUMAN_DECISION'|'EVIDENCE'|'RULE'|'FORMAL_TRANSFER'|'OTHER';provenanceReference:string;evidenceId:string|null;guardSnapshot:Record<string,unknown>;commandPayload:Record<string,unknown>;decidedByOperatorId:string;decidedAt:string}
 export const supportActionLabels:Record<SupportNotes['action'],string>={RESTART_GUIDANCE:'PC再起動を案内',CONNECTION_GUIDANCE:'接続手順を案内',OTHER_GUIDANCE:'その他の確認・案内',NO_ACTION_REQUIRED:'確認の結果、追加対応なし'};
 export const supportResultLabels:Record<SupportNotes['result'],string>={CONNECTED:'接続できた',NOT_CONNECTED:'接続できなかった',UNCONFIRMED:'結果は未確認'};

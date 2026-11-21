@@ -1,0 +1,1072 @@
+import {randomUUID} from 'node:crypto';
+import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
+import request from 'supertest';
+import pino from 'pino';
+import {ids,testDatabase} from '../fixtures/database.js';
+import {withTenant} from '../../apps/web/src/server/persistence/database.js';
+import {PgJoinRepository} from '../../apps/web/src/server/persistence/join-repository.js';
+import {PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {JoinCommands} from '../../packages/application/src/join-commands.js';
+import {JoinQueries} from '../../packages/application/src/join-queries.js';
+import {PgExploreSearchUnitOfWork} from '../../apps/web/src/server/persistence/explore-repository.js';
+import {ExploreQueries} from '../../packages/application/src/explore-queries.js';
+import {PgScopedGrantManager} from '../../apps/web/src/server/persistence/scoped-grant-manager.js';
+import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
+import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
+import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
+import {SupportCommands} from '../../packages/application/src/support-commands.js';
+import {SupportQueries} from '../../packages/application/src/support-queries.js';
+import type {Operator} from '../../packages/domain/src/operator.js';
+import {tokenHash} from '../../apps/web/src/server/auth/pkce.js';
+import {createApp} from '../../apps/web/src/server/app.js';
+
+const now='2026-11-07T00:00:00.000Z';
+const companyB='30000000-0000-4000-8000-000000000077';
+const scopedActor='20000000-0000-4000-8000-000000000077';
+const sessionCookie='factact_session=scoped-support-read';
+const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',
+ databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc', databaseSsl:false,issuer:'https://accounts.google.com' as const,
+ clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'};
+const internal:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Internal',tenantName:'Development',roles:['ADMIN','OPERATOR','REVIEWER']};
+let db:Awaited<ReturnType<typeof testDatabase>>;
+let commands:SupportCommands,scopedCommands:SupportCommands,reader:PgScopedAccessReader,
+ store:PgIdentityStore,app:ReturnType<typeof createApp>;
+let recipientA:string,recipientB:string;
+let workA:string,workB:string,eventA:string,eventB:string;
+
+async function createWork(symptom:string){
+ const event=await commands.createEvent(internal,{requestId:randomUUID(),personId:ids.person,
+  serviceId:ids.service,symptom});
+ const evaluation=await commands.evaluate(internal,event.id,'REQUIRED','対応対象');
+ if(!evaluation.work)throw Error('Expected SUPPORT Work');
+ return {eventId:event.id,workId:evaluation.work.id};
+}
+async function confirm(eventId:string,organizationId:string,expectedRevision=0){
+ return commands.recordBeneficiary(internal,eventId,{kind:'CONFIRMED',requestId:randomUUID(),
+  expectedRevision,organizationId,reason:'受益企業を人が確認'});
+}
+async function grant(scope:'SERVICE'|'SERVICE_RECIPIENT'|'WORK',recipientId:string|null=null,workId:string|null=null,
+ options:{operations?:string[];objectKind?:string}={}){
+ const id=randomUUID();
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,service_recipient_id,
+   work_id,object_kind,operations,effective_from,issued_by_operator_id)
+  values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[
+  id,ids.tenant,scopedActor,ids.service,ids.contract,scope,recipientId,workId,
+  options.objectKind??'SUPPORT',options.operations??['READ'],'2026-11-01T00:00:00.000Z',ids.operator,
+ ]);
+ return id;
+}
+const get=(id:string)=>request(app).get(`/api/scoped/support-work/${id}`).set('Cookie',sessionCookie);
+const getPage=(query='')=>request(app).get(`/api/scoped/support-work${query}`).set('Cookie',sessionCookie);
+const getHistory=(id:string,query='')=>request(app).get(`/api/scoped/support-work/${id}/history${query}`).set('Cookie',sessionCookie);
+const postScopedResponse=(id:string,body:object)=>request(app).post(`/api/scoped/support-work/${id}/responses`)
+ .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+const postCorrection=(id:string,recordId:string,body:object)=>request(app)
+ .post(`/api/scoped/support-work/${id}/responses/${recordId}/corrections`)
+ .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+async function recordResponse(id:string,text:string,expectedLifecycleRevision=0,expectedRecordRevision=0){
+ return commands.recordSupportResponse(internal,id,{requestId:randomUUID(),
+  expectedLifecycleRevision,expectedRecordRevision,responseText:text,
+  disposition:'MONITORING',followUpAt:'2026-11-08T00:00:00.000Z'});
+}
+
+beforeAll(async()=>{
+ db=await testDatabase();
+ const uow=new PgSupportUnitOfWork(db.runtime);
+ commands=new SupportCommands(uow,{now:()=>now,id:randomUUID});
+ reader=new PgScopedAccessReader(db.runtime,{now:()=>now});
+ scopedCommands=new SupportCommands(uow,{now:()=>now,id:randomUUID},reader);
+ store=new PgIdentityStore(db.runtime,db.oidc);
+ const joinUow=new PgJoinUnitOfWork(db.runtime);
+ const exploreUow=new PgExploreSearchUnitOfWork(db.runtime);
+ app=createApp(config,store,{
+  authorizationUrl:()=> 'https://accounts.google.com/authorize',
+  verifyCallback:async()=>({issuer:config.issuer,subject:'scoped-support-user'}),
+ },pino({level:'silent'}),
+ {commands:new JoinCommands(joinUow,{now:()=>now,id:randomUUID}),queries:new JoinQueries(joinUow)},
+ {commands:scopedCommands,queries:new SupportQueries(uow)},
+ {queries:new ExploreQueries(exploreUow)},reader,new PgScopedGrantManager(db.runtime),reader);
+},60_000);
+beforeEach(async()=>{
+ await db.reset();
+ await db.admin.query('insert into factact.organizations(id,tenant_id,name,status) values($1,$2,$3,$4)',
+  [companyB,ids.tenant,'Company B confidential','ACTIVE']);
+ await db.admin.query(`insert into factact.operators(id,tenant_id,email,display_name,status)
+  values($1,$2,'scoped-support@example.invalid','Scoped reader','ACTIVE')`,[scopedActor,ids.tenant]);
+ // Deliberate Role assignment: the internal broad Read Authority must remain denied.
+ for(const role of ['ADMIN','OPERATOR','REVIEWER']){
+  await db.admin.query('insert into factact.operator_roles values($1,$2,$3)',[ids.tenant,scopedActor,role]);
+ }
+ await db.admin.query(`insert into factact_private.operator_identities
+  (issuer,subject,tenant_id,operator_id,is_login_default)
+  values($1,$2,$3,$4,true)`,[config.issuer,'scoped-support-user',ids.tenant,scopedActor]);
+ await store.createVerifiedSession(tokenHash('scoped-support-read'),
+  {tenantId:ids.tenant,operatorId:scopedActor},'csrf',
+  {issuer:config.issuer,subject:'scoped-support-user'});
+ [recipientA,recipientB]=await withTenant(db.runtime,ids.tenant,async client=>{
+  const repo=new PgJoinRepository(client,ids.tenant);
+  return [await repo.ensureOrganizationRecipient(randomUUID(),ids.service,ids.organization),
+   await repo.ensureOrganizationRecipient(randomUUID(),ids.service,companyB)];
+ });
+ const a=await createWork('A customer detail'),b=await createWork('B customer confidential');
+ workA=a.workId;workB=b.workId;eventA=a.eventId;eventB=b.eventId;
+ // Both inquiries were received from the SAME Caller Person in company A.
+ // Confirmed beneficiary, not Caller affiliation, determines the Work scope.
+ await confirm(eventA,ids.organization);
+ await confirm(eventB,companyB);
+},60_000);
+afterAll(async()=>{await db?.close();},60_000);
+
+describe('scoped REGISTRY Person directory',()=>{
+ const directory=(organizationId:string,query='')=>request(app)
+  .get(`/api/scoped/registry/organizations/${organizationId}/people?serviceId=${ids.service}${query}`)
+  .set('Cookie',sessionCookie);
+
+ it('does not convert legacy internal Roles, Caller affiliation or SUPPORT grants into REGISTRY access',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'SUPPORT'});
+  await directory(ids.organization).expect(404);
+  await directory(companyB).expect(404);
+  await request(app).get(`/api/scoped/registry/organizations/${ids.organization}/people?serviceId=${ids.service}`)
+   .expect(401);
+ });
+
+ it('lists only persons of an explicitly granted recipient in one snapshot, without contact email or tenant counts',async()=>{
+  const bPerson=randomUUID();
+  await db.admin.query(`insert into factact.people
+   (id,tenant_id,organization_id,display_name,email,lifecycle_status)
+   values($1,$2,$3,'B private person','secret-b@example.invalid','ACTIVE')`,
+   [bPerson,ids.tenant,companyB]);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  const a=(await directory(ids.organization).expect(200)).body.data;
+  expect(a.organizationId).toBe(ids.organization);
+  expect(a.items).toEqual(expect.arrayContaining([expect.objectContaining({personId:ids.person})]));
+  expect(JSON.stringify(a)).not.toContain('secret-b@example.invalid');
+  expect(JSON.stringify(a)).not.toContain('B private person');
+  expect(a).not.toHaveProperty('total');
+  await directory(companyB).expect(404);
+  await directory(companyB,`&cursor=${encodeURIComponent(a.nextCursor??'')}`).expect(404);
+ });
+
+ it('pages the authorized organization only and does not return email or cross-organization entries',async()=>{
+  const second=randomUUID();
+  await db.admin.query(`insert into factact.people
+   (id,tenant_id,organization_id,display_name,email,lifecycle_status)
+   values($1,$2,$3,'ZZZ authorized person','private-a@example.invalid','ACTIVE')`,
+   [second,ids.tenant,ids.organization]);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  const first=(await directory(ids.organization,'&limit=1').expect(200)).body.data;
+  expect(first.items).toHaveLength(1);
+  expect(first.nextCursor).toEqual(expect.any(String));
+  const next=(await directory(ids.organization,`&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`).expect(200)).body.data;
+  expect(next.items).toHaveLength(1);
+  expect(next.items[0].personId).not.toBe(first.items[0].personId);
+  const both=JSON.stringify([first,next]);
+  expect(both).not.toContain('private-a@example.invalid');
+  await directory(companyB,`&limit=1&cursor=${encodeURIComponent(first.nextCursor)}`).expect(404);
+  await directory(ids.organization,'&cursor=not-a-valid-cursor').expect(400);
+ });
+
+ it('respects a deliberate service-wide REGISTRY grant, explicit revocation and current contract',async()=>{
+  const grantId=await grant('SERVICE',null,null,{objectKind:'REGISTRY'});
+  await directory(ids.organization).expect(200);
+  await directory(companyB).expect(200);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_by_operator_id=$1,revoked_at=$2,revocation_reason='Test revoke' where id=$3`,
+   [ids.operator,now,grantId]);
+  await directory(ids.organization).expect(404);
+  await directory(companyB).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  await db.admin.query("update factact.contract_profiles set status='INACTIVE' where id=$1",[ids.contract]);
+  await directory(ids.organization).expect(404);
+ });
+
+ it('links a Work to its confirmed beneficiary directory only with separate REGISTRY READ, and revokes the link',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'SUPPORT'});
+  const supportOnly=(await get(workA).expect(200)).body.data;
+  expect(supportOnly.registryOrganizationId).toBeNull();
+  expect((await getPage().expect(200)).body.data.items[0].registryOrganizationId).toBeNull();
+  expect((await getHistory(workA).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(ids.organization).expect(404);
+
+  const registryGrant=await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  for(const summary of [
+   (await get(workA).expect(200)).body.data,
+   (await getPage().expect(200)).body.data.items[0],
+   (await getHistory(workA).expect(200)).body.data.work,
+  ])expect(summary.registryOrganizationId).toBe(ids.organization);
+  await get(workB).expect(404);
+  await directory(companyB).expect(404);
+
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_by_operator_id=$1,revoked_at=$2,revocation_reason='Directory link revocation test'
+   where id=$3`,[ids.operator,now,registryGrant]);
+  expect((await get(workA).expect(200)).body.data.registryOrganizationId).toBeNull();
+  expect((await getHistory(workA).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(ids.organization).expect(404);
+ });
+
+ it('does not expose registry directory from REGISTRY-only grant or from the Caller of another Work',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'REGISTRY'});
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('SERVICE_RECIPIENT',recipientB,null,{objectKind:'SUPPORT'});
+  expect((await get(workB).expect(200)).body.data.registryOrganizationId).toBeNull();
+  expect((await getHistory(workB).expect(200)).body.data.work.registryOrganizationId).toBeNull();
+  await directory(companyB).expect(404);
+ });
+});
+
+describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
+ it('keeps every mounted INTERNAL JOIN/SUPPORT/Explore read and write surface closed to a SCOPED actor with legacy Roles',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['READ','UPDATE']});
+  const paths=[
+   '/api/home','/api/work','/api/work/'+workA,'/api/devices','/api/people/'+ids.person+'/context',
+   '/api/support','/api/support-responsibility','/api/support/'+eventA,
+   '/api/explore/search?q=Customer&types=ORGANIZATION,PERSON,WORK,KNOWLEDGE_CANDIDATE',
+  ];
+  for(const path of paths){
+   const response=await request(app).get(path).set('Cookie',sessionCookie);
+   expect(response.status,`GET ${path}`).toBe(403);
+   expect(JSON.stringify(response.body)).not.toContain('B customer confidential');
+   expect(JSON.stringify(response.body)).not.toContain('Company B confidential');
+  }
+  const before=(await db.admin.query('select count(*)::integer as n from factact.support_events')).rows[0].n;
+  const forged=await request(app).post('/api/support').set('Cookie',sessionCookie)
+   .set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),personId:ids.person,serviceId:ids.service,symptom:'Forbidden intake'});
+  expect(forged.status).toBe(403);
+  const forgedResponse=await request(app).post(`/api/support-work/${workA}/responses`)
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,
+    responseText:'Forbidden broad response',disposition:'MONITORING',followUpAt:'2026-11-12T00:00:00.000Z'});
+  expect(forgedResponse.status).toBe(403);
+  const forgedJoin=await request(app).post('/api/join-events')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({organizationId:ids.organization,personId:ids.person,serviceId:ids.service,joinDate:'2026-11-12'});
+  expect(forgedJoin.status).toBe(403);
+  const grantsBefore=(await db.admin.query('select count(*)::integer as n from factact.scoped_actor_grants')).rows[0].n;
+  const forgedGrant=await request(app).post('/api/admin/scoped-grants')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({requestId:randomUUID(),actorOperatorId:scopedActor,serviceId:ids.service,
+    contractProfileId:ids.contract,scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:recipientB},
+    objectKind:'SUPPORT',operations:['READ'],effectiveFrom:'2026-11-01T00:00:00.000Z',
+    effectiveUntil:null,reason:'Forged privileged grant'});
+  expect(forgedGrant.status).toBe(403);
+  expect((await db.admin.query('select count(*)::integer as n from factact.scoped_actor_grants')).rows[0].n).toBe(grantsBefore);
+  const after=(await db.admin.query('select count(*)::integer as n from factact.support_events')).rows[0].n;
+  expect(after).toBe(before);
+  expect((await db.admin.query('select count(*)::integer as n from factact.support_work_records where work_id=$1',[workA])).rows[0].n).toBe(0);
+  // The same session can still use its explicit narrow SUPPORT grant.
+  expect((await get(workA).expect(200)).body.data.canUpdate).toBe(true);
+  await get(workB).expect(404);
+ });
+ it('denies every Work without an explicit grant despite assigned internal Roles',async()=>{
+  const session=await request(app).get('/api/session').set('Cookie',sessionCookie).expect(200);
+  expect(session.body.data.operator.roles).toEqual([]);
+  await get(workA).expect(404);
+  await get(workB).expect(404);
+  await request(app).get('/api/support').set('Cookie',sessionCookie).expect(403);
+  await request(app).get(`/api/scoped/support-work/${workA}`).expect(401);
+ });
+
+ it('allows recipient A only, hiding recipient B and nonexistent Work with indistinguishable 404',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const allowed=await get(workA).expect(200);
+  expect(allowed.body.data).toMatchObject({workId:workA,serviceId:ids.service,
+   contractProfileId:ids.contract,serviceRecipientId:recipientA});
+  expect(Object.keys(allowed.body.data).sort()).toEqual([
+   'canUpdate','contractProfileId','followUpAt','lifecycleRevision','nextAction','recordRevision',
+   'registryOrganizationId','serviceId','serviceRecipientId','status','title','updatedAt','waiting','workId',
+  ]);
+  const forbidden=await get(workB).expect(404),missing=await get(randomUUID()).expect(404);
+  expect(forbidden.body.error.code).toBe('NOT_FOUND');
+  expect(forbidden.body.error).toEqual(missing.body.error);
+  expect(JSON.stringify(forbidden.body)).not.toContain('B customer confidential');
+  // Browser-provided affiliation/context cannot override the persisted beneficiary.
+  await request(app).get(`/api/scoped/support-work/${workB}?serviceRecipientId=${recipientA}&serviceId=${ids.service}`)
+   .set('Cookie',sessionCookie).expect(404);
+  await request(app).get('/api/support').set('Cookie',sessionCookie).expect(403);
+ });
+
+ it('projects current revisions and UPDATE/correction capabilities only for the active actor',async()=>{
+  const readGrant=await grant('SERVICE_RECIPIENT',recipientA);
+  const readOnly=await get(workA).expect(200);
+  expect(readOnly.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:false});
+  const readOnlyPage=await getPage().expect(200);
+  expect(readOnlyPage.body.data.items[0].canUpdate).toBe(false);
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+   [readGrant,['READ','UPDATE']]);
+  const writable=await get(workA).expect(200);
+  expect(writable.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:true});
+  expect((await getPage().expect(200)).body.data.items[0].canUpdate).toBe(true);
+  const text='An external scoped response';
+  await postScopedResponse(workA,{requestId:randomUUID(),expectedLifecycleRevision:0,
+   expectedRecordRevision:0,responseText:text,disposition:'MONITORING',followUpAt:'2026-11-12T00:00:00.000Z'})
+   .expect(200);
+  const history=await getHistory(workA).expect(200);
+  expect(history.body.data.work).toMatchObject({lifecycleRevision:1,recordRevision:1,canUpdate:true});
+  const own=history.body.data.entries.find((e:{kind:string})=>e.kind==='RESPONSE');
+  expect(own).toMatchObject({responseText:text,canCorrect:true});
+  const corrected=await postCorrection(workA,own.id,{requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Corrected external response',correctionReason:'Typo fixed'}).expect(200);
+  const newer=await getHistory(workA).expect(200);
+  expect(newer.body.data.work).toMatchObject({lifecycleRevision:1,recordRevision:2,canUpdate:true});
+  expect(newer.body.data.entries.find((e:{id:string})=>e.id===own.id).canCorrect).toBe(false);
+  expect(newer.body.data.entries.find((e:{id:string})=>e.id===corrected.body.data.id).canCorrect).toBe(true);
+  await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+   [readGrant,['READ']]);
+  expect((await get(workA).expect(200)).body.data.canUpdate).toBe(false);
+  expect((await getHistory(workA).expect(200)).body.data.entries.every((e:{canCorrect:boolean})=>!e.canCorrect)).toBe(true);
+  expect((await get(workB).expect(404)).body.error.code).toBe('NOT_FOUND');
+ });
+
+ it('keeps Work-only grants narrow and expands to B only for an explicit Service grant',async()=>{
+  const second=await createWork('A second Work');
+  await confirm(second.eventId,ids.organization);
+  await grant('WORK',recipientA,workA);
+  await get(workA).expect(200);
+  await get(second.workId).expect(404);
+  await get(workB).expect(404);
+  await grant('SERVICE');
+  await get(workB).expect(200);
+  await get(second.workId).expect(200);
+ });
+
+ it('requires the SUPPORT object kind and READ operation independently of Role',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'KNOWLEDGE'});
+  await get(workA).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+ });
+
+ it('revokes access on the next request of the SAME session',async()=>{
+  const id=await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='失効確認'
+   where id=$1`,[id,now,ids.operator]);
+  await get(workA).expect(404);
+ });
+
+ it('denies reassigned Work even after granting its latest beneficiary, until content review',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'受益先の確認を取り消した'});
+  await get(workA).expect(404);
+  await confirm(eventA,companyB,2);
+  await get(workA).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientB);
+  await get(workA).expect(404);
+ });
+
+ it('restores summary only when cleared beneficiary is reconfirmed for the SAME Organization',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'一時解除'});
+  await get(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
+  await get(workA).expect(200);
+ });
+
+ it('denies inactive recipient or expired Contract while preserving an active grant',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await get(workA).expect(200);
+  await db.admin.query("update factact.service_recipients set status='INACTIVE' where id=$1",[recipientA]);
+  await get(workA).expect(404);
+  await db.admin.query("update factact.service_recipients set status='ACTIVE' where id=$1",[recipientA]);
+  await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
+   [ids.contract,'2026-11-06T00:00:00.000Z']);
+  await get(workA).expect(404);
+ });
+});
+
+describe('scoped SUPPORT UPDATE transaction boundary (not HTTP-exposed)',()=>{
+ const update=(id:string,fn:(r:import('../../apps/web/src/server/persistence/scoped-access-reader.js').ScopedSupportWorkUpdateContext)=>Promise<string>)=>
+  reader.runSupportWorkUpdate(ids.tenant,scopedActor,id,fn);
+
+ it('keeps Grant mutation privileges denied to the runtime while enabling only the lock function',async()=>{
+  const result=await db.admin.query<{can_select:boolean;can_update:boolean;can_insert:boolean;
+   can_delete:boolean;can_lock:boolean}>(`select
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','SELECT') as can_select,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','UPDATE') as can_update,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','INSERT') as can_insert,
+    has_table_privilege('factact_runtime','factact.scoped_actor_grants','DELETE') as can_delete,
+    has_function_privilege('factact_runtime','factact.lock_scoped_actor_authority(uuid,uuid)','EXECUTE') as can_lock`);
+  expect(result.rows[0]).toEqual({can_select:true,can_update:false,can_insert:false,
+   can_delete:false,can_lock:true});
+ });
+
+ it('fails closed without UPDATE, for another recipient, wrong kind, wrong Work, and invalid IDs',async()=>{
+  let callbacks=0;
+  const callback=async()=>{callbacks++;return 'executed';};
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA);
+  expect(await update(workA,callback)).toBeNull(); // READ is not UPDATE
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE'],objectKind:'KNOWLEDGE'});
+  expect(await update(workA,callback)).toBeNull();
+  await grant('WORK',recipientA,workB,{operations:['UPDATE']});
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  expect(await update(workB,callback)).toBeNull();
+  expect(await update(randomUUID(),callback)).toBeNull();
+  expect(await reader.runSupportWorkUpdate(ids.tenant,'not-a-uuid',workA,callback)).toBeNull();
+  expect(callbacks).toBe(0);
+  expect(await update(workA,callback)).toBe('executed');
+  expect(callbacks).toBe(1);
+ });
+
+ it('checks revocation and current active Actor on every UPDATE attempt',async()=>{
+  const id=await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  const callback=async()=> 'executed';
+  expect(await update(workA,callback)).toBe('executed');
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason=$4 where id=$1`,
+   [id,now,ids.operator,'権限を失効']);
+  expect(await update(workA,callback)).toBeNull();
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  await db.admin.query('update factact.operators set status=$2 where id=$1',[scopedActor,'INACTIVE']);
+  expect(await update(workA,callback)).toBeNull();
+ });
+
+ it('denies cleared and historically reassigned beneficiaries even with a Service-wide UPDATE grant',async()=>{
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  const callback=async()=> 'executed';
+  expect(await update(workA,callback)).toBe('executed');
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'受益企業の再確認待ち'});
+  expect(await update(workA,callback)).toBeNull();
+  await confirm(eventA,companyB,2);
+  expect(await update(workA,callback)).toBeNull();
+  expect(await update(workB,callback)).toBe('executed');
+ });
+
+ it('rejects replacing the authorized Work identity before persisting',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const before=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workB]);
+  await expect(update(workA,async tx=>{
+   const work=await tx.work();
+   if(!work)throw Error('Work missing');
+   work.id=workB;
+   work.nextAction='cross-customer mutation';
+   await tx.progress(work);
+   return 'unexpected';
+  })).rejects.toThrow('SCOPED_UPDATE_TARGET_MISMATCH');
+  const after=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workB]);
+  expect(after.rows[0]?.next_action).toBe(before.rows[0]?.next_action);
+ });
+
+ it('refuses cross-Work reads through the response command port',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await expect(reader.runSupportWorkUpdate(ids.tenant,scopedActor,workA,
+   async({response})=>response.records(workB))).rejects.toThrow('SCOPED_UPDATE_TARGET_MISMATCH');
+ });
+
+ it('commits a permitted Work update and Audit together and rolls both back on error',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const apply=async(nextAction:string,shouldFail=false)=>update(workA,async r=>{
+   const work=await r.work();
+   if(!work)throw Error('Work missing after authorization');
+   work.nextAction=nextAction;
+   work.updatedAt=now;
+   await r.progress(work);
+   await r.audit('SCOPED_UPDATE_BOUNDARY_TEST',{workId:workA,nextAction});
+   if(shouldFail)throw Error('rollback marker');
+   return nextAction;
+  });
+  expect(await apply('authorized transition')).toBe('authorized transition');
+  await expect(apply('must roll back',true)).rejects.toThrow('rollback marker');
+  const work=await db.admin.query<{next_action:string}>('select next_action from factact.work where id=$1',[workA]);
+  expect(work.rows[0]?.next_action).toBe('authorized transition');
+  const audit=await db.admin.query<{metadata_json:{nextAction:string}}>(`select metadata_json from factact.audit_events
+   where event_type='SCOPED_UPDATE_BOUNDARY_TEST' and aggregate_id=$1`,[eventA]);
+  expect(audit.rows).toHaveLength(1);
+  expect(audit.rows[0]?.metadata_json.nextAction).toBe('authorized transition');
+ });
+
+ it('serializes a pending revocation after the authorized Work and Audit COMMIT',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  let entered!:()=>void,release!:()=>void;
+  const callbackEntered=new Promise<void>(ok=>{entered=ok;});
+  const callbackRelease=new Promise<void>(ok=>{release=ok;});
+  const writing=update(workA,async r=>{
+   const work=await r.work();
+   if(!work)throw Error('Work missing');
+   work.nextAction='committed before revocation';
+   await r.progress(work);
+   await r.audit('SCOPED_REVOKED_UPDATE_TEST',{workId:workA});
+   entered();
+   await callbackRelease; // Concurrent privileged transaction cannot pass its trigger.
+   return 'committed';
+  });
+  await callbackEntered;
+  const revoking=db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='権限を失効' where id=$1`,
+   [grantId,now,ids.operator]);
+  try {
+   const stillWaiting=await Promise.race([revoking.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+  } finally {release();}
+  expect(await writing).toBe('committed');
+  await revoking;
+  const after=await db.admin.query<{next_action:string}>(
+   'select next_action from factact.work where id=$1',[workA]);
+  expect(after.rows[0]?.next_action).toBe('committed before revocation');
+  const audit=await db.admin.query(`select id from factact.audit_events
+   where event_type='SCOPED_REVOKED_UPDATE_TEST' and aggregate_id=$1`,[eventA]);
+  expect(audit.rows).toHaveLength(1);
+  expect(await update(workA,async()=> 'unexpected')).toBeNull();
+ });
+
+ it('waits for an in-flight privileged revoke, then rejects without invoking the Work callback',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const privileged=await db.admin.connect();
+  let open=false,callbacks=0;
+  try {
+   await privileged.query('BEGIN');open=true;
+   await privileged.query(`update factact.scoped_actor_grants set status='REVOKED',
+    revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='失効を先行' where id=$1`,
+    [grantId,now,ids.operator]);
+   const pending=update(workA,async()=>{callbacks++;return 'unexpected';});
+   const stillWaiting=await Promise.race([pending.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+   await privileged.query('COMMIT');open=false;
+   expect(await pending).toBeNull();
+   expect(callbacks).toBe(0);
+  } finally {
+   if(open)await privileged.query('ROLLBACK');
+   privileged.release();
+  }
+ });
+
+ it('serializes Actor deactivation as an authorization revocation',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const privileged=await db.admin.connect();
+  let open=false,callbacks=0;
+  try {
+   await privileged.query('BEGIN');open=true;
+   await privileged.query('update factact.operators set status=$2 where id=$1',[scopedActor,'INACTIVE']);
+   const pending=update(workA,async()=>{callbacks++;return 'unexpected';});
+   const stillWaiting=await Promise.race([pending.then(()=>false),
+    new Promise<boolean>(ok=>setTimeout(()=>ok(true),100))]);
+   expect(stillWaiting).toBe(true);
+   await privileged.query('COMMIT');open=false;
+   expect(await pending).toBeNull();
+   expect(callbacks).toBe(0);
+  } finally {
+   if(open)await privileged.query('ROLLBACK');
+   privileged.release();
+  }
+ });
+});
+
+describe('scoped SUPPORT non-closing response command (domain-level gates)',()=>{
+ const actor:Operator={id:scopedActor,tenantId:ids.tenant,displayName:'Scoped contributor',
+  tenantName:'Development',roles:[]};
+ const input=(requestId=randomUUID())=>({requestId,expectedLifecycleRevision:0,expectedRecordRevision:0,
+  responseText:'権限内で対応を記録',disposition:'MONITORING' as const,
+  followUpAt:'2026-11-08T00:00:00.000Z'});
+
+ it('denies without UPDATE and never allows a response to another beneficiary Work',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA); // READ only
+  await expect(scopedCommands.recordScopedSupportResponse(actor,workA,input()))
+   .rejects.toMatchObject({code:'NOT_FOUND'});
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  await expect(scopedCommands.recordScopedSupportResponse(actor,workB,input()))
+   .rejects.toMatchObject({code:'NOT_FOUND'});
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workB]);
+  expect(records.rows).toHaveLength(0);
+ });
+
+ it('reuses the existing Response, Follow-up and Audit invariant without an internal Operator Role',async()=>{
+  await db.admin.query('delete from factact.operator_roles where operator_id=$1',[scopedActor]);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const requestId=randomUUID(),payload=input(requestId);
+  const first=await scopedCommands.recordScopedSupportResponse(actor,workA,payload);
+  expect(first).toMatchObject({workId:workA,requestId,kind:'RESPONSE',revision:1,
+   recordedByOperatorId:scopedActor,notes:{responseText:payload.responseText,disposition:'MONITORING'}});
+  const second=await scopedCommands.recordScopedSupportResponse(actor,workA,payload);
+  expect(second.id).toBe(first.id);
+  const details=await db.admin.query<{status:string;follow_up_at:Date;next_action:string}>(
+   'select status,follow_up_at,next_action from factact.work where id=$1',[workA]);
+  expect(details.rows[0]?.status).toBe('IN_PROGRESS');
+  expect(details.rows[0]?.follow_up_at.toISOString()).toBe(payload.followUpAt);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  const events=await db.admin.query('select id from factact.support_work_lifecycle_events where work_id=$1',[workA]);
+  const follows=await db.admin.query('select id from factact.support_work_follow_ups where work_id=$1',[workA]);
+  expect(records.rows).toHaveLength(1);
+  expect(events.rows).toHaveLength(1);
+  expect(follows.rows).toHaveLength(1);
+  const audit=await db.admin.query<{actor_operator_id:string}>(`select actor_operator_id from factact.audit_events
+   where aggregate_id=$1 and event_type='SUPPORT_RESPONSE_RECORDED'`,[eventA]);
+  expect(audit.rows.map(x=>x.actor_operator_id)).toEqual([scopedActor]);
+  await getHistory(workA).expect(404); // UPDATE does not imply READ
+ });
+
+ it('rolls back every response side effect on a stale lifecycle or record revision',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  await expect(scopedCommands.recordScopedSupportResponse(actor,workA,
+   {...input(),expectedLifecycleRevision:10})).rejects.toMatchObject({code:'STALE_REVISION'});
+  await expect(scopedCommands.recordScopedSupportResponse(actor,workA,
+   {...input(),expectedRecordRevision:5})).rejects.toMatchObject({code:'STALE_REVISION'});
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  const audits=await db.admin.query(`select id from factact.audit_events
+   where aggregate_id=$1 and event_type='SUPPORT_RESPONSE_RECORDED'`,[eventA]);
+  expect(records.rows).toHaveLength(0);
+  expect(audits.rows).toHaveLength(0);
+ });
+
+ it('rejects Close even with UPDATE and an otherwise complete Close payload',async()=>{
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  await expect(scopedCommands.recordScopedSupportResponse(actor,workA,{
+   ...input(),disposition:'COMPLETED',followUpAt:null,
+   close:{outcome:'RESOLVED',closeReason:'完了確認',confirmsOutstandingResponsibilityEnded:true},
+  })).rejects.toMatchObject({code:'SCOPED_CLOSE_NOT_AUTHORIZED',status:403});
+  const closes=await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA]);
+  expect(closes.rows).toHaveLength(0);
+ });
+});
+
+describe('scoped SUPPORT response HTTP boundary (Draft; not deployed)',()=>{
+ const payload=()=>({requestId:randomUUID(),expectedLifecycleRevision:0,
+  expectedRecordRevision:0,responseText:'A担当者が記録した対応',disposition:'MONITORING',
+  followUpAt:'2026-11-08T00:00:00.000Z'});
+
+ it('requires verified session, exact Origin and CSRF before any write',async()=>{
+  await request(app).post(`/api/scoped/support-work/${workA}/responses`).send(payload()).expect(401);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses`)
+   .set('Cookie',sessionCookie).set('Origin','https://evil.invalid')
+   .set('x-csrf-token','csrf').send(payload()).expect(403);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses`)
+   .set('Cookie',sessionCookie).set('Origin',config.origin).send(payload()).expect(403);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  expect(records.rows).toHaveLength(0);
+ });
+
+ it('hides missing and foreign Work equally and rejects client-selected Actor/Recipient',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA); // READ only
+  await postScopedResponse(workA,payload()).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA,null,{operations:['UPDATE']});
+  const forbidden=await postScopedResponse(workB,payload()).expect(404);
+  const missing=await postScopedResponse(randomUUID(),payload()).expect(404);
+  expect(forbidden.body.error).toEqual(missing.body.error);
+  expect(JSON.stringify(forbidden.body)).not.toContain('Company B confidential');
+  await postScopedResponse(workA,{...payload(),actorId:scopedActor}).expect(400);
+  await postScopedResponse(workA,{...payload(),serviceRecipientId:recipientB}).expect(400);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workB]);
+  expect(records.rows).toHaveLength(0);
+ });
+
+ it('records an allowed response once and exposes only Work-local history with separate READ',async()=>{
+  await db.admin.query('delete from factact.operator_roles where operator_id=$1',[scopedActor]);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const input=payload();
+  const first=await postScopedResponse(workA,input).expect(200);
+  expect(first.body.data).toMatchObject({workId:workA,requestId:input.requestId,
+   kind:'RESPONSE',recordedByOperatorId:scopedActor});
+  const second=await postScopedResponse(workA,input).expect(200);
+  expect(second.body.data.id).toBe(first.body.data.id);
+  await postScopedResponse(workA,{...payload(),disposition:'COMPLETED',followUpAt:null,
+   close:{outcome:'RESOLVED',closeReason:'終了',confirmsOutstandingResponsibilityEnded:true}}).expect(400);
+  await getHistory(workA).expect(404); // UPDATE alone cannot read
+  await grant('WORK',recipientA,workA); // explicit READ
+  const history=await getHistory(workA).expect(200);
+  expect(history.body.data.entries[0]).toMatchObject({kind:'RESPONSE',responseText:input.responseText});
+  expect(JSON.stringify(history.body)).not.toContain('B customer confidential');
+  await getHistory(workB).expect(404);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  expect(records.rows).toHaveLength(1);
+ });
+
+ it('denies a revoked UPDATE Grant and a Work historically reassigned to another customer',async()=>{
+  const grantId=await grant('SERVICE',null,null,{operations:['UPDATE']});
+  await postScopedResponse(workA,payload()).expect(200);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='権限を失効' where id=$1`,
+   [grantId,now,ids.operator]);
+  await postScopedResponse(workB,payload()).expect(404);
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'支援対象を変更'});
+  await confirm(eventA,companyB,2);
+  await postScopedResponse(workA,payload()).expect(404);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  expect(records.rows).toHaveLength(1);
+ });
+});
+
+describe('scoped SUPPORT text-only response correction (Draft; not deployed)',()=>{
+ const actor:Operator={id:scopedActor,tenantId:ids.tenant,displayName:'Scoped contributor',
+  tenantName:'Development',roles:[]};
+ const response=()=>({requestId:randomUUID(),expectedLifecycleRevision:0,
+  expectedRecordRevision:0,responseText:'Original external response',
+  disposition:'MONITORING' as const,followUpAt:'2026-11-08T00:00:00.000Z'});
+ const correction=(supersedesRecordId:string,expectedRecordRevision:number)=>({
+  requestId:randomUUID(),supersedesRecordId,expectedRecordRevision,
+  responseText:'Corrected response text',correctionReason:'Recorded wording was inaccurate',
+ });
+
+ it('adds a linked correction without replaying an Action, disposition, Follow-up or lifecycle',async()=>{
+  await db.admin.query('delete from factact.operator_roles where operator_id=$1',[scopedActor]);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const original=await scopedCommands.recordScopedSupportResponse(actor,workA,response());
+  const payload=correction(original.id,1);
+  const first=await scopedCommands.correctScopedSupportResponse(actor,workA,payload);
+  expect(first).toMatchObject({kind:'RESPONSE_CORRECTION',revision:2,workId:workA,
+   recordedByOperatorId:scopedActor,notes:{supersedesRecordId:original.id,
+    responseText:'Corrected response text'},correctionReason:payload.correctionReason});
+  const retry=await scopedCommands.correctScopedSupportResponse(actor,workA,payload);
+  expect(retry.id).toBe(first.id);
+  const second=await scopedCommands.correctScopedSupportResponse(actor,workA,{
+   ...correction(first.id,2),responseText:'Revised correction'});
+  expect(second.notes).toMatchObject({supersedesRecordId:first.id,responseText:'Revised correction'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   {...correction(original.id,3),responseText:'Wrong stale branch'}))
+   .rejects.toMatchObject({code:'STALE_REVISION'});
+  const records=await db.admin.query<{kind:string;notes:{responseText:string}}>(
+   'select kind,notes from factact.support_work_records where work_id=$1 order by revision',[workA]);
+  expect(records.rows.map(x=>x.kind)).toEqual(['RESPONSE','RESPONSE_CORRECTION','RESPONSE_CORRECTION']);
+  expect(records.rows[0]?.notes.responseText).toBe('Original external response');
+  const events=await db.admin.query('select id from factact.support_work_lifecycle_events where work_id=$1',[workA]);
+  const follows=await db.admin.query('select id from factact.support_work_follow_ups where work_id=$1',[workA]);
+  const closes=await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA]);
+  expect(events.rows).toHaveLength(1);
+  expect(follows.rows).toHaveLength(1);
+  expect(closes.rows).toHaveLength(0);
+  const work=await db.admin.query<{lifecycle_revision:number;status:string}>(
+   'select lifecycle_revision,status from factact.work where id=$1',[workA]);
+  expect(work.rows[0]).toMatchObject({lifecycle_revision:1,status:'IN_PROGRESS'});
+  const audit=await db.admin.query<{actor_operator_id:string;metadata_json:{supersedesRecordId:string}}>(
+   "select actor_operator_id,metadata_json from factact.audit_events where aggregate_id=$1 and event_type='SUPPORT_RESPONSE_CORRECTED' order by occurred_at,id",[eventA]);
+  expect(audit.rows).toHaveLength(2);
+  expect(audit.rows.map(x=>x.actor_operator_id)).toEqual([scopedActor,scopedActor]);
+  expect(audit.rows.map(x=>x.metadata_json.supersedesRecordId).sort())
+   .toEqual([original.id,first.id].sort());
+  await getHistory(workA).expect(404); // UPDATE is not READ.
+  await grant('WORK',recipientA,workA);
+  const history=(await getHistory(workA).expect(200)).body.data.entries;
+  expect(history).toEqual(expect.arrayContaining([
+   expect.objectContaining({id:original.id,kind:'RESPONSE',responseText:'Original external response'}),
+   expect.objectContaining({id:first.id,kind:'RESPONSE_CORRECTION',
+    supersedesRecordId:original.id,correctionReason:payload.correctionReason,
+    responseText:'Corrected response text',disposition:null}),
+   expect.objectContaining({id:second.id,kind:'RESPONSE_CORRECTION',
+    supersedesRecordId:first.id,responseText:'Revised correction'}),
+  ]));
+  expect(JSON.stringify(history)).not.toContain('recordedByOperatorId');
+ });
+
+ it('rejects foreign source, other author, completed response, invalid reason, and stale revisions',async()=>{
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  const external=await scopedCommands.recordScopedSupportResponse(actor,workA,response());
+  const other=await recordResponse(workB,'Another customer response');
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(other.id,1))).rejects.toMatchObject({code:'NOT_FOUND'});
+  const internalResponse=await recordResponse(workA,'Internal operator response',1,1);
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(internalResponse.id,2))).rejects.toMatchObject({code:'INVALID_CORRECTION_TARGET'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   correction(external.id,1))).rejects.toMatchObject({code:'STALE_REVISION'});
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,
+   {...correction(external.id,2),correctionReason:'  '}))
+   .rejects.toMatchObject({code:'INVALID_INPUT'});
+  const rows=await db.admin.query("select id from factact.support_work_records where kind='RESPONSE_CORRECTION'");
+  expect(rows.rows).toHaveLength(0);
+ });
+
+ it('cannot amend a completed response or Close provenance even when its author has scoped UPDATE',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  // This seeded internal command represents a pre-existing Close authored by
+  // the same Actor; scoped UPDATE must still never become Close correction.
+  await db.admin.query("update factact.operators set read_authority_mode='INTERNAL_V1' where id=$1",[scopedActor]);
+  const closed=await commands.recordSupportResponse(actor,workA,{
+   requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,
+   responseText:'Final internal response',disposition:'COMPLETED',followUpAt:null,
+   close:{outcome:'RESOLVED',closeReason:'Responsibility ended',
+    confirmsOutstandingResponsibilityEnded:true},
+  });
+  await db.admin.query("update factact.operators set read_authority_mode='SCOPED' where id=$1",[scopedActor]);
+  await expect(scopedCommands.correctScopedSupportResponse(actor,workA,correction(closed.id,1)))
+   .rejects.toMatchObject({code:'SCOPED_CLOSE_NOT_AUTHORIZED'});
+  const closes=await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA]);
+  const records=await db.admin.query('select id from factact.support_work_records where work_id=$1',[workA]);
+  expect(closes.rows).toHaveLength(1);
+  expect(records.rows).toHaveLength(1);
+ });
+
+ it('requires session, Origin/CSRF and UPDATE; rejects forged fields and does not leak B',async()=>{
+  const original=await recordResponse(workA,'Internal text');
+  const input={requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Attempted correction',correctionReason:'Wrong statement'};
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .send(input).expect(401);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .set('Cookie',sessionCookie).set('Origin','https://evil.invalid')
+   .set('x-csrf-token','csrf').send(input).expect(403);
+  await request(app).post(`/api/scoped/support-work/${workA}/responses/${original.id}/corrections`)
+   .set('Cookie',sessionCookie).set('Origin',config.origin).send(input).expect(403);
+  await grant('WORK',recipientA,workA); // READ only
+  await postCorrection(workA,original.id,input).expect(404);
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const forbidden=await postCorrection(workB,original.id,input).expect(404);
+  const missing=await postCorrection(randomUUID(),original.id,input).expect(404);
+  expect(forbidden.body.error).toEqual(missing.body.error);
+  await postCorrection(workA,original.id,{...input,actorId:scopedActor}).expect(400);
+  await postCorrection(workA,original.id,{...input,disposition:'COMPLETED'}).expect(400);
+  await postCorrection(workA,original.id,{...input,followUpAt:'2026-11-10T00:00:00.000Z'}).expect(400);
+  const audit=await db.admin.query("select id from factact.audit_events where event_type='SUPPORT_RESPONSE_CORRECTED'");
+  expect(audit.rows).toHaveLength(0);
+ });
+
+ it('exposes a correction via HTTP then denies revoked UPDATE and reassigned beneficiary',async()=>{
+  const grantId=await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  const original=(await postScopedResponse(workA,response()).expect(200)).body.data;
+  const payload={requestId:randomUUID(),expectedRecordRevision:1,
+   responseText:'Replaced wording',correctionReason:'Original phrasing wrong'};
+  const first=await postCorrection(workA,original.id,payload).expect(200);
+  const retry=await postCorrection(workA,original.id,payload).expect(200);
+  expect(retry.body.data.id).toBe(first.body.data.id);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='Access withdrawn' where id=$1`,
+   [grantId,now,ids.operator]);
+  await postCorrection(workA,first.body.data.id,{...payload,requestId:randomUUID(),expectedRecordRevision:2})
+   .expect(404);
+  await grant('SERVICE',null,null,{operations:['UPDATE']});
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'支援対象変更'});
+  await confirm(eventA,companyB,2);
+  await postCorrection(workA,first.body.data.id,{...payload,requestId:randomUUID(),expectedRecordRevision:2})
+   .expect(404);
+  const rows=await db.admin.query("select id from factact.support_work_records where kind='RESPONSE_CORRECTION'");
+  expect(rows.rows).toHaveLength(1);
+ });
+});
+
+describe('scoped SUPPORT Work authorized list and pagination',()=>{
+ it('returns no tenant-wide records, count or continuation without a grant, despite ADMIN Role',async()=>{
+  const response=await getPage().expect(200);
+  expect(response.body.data).toEqual({items:[],nextCursor:null});
+  expect(JSON.stringify(response.body)).not.toContain('Company B confidential');
+  await request(app).get('/api/support').set('Cookie',sessionCookie).expect(403);
+  await request(app).get('/api/scoped/support-work').expect(401);
+ });
+
+ it('lists only recipient A with no B existence/count leak, even though both have the same Caller',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const res=await getPage().expect(200);
+  expect(res.body.data.items.map((w:{workId:string})=>w.workId)).toEqual([workA]);
+  expect(res.body.data).not.toHaveProperty('total');
+  expect(res.body.data.nextCursor).toBeNull();
+  expect(JSON.stringify(res.body)).not.toContain(workB);
+  expect(JSON.stringify(res.body)).not.toContain('Company B confidential');
+ });
+
+ it('paginates AFTER authorization, never counting hidden B Work as a page item',async()=>{
+  const second=await createWork('Another A Work');
+  await confirm(second.eventId,ids.organization);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const first=await getPage('?limit=1').expect(200);
+  expect(first.body.data.items).toHaveLength(1);
+  expect(first.body.data.nextCursor).toEqual(expect.any(String));
+  const next=await getPage(`?limit=1&cursor=${first.body.data.nextCursor}`).expect(200);
+  expect(next.body.data.items).toHaveLength(1);
+  const seen=[first.body.data.items[0].workId,next.body.data.items[0].workId].sort();
+  expect(seen).toEqual([workA,second.workId].sort());
+  expect(seen).not.toContain(workB);
+  expect((await getPage(`?limit=1&cursor=${next.body.data.nextCursor}`).expect(200)).body.data.items).toEqual([]);
+ });
+
+ it('respects Work-only, correct object/operation and explicit Service-wide scopes',async()=>{
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await grant('SERVICE_RECIPIENT',recipientB,null,{objectKind:'KNOWLEDGE'});
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('WORK',recipientA,workA);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId)).toEqual([workA]);
+  await grant('SERVICE');
+  const all=(await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId);
+  expect(all.sort()).toEqual([workA,workB].sort());
+ });
+
+ it('rechecks revocation, latest beneficiary and Contract on every page of an existing session',async()=>{
+  const grantId=await grant('SERVICE_RECIPIENT',recipientA);
+  expect((await getPage().expect(200)).body.data.items).toHaveLength(1);
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='解除'
+   where id=$1`,[grantId,now,ids.operator]);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'対象確認を取消'});
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+  await confirm(eventA,ids.organization,2);
+  await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
+   [ids.contract,'2026-11-06T00:00:00.000Z']);
+  expect((await getPage().expect(200)).body.data.items).toEqual([]);
+ });
+
+ it('filters reassigned Work before pagination, even with a Service-wide READ grant',async()=>{
+  const stable=await createWork('A stable case');
+  await confirm(stable.eventId,ids.organization);
+  await grant('SERVICE');
+  const before=(await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId);
+  expect(before.sort()).toEqual([workA,workB,stable.workId].sort());
+  await confirm(eventA,companyB,1);
+  await get(workA).expect(404);
+  const seen:string[]=[];
+  let cursor:string|null=null;
+  for(let n=0;n<4;n++){
+   const page:{body:{data:{items:{workId:string;title:string}[];nextCursor:string|null}}}=
+    await getPage(`?limit=1${cursor?`&cursor=${cursor}`:''}`).expect(200);
+   if(!page.body.data.items.length)break;
+   seen.push(page.body.data.items[0]!.workId);
+   cursor=page.body.data.nextCursor;
+   if(!cursor)break;
+  }
+  expect(seen.sort()).toEqual([workB,stable.workId].sort());
+  expect(seen).not.toContain(workA);
+  const all=(await getPage().expect(200)).body.data;
+  expect(JSON.stringify(all)).not.toContain('A customer detail');
+  expect(all).not.toHaveProperty('total');
+ });
+
+ it('does not revive A/B-reassigned summary after returning beneficiary back to A',async()=>{
+  await grant('SERVICE');
+  await confirm(eventA,companyB,1);
+  await get(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId))
+   .toEqual([workB]);
+ });
+
+ it('rejects malformed paging inputs without exposing SQL or target details',async()=>{
+  await getPage('?limit=0').expect(400);
+  await getPage('?limit=51').expect(400);
+  await getPage('?cursor=not-a-cursor').expect(400);
+  await getPage(`?serviceRecipientId=${recipientB}`).expect(400);
+ });
+});
+
+describe('scoped SUPPORT Work detail and bounded activity history',()=>{
+ it('returns indistinguishable 404 for missing, ungranted A and ungranted B Work',async()=>{
+  await recordResponse(workA,'A response');
+  await recordResponse(workB,'B confidential response');
+  const a=await getHistory(workA).expect(404);
+  const b=await getHistory(workB).expect(404);
+  const missing=await getHistory(randomUUID()).expect(404);
+  expect(a.body.error).toEqual(missing.body.error);
+  expect(b.body.error).toEqual(missing.body.error);
+  expect(JSON.stringify(a.body)).not.toContain('response');
+  await request(app).get(`/api/scoped/support-work/${workA}/history`).expect(401);
+ });
+
+ it('returns only authorized A Work responses and sanitized lifecycle, never drafts or B records',async()=>{
+  await commands.recordWork(internal,workA,{requestId:randomUUID(),expectedRevision:0,kind:'DRAFT',
+   correctionReason:'',notes:{form:'SIMPLE_RESPONSE',responseText:'A internal draft secret',
+    disposition:'MONITORING',followUpAt:null}});
+  await commands.setWaiting(internal,workA,{requestId:randomUUID(),expectedRevision:0,
+   party:'A',reason:'Private internal waiting reason',nextAction:'Next step'});
+  await recordResponse(workA,'A recorded response',1,1);
+  await recordResponse(workB,'B confidential response');
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const response=await getHistory(workA).expect(200);
+  const data=response.body.data;
+  expect(data.work).toMatchObject({workId:workA,serviceRecipientId:recipientA});
+  expect(data.entries.map((e:{kind:string})=>e.kind).sort()).toEqual(['RESPONSE','WAITING_SET']);
+  expect(data.entries.find((e:{kind:string})=>e.kind==='RESPONSE')).toMatchObject({
+   responseText:'A recorded response',disposition:'MONITORING',revision:2,
+  });
+  expect(data.entries.find((e:{kind:string})=>e.kind==='WAITING_SET')).toMatchObject({
+   responseText:null,disposition:null,
+  });
+  expect(Object.keys(data.entries[0]).sort()).toEqual([
+   'canCorrect','disposition','id','kind','occurredAt','responseText','revision',
+  ]);
+  const serialized=JSON.stringify(response.body);
+  for(const secret of ['A internal draft secret','Private internal waiting reason','B confidential response',
+   'commandPayload','recordedByOperatorId','Company B confidential'])expect(serialized).not.toContain(secret);
+  await getHistory(workB).expect(404);
+ });
+
+ it('paginates authorized Work-local events and rechecks revocation on an existing session',async()=>{
+  await commands.setWaiting(internal,workA,{requestId:randomUUID(),expectedRevision:0,
+   party:'A',reason:'Waiting',nextAction:'Resume'});
+  await commands.resumeWork(internal,workA,{requestId:randomUUID(),expectedRevision:1,
+   nextAction:'Continue'});
+  await recordResponse(workA,'A response',2);
+  await recordResponse(workB,'B response');
+  const grantId=await grant('WORK',recipientA,workA);
+  const seen:string[]=[];
+  let cursor:string|null=null;
+  for(let n=0;n<4;n++){
+   const page:{body:{data:{entries:{kind:string}[];nextCursor:string|null}}}=
+    await getHistory(workA,`?limit=1${cursor?`&cursor=${cursor}`:''}`).expect(200);
+   if(!page.body.data.entries.length)break;
+   expect(page.body.data.entries).toHaveLength(1);
+   seen.push(page.body.data.entries[0]!.kind);
+   cursor=page.body.data.nextCursor;
+   if(!cursor)break;
+  }
+  expect(seen.sort()).toEqual(['RESPONSE','RESUMED','WAITING_SET']);
+  expect(JSON.stringify(seen)).not.toContain('B response');
+  await getHistory(workB).expect(404);
+  await db.admin.query(`update factact.scoped_actor_grants
+   set status='REVOKED',revoked_at=$2,revoked_by_operator_id=$3,revocation_reason='revoked'
+   where id=$1`,[grantId,now,ids.operator]);
+  await getHistory(workA).expect(404);
+ });
+
+ it('requires correct READ grant, active beneficiary and effective contract for every page',async()=>{
+  await recordResponse(workA,'A response');
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await grant('SERVICE_RECIPIENT',recipientA,null,{objectKind:'KNOWLEDGE'});
+  await getHistory(workA).expect(404);
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await getHistory(workA).expect(200);
+  await commands.recordBeneficiary(internal,eventA,{kind:'CLEARED',requestId:randomUUID(),
+   expectedRevision:1,organizationId:null,reason:'受益先解除'});
+  await getHistory(workA).expect(404);
+  await confirm(eventA,ids.organization,2);
+  await getHistory(workA).expect(200);
+  await db.admin.query('update factact.contract_profiles set effective_to=$2 where id=$1',
+   [ids.contract,'2026-11-06T00:00:00.000Z']);
+  await getHistory(workA).expect(404);
+ });
+
+ it('does not retroactively expose A response history after reassignment to beneficiary B',async()=>{
+  await recordResponse(workA,'A private response before reassignment');
+  await grant('SERVICE_RECIPIENT',recipientB);
+  await confirm(eventA,companyB,1);
+  // Summary, list and history now apply the SAME deny-on-reassignment gate.
+  await get(workA).expect(404);
+  expect((await getPage().expect(200)).body.data.items.map((w:{workId:string})=>w.workId))
+   .toEqual([workB]);
+  const denied=await getHistory(workA).expect(404);
+  expect(JSON.stringify(denied.body)).not.toContain('A private response');
+ });
+
+ it('permits Service-wide access to each Work without joining the other Work history',async()=>{
+  await recordResponse(workA,'A own response');
+  await recordResponse(workB,'B own response');
+  await grant('SERVICE');
+  const a=await getHistory(workA).expect(200);
+  const b=await getHistory(workB).expect(200);
+  expect(a.body.data.entries.map((e:{responseText:string|null})=>e.responseText)).toEqual(['A own response']);
+  expect(b.body.data.entries.map((e:{responseText:string|null})=>e.responseText)).toEqual(['B own response']);
+ });
+
+ it('rejects untrusted history pagination and recipient arguments',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  await getHistory(workA,'?limit=0').expect(400);
+  await getHistory(workA,'?limit=51').expect(400);
+  await getHistory(workA,'?cursor=not-a-cursor').expect(400);
+  await getHistory(workA,`?serviceRecipientId=${recipientB}`).expect(400);
+ });
+});
