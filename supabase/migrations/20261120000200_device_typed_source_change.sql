@@ -9,7 +9,8 @@ ALTER TABLE factact.evidence
   DROP CONSTRAINT evidence_evidence_type_check;
 ALTER TABLE factact.evidence
   ADD CONSTRAINT evidence_evidence_type_check
-    CHECK (evidence_type IN ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','SOURCE_REFERENCE'));
+    CHECK (evidence_type IN
+      ('EXECUTION_ATTESTATION','VERIFICATION','DIAGNOSTIC','REVIEW_RETURN','SOURCE_REFERENCE'));
 
 -- Existing Evidence had tenant-wide Runtime read/insert grants. New source
 -- references can contain customer-specific provenance and must not inherit
@@ -146,7 +147,6 @@ BEGIN
      OR (work_id IS NULL AND action_id IS NULL
        AND registry_edit_request_id IS NOT NULL
        AND device_change_request_id IS NULL AND device_subject_id IS NULL
-       ' || join_registry_absent || '
        AND subject_type = ''PERSON'' AND subject_id IS NOT NULL
        AND proposed_by_operator_id IS NOT NULL
        AND change_type = ''KNOWLEDGE_STATE_CHANGE''
@@ -158,6 +158,7 @@ BEGIN
    ADD CONSTRAINT changes_exactly_one_source_check CHECK (
      (work_id IS NOT NULL AND action_id IS NOT NULL
        AND device_change_request_id IS NULL AND device_subject_id IS NULL
+       ' || join_registry_absent || '
        AND subject_type = ''PERSON'' AND subject_id IS NOT NULL
        AND change_type = ''REALITY_CHANGE''
        AND change_kind = ''PRIMARY_DEVICE_ASSIGNMENT'')

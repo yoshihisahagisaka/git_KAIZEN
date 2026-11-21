@@ -132,7 +132,7 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
   if(!r)throw Error('REGISTRY_PREFLIGHT_UNAVAILABLE');
   const expectedRpcCount=r.return_rpc_exists?4:3;
   const expectedFunctionCount=r.return_rpc_exists?7:4;
-  const common=r.server_version>=160000 && r.force_rls_count===31
+  const common=r.server_version>=160000 && r.force_rls_count===33
     && !r.runtime_name_update && !r.runtime_source_insert
     && !r.runtime_private_helper && r.runtime_rpc_count===expectedRpcCount;
   const before=!r.executor_exists && !r.return_rpc_exists && r.may_create_role
@@ -150,7 +150,7 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
     installed?(r.return_rpc_exists?'RETURN_INSTALLED':'INSTALLED'):'INCONSISTENT';
   return {phase,go:common&&(before||installed),database:r.database_name,
     actor:r.actor_name,serverVersion:r.server_version,
-    checks:{postgres16Plus:r.server_version>=160000,forcedTenantRls:r.force_rls_count===31,
+    checks:{postgres16Plus:r.server_version>=160000,forcedTenantRls:r.force_rls_count===33,
       runtimeNoNameUpdate:!r.runtime_name_update,runtimeNoSourceInsert:!r.runtime_source_insert,
       runtimeNoPrivateHelper:!r.runtime_private_helper,
       runtimeExpectedRpcs:r.runtime_rpc_count===expectedRpcCount,
