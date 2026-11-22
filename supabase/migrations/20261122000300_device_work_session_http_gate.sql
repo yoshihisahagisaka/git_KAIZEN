@@ -108,6 +108,10 @@ begin
       and r.source_locator='device-work-observation:'||o.id
       and r.source_observed_at=o.observed_at and r.source_work_id=o.work_id
       and r.target_device_id=o.device_id and r.actor_operator_id=o.observed_by_operator_id
+      and r.request_kind='DEVICE_FIELD_VERIFICATION'
+      and r.service_id=o.service_id and r.contract_profile_id=o.contract_profile_id
+      and r.service_recipient_id=o.organization_service_recipient_id
+      and r.organization_id=o.organization_id
     where c.tenant_id=v_tenant and c.id=p_change
       and c.change_kind='DEVICE_FIELD_VERIFICATION'
       and c.proposed_effect_json->>'field'=o.field_key
@@ -161,6 +165,9 @@ begin
         and r.source_locator='device-work-observation:'||o.id
         and r.source_observed_at=o.observed_at
         and r.source_work_id=o.work_id and r.target_device_id=o.device_id
+        and r.service_id=o.service_id and r.contract_profile_id=o.contract_profile_id
+        and r.service_recipient_id=o.organization_service_recipient_id
+        and r.organization_id=o.organization_id
       join factact.devices d on d.tenant_id=o.tenant_id and d.id=o.device_id
         and d.organization_id=o.organization_id
       join factact.operators op on op.tenant_id=r.tenant_id
