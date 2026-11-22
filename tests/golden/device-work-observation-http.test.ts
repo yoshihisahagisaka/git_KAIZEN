@@ -65,6 +65,41 @@ async function proposal(obs:string,key=randomUUID()){
  return {changeId:response.body.data.changeId as string,key};
 }
 
+
+/** Audit injection is disposable PostgreSQL-only; never alters the production schema.
+ * Every failure must roll back the entire Session-bound transaction. */
+async function withAuditInjection<T>(eventType:string,work:()=>Promise<T>):Promise<T>{
+ await db.admin.query(`create function factact_private.synthetic_s3c1b_audit_block()
+   returns trigger language plpgsql as $audit$
+   begin
+     if new.event_type=TG_ARGV[0] then
+       raise exception 'synthetic S3c1B audit failure';
+     end if;
+     return new;
+   end $audit$`);
+ await db.admin.query(`create trigger synthetic_s3c1b_audit_block
+   before insert on factact.audit_events for each row
+   execute function factact_private.synthetic_s3c1b_audit_block('${eventType}')`);
+ try{return await work();}
+ finally{
+   await db.admin.query('drop trigger synthetic_s3c1b_audit_block on factact.audit_events');
+   await db.admin.query('drop function factact_private.synthetic_s3c1b_audit_block()');
+ }
+}
+
+/** Deterministic grant-vs-command race: do not rely on sleep ordering. */
+async function waitForBlockedQuery(fragment:string):Promise<void>{
+ for(let i=0;i<120;i++){
+  const {rows}=await db.admin.query<{blocked:boolean}>(`
+    select exists(select 1 from pg_stat_activity
+      where wait_event_type='Lock' and query like $1) as blocked`,
+    ['%'+fragment+'%']);
+  if(rows[0]?.blocked)return;
+  await new Promise<void>(resolve=>setTimeout(resolve,25));
+ }
+ throw Error('Expected a live PostgreSQL authority-lock waiter: '+fragment);
+}
+
 beforeAll(async()=>{
  db=await testDatabase();
  identity=new PgIdentityStore(db.runtime,db.oidc);
@@ -267,6 +302,95 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
   }finally{
     await db.admin.query('drop trigger synthetic_s3c1b_http_audit_failure on factact.audit_events');
     await db.admin.query('drop function factact_private.synthetic_s3c1b_http_audit_failure()');
+  }
+ });
+
+
+ it('rolls back Proposal, Source and Change on a failed proposal Audit insert',async()=>{
+  const obs=await observation(),key=randomUUID();
+  const failed=await withAuditInjection('DEVICE_CHANGE_PROPOSED',async()=>
+    post(proposalPath(obs)).send({requestKey:key}).expect(500));
+  expect(failed.body.error.code).toBe('INTERNAL_ERROR');
+  expect(JSON.stringify(failed.body)).not.toContain('synthetic');
+  const state=await db.admin.query(`select
+    (select count(*)::integer from factact.device_change_requests) as requests,
+    (select count(*)::integer from factact.device_change_request_sources) as sources,
+    (select count(*)::integer from factact.changes
+      where change_kind='DEVICE_FIELD_VERIFICATION') as changes,
+    (select count(*)::integer from factact.audit_events
+      where event_type='DEVICE_CHANGE_PROPOSED') as audits`);
+  expect(state.rows[0]).toEqual({requests:0,sources:0,changes:0,audits:0});
+  const accepted=await proposal(obs,key);
+  const retry=await post(proposalPath(obs)).send({requestKey:key}).expect(202);
+  expect(retry.body.data.changeId).toBe(accepted.changeId);
+  expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+    where event_type='DEVICE_CHANGE_PROPOSED' and aggregate_id=$1`,
+    [accepted.changeId])).rows[0].n).toBe(1);
+ });
+
+ it('rolls back Commit, FIELD_VERIFIED and Audit on a failed commit Audit insert',async()=>{
+  const obs=await observation(),{changeId}=await proposal(obs);
+  const before=(await db.admin.query(
+    'select device_status,registry_revision from factact.devices where id=$1',
+    [ids.device])).rows[0];
+  const failed=await withAuditInjection('DEVICE_CHANGE_COMMITTED',async()=>
+    post(confirmPath(changeId),reviewerToken,'csrf-b').send(confirmBody).expect(500));
+  expect(failed.body.error.code).toBe('INTERNAL_ERROR');
+  expect(JSON.stringify(failed.body)).not.toContain('synthetic');
+  expect((await db.admin.query('select device_status,registry_revision from factact.devices where id=$1',
+    [ids.device])).rows[0]).toEqual(before);
+  expect((await db.admin.query(`select status,committed_by_operator_id from factact.changes
+    where id=$1`,[changeId])).rows[0]).toEqual({
+      status:'PROPOSED',committed_by_operator_id:null,
+    });
+  expect((await db.admin.query(`select count(*)::integer n from factact.device_field_events
+    where source_change_id=$1`,[changeId])).rows[0].n).toBe(0);
+  expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+    where aggregate_id=$1`,[changeId])).rows[0].n).toBe(1);
+  await post(confirmPath(changeId),reviewerToken,'csrf-b').send(confirmBody).expect(200);
+  expect((await db.admin.query('select device_status from factact.devices where id=$1',
+    [ids.device])).rows[0].device_status).toBe('AVAILABLE');
+  expect((await db.admin.query(`select count(*)::integer n from factact.device_field_events
+    where source_change_id=$1 and event_kind='FIELD_VERIFIED'`,
+    [changeId])).rows[0].n).toBe(1);
+  expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+    where aggregate_id=$1`,[changeId])).rows[0].n).toBe(3);
+ });
+
+ it('serializes concurrent reviewer Grant revocation ahead of Confirm and fails closed',async()=>{
+  const obs=await observation(),{changeId}=await proposal(obs);
+  const holder=await db.admin.connect();
+  let revoke:Promise<unknown>|null=null;
+  let confirm:Promise<unknown>|null=null;
+  let released=false;
+  try{
+    await holder.query('begin');
+    await holder.query('select factact.lock_scoped_actor_authority($1,$2)',
+      [ids.tenant,reviewerId]);
+    // Grant DML must block on the very same actor authority advisory lock.
+    revoke=db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+      revoked_at=now(),revoked_by_operator_id=$1,revocation_reason='Concurrent S3c1B revoke'
+      where id=$2`,[ids.operator,reviewerGrant]);
+    await waitForBlockedQuery('update factact.scoped_actor_grants');
+    // Issue the HTTP Confirm only after the revocation has entered the lock queue.
+    confirm=post(confirmPath(changeId),reviewerToken,'csrf-b').send(confirmBody);
+    await waitForBlockedQuery('device_confirm_observation_session');
+    await holder.query('commit');released=true;
+    await revoke;
+    const response=await confirm as {status:number;body:{error:{code:string}}};
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('NOT_FOUND');
+    expect((await get(queuePath).expect(200)).body.data.items).toEqual([]);
+    expect((await db.admin.query('select device_status from factact.devices where id=$1',
+      [ids.device])).rows[0].device_status).toBe('UNKNOWN');
+    expect((await db.admin.query('select status from factact.changes where id=$1',
+      [changeId])).rows[0].status).toBe('PROPOSED');
+    expect((await db.admin.query(`select count(*)::integer n from factact.device_field_events
+      where source_change_id=$1`,[changeId])).rows[0].n).toBe(0);
+  }finally{
+    if(!released)await holder.query('rollback');
+    holder.release();
+    if(revoke)await Promise.allSettled([revoke,confirm??Promise.resolve()]);
   }
  });
 
