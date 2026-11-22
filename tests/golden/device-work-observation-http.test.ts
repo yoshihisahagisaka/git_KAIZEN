@@ -75,6 +75,8 @@ beforeAll(async()=>{
 beforeEach(async()=>{
  await db.reset();
  await verifyExistingDevice(db.admin,ids.device,'PC-0073');
+ // The seed starts AVAILABLE; test the genuine UNKNOWN -> AVAILABLE knowledge transition.
+ await db.admin.query("update factact.devices set device_status='UNKNOWN' where id=$1",[ids.device]);
  await db.admin.query(`insert into factact.operators(id,tenant_id,email,display_name,status)
    values($1,$2,'s3c1b-reviewer@example.invalid','Reviewer B','ACTIVE')`,[reviewerId,ids.tenant]);
  await setupSession(ids.operator,actorToken,'csrf-a','s3c1b-operator-a');
@@ -178,7 +180,8 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
 
  it('revoked identity membership makes both HTTP and SQL Session gate fail closed',async()=>{
   const obs=await observation();
-  await db.admin.query(`update factact_private.operator_identities set status='REVOKED'
+  await db.admin.query(`update factact_private.operator_identities set status='REVOKED',
+    revoked_at=now(),revocation_reason='S3c-1B session membership revocation test'
     where issuer=$1 and subject=$2`,[issuer,'s3c1b-operator-a']);
   await post(proposalPath(obs)).send({requestKey:randomUUID()}).expect(401);
   const raw=await db.runtime.connect();
