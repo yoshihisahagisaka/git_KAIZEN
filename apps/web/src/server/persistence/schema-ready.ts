@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 export async function assertSchemaReady(pool: Pool): Promise<void> {
   const required = ['factact.join_events', 'factact.work', 'factact.relations',
     'factact.support_events', 'factact.recipient_observations', 'factact.support_work_device_contexts', 'factact.support_work_target_observations',
+    'factact.device_work_field_observations',
     'factact.support_decisions', 'factact.knowledge_candidates', 'factact.support_work_records',
     'factact.scoped_actor_grants','factact_private.scoped_grant_approvers',
     'factact_private.scoped_grant_management_requests'];

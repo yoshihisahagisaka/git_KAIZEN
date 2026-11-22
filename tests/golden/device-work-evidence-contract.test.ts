@@ -74,21 +74,13 @@ describe('S3c-0 Device Work Evidence boundary characterization',()=>{
       where id=$1`,[work.serviceRecipientId])).rows[0]?.recipient_type).toBe('PERSON');
   });
 
-  it('characterizes the NO-GO gap: a free-form PHYSICAL_INVENTORY label currently passes without bound observation custody',async()=>{
+  it('rejects a free-form PHYSICAL_INVENTORY label without bound observation custody',async()=>{
     const payload=command({recipientId:recipient,sourceKind:'PHYSICAL_INVENTORY',
       observedValue:'FORGED-NOT-OBSERVED',locator:'free-form:physical-claim'});
-    await expect(propose(payload)).resolves.toMatchObject({rows:[{id:payload.changeId}]});
-    await expect(withTenant(db.runtime,ids.tenant,c=>c.query(
-      'select factact.device_confirm_change($1,$2,$3,$4)',
-      [ids.tenant,reviewer,payload.changeId,'Synthetic independent review'])))
-      .resolves.toMatchObject({rowCount:1});
-    expect((await db.admin.query(`select field_key,field_value,event_kind,source_kind,source_locator
-      from factact.device_field_events where source_change_id=$1`,[payload.changeId])).rows)
-      .toEqual([{field_key:'displayName',field_value:'FORGED-NOT-OBSERVED',
-        event_kind:'FIELD_VERIFIED',source_kind:'PHYSICAL_INVENTORY',
-        source_locator:'free-form:physical-claim'}]);
-    expect((await db.admin.query('select display_name from factact.devices where id=$1',[ids.device]))
-      .rows[0]?.display_name).not.toBe('FORGED-NOT-OBSERVED');
+    await expect(propose(payload)).rejects.toMatchObject({code:'42501'});
+    expect((await db.admin.query('select 1 from factact.device_change_requests')).rowCount).toBe(0);
+    expect((await db.admin.query('select 1 from factact.device_field_events where source_change_id=$1',
+      [payload.changeId])).rowCount).toBe(0);
   });
 
   it('keeps caller statements UNVERIFIED and unable to represent an exact Device field tuple',async()=>{
