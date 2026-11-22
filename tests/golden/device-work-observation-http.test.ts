@@ -8,6 +8,9 @@ import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-st
 import {PgDeviceWorkObservationSessionStore} from '../../apps/web/src/server/persistence/device-work-observation-session-store.js';
 import {createApp} from '../../apps/web/src/server/app.js';
 import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
+import {PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {JoinCommands} from '../../packages/application/src/join-commands.js';
+import {JoinQueries} from '../../packages/application/src/join-queries.js';
 import {SupportCommands} from '../../packages/application/src/support-commands.js';
 import type {Operator} from '../../packages/domain/src/operator.js';
 
@@ -393,6 +396,85 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
     holder.release();
     if(revoke)await Promise.allSettled([revoke,confirm??Promise.resolve()]);
   }
+ });
+
+
+ it('I1 reuses one SUPPORT-verified Device FACT in JOIN without a second Device or Relation',async()=>{
+  const uow=new PgJoinUnitOfWork(db.runtime);
+  const join=new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()});
+  const queries=new JoinQueries(uow);
+  const event=await join.createJoinEvent(actor,{
+    organizationId:ids.organization,personId:ids.person,serviceId:ids.service,
+    joinDate:'2026-11-23',
+  });
+  const evaluation=await join.evaluateJoinRequirements(actor,event.eventId);
+  const joinWorkId=evaluation.works[0]!.id;
+
+  // A verified assetTag at an earlier Device revision is not enough while
+  // the authoritative Status is UNKNOWN. No Work creates a Registry Relation.
+  const before=await queries.assignableDevices(actor,joinWorkId);
+  expect(before.map(d=>d.id)).not.toContain(ids.device);
+  expect((await queries.personContext(actor,ids.person)).currentRelations).toEqual([]);
+  const obs=await observation(),{changeId:deviceChangeId}=await proposal(obs);
+  expect((await queries.assignableDevices(actor,joinWorkId)).map(d=>d.id))
+    .not.toContain(ids.device);
+  expect((await db.admin.query('select device_status from factact.devices where id=$1',
+    [ids.device])).rows[0].device_status).toBe('UNKNOWN');
+
+  // A distinct authorized Human confirms the exact observed status through HTTP.
+  await post(confirmPath(deviceChangeId),reviewerToken,'csrf-b').send(confirmBody).expect(200);
+  const updated=await db.admin.query(`select device_status,registry_revision from factact.devices
+    where id=$1`,[ids.device]);
+  expect(updated.rows[0].device_status).toBe('AVAILABLE');
+  expect((await queries.personContext(actor,ids.person)).currentRelations).toEqual([]);
+  const eligible=await queries.assignableDevices(actor,joinWorkId);
+  expect(eligible.map(d=>d.id)).toContain(ids.device);
+  const statuses=await db.admin.query(`select field_key,field_value,event_kind,
+    source_change_id,device_revision from factact.device_field_events
+    where device_id=$1 and event_kind='FIELD_VERIFIED'
+    order by device_revision,field_key`,[ids.device]);
+  expect(statuses.rows).toEqual(expect.arrayContaining([
+    expect.objectContaining({field_key:'assetTag',field_value:'PC-0073',
+      event_kind:'FIELD_VERIFIED'}),
+    expect.objectContaining({field_key:'deviceStatus',field_value:'AVAILABLE',
+      event_kind:'FIELD_VERIFIED',source_change_id:deviceChangeId}),
+  ]));
+
+  // JOIN consumes the same Device ID and executes its original Action and
+  // Change path; SUPPORT verification never fabricates an assignment.
+  const assigned=await join.startAssignDeviceAction(actor,{
+    workId:joinWorkId,deviceId:ids.device,
+    executionSummary:'JOIN: assigned the verified PC in the synthetic Work',
+    effectiveFrom:'2026-11-22T09:00:00.000Z',
+  });
+  await join.verifyChange(actor,assigned.changeId,'JOIN: verified the Device assignment');
+  await join.commitChange(actor,assigned.changeId);
+  const context=await queries.personContext(actor,ids.person);
+  expect(context.currentRelations).toHaveLength(1);
+  expect(context.currentRelations[0]).toMatchObject({
+    toEntityId:ids.device,sourceChangeId:assigned.changeId,
+  });
+  expect(context.verifiedFacts[0]).toMatchObject({
+    assetTag:'PC-0073',semanticType:'FACT',reliability:'VERIFIED',
+    sourceChangeId:assigned.changeId,
+  });
+
+  const origins=await db.admin.query(`select id,change_kind,work_id,action_id,
+    device_change_request_id from factact.changes
+    where id in ($1,$2) order by change_kind`,[deviceChangeId,assigned.changeId]);
+  expect(origins.rows).toHaveLength(2);
+  expect(origins.rows).toEqual(expect.arrayContaining([
+    expect.objectContaining({id:deviceChangeId,change_kind:'DEVICE_FIELD_VERIFICATION',
+      work_id:null,action_id:null,device_change_request_id:expect.any(String)}),
+    expect.objectContaining({id:assigned.changeId,change_kind:'PRIMARY_DEVICE_ASSIGNMENT',
+      work_id:joinWorkId,action_id:expect.any(String),device_change_request_id:null}),
+  ]));
+  expect((await db.admin.query('select count(*)::integer n from factact.devices where id=$1',
+    [ids.device])).rows[0].n).toBe(1);
+  expect((await db.admin.query(`select count(*)::integer n from factact.device_field_events
+    where source_change_id=$1`,[deviceChangeId])).rows[0].n).toBe(1);
+  expect((await db.admin.query(`select count(*)::integer n from factact.device_field_events
+    where source_change_id=$1`,[assigned.changeId])).rows[0].n).toBe(0);
  });
 
  it('restricts new Session RPC grants and preserves legacy Device write protection',async()=>{
