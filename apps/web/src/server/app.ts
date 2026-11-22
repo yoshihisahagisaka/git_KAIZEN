@@ -23,8 +23,9 @@ import type {RegistryEditCommands} from '../../../../packages/application/src/re
 import {registryReviewRoutes,type RegistryReviewReader} from './registry-review-routes.js';
 import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
 import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
+import {deviceWorkObservationRoutes,type AuthenticatedDeviceWorkObservationStore} from './device-work-observation-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -47,6 +48,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (scopedRegistry) app.use('/api',scopedRegistryRoutes(scopedRegistry,registryEditCommands));
   if (registryReview && registryEditCommands) app.use('/api',registryReviewRoutes(registryReview,registryEditCommands));
   if (operatorPolicyAdmin) app.use('/api',operatorPolicyAdminRoutes(operatorPolicyAdmin));
+  if (deviceWorkObservationStore) app.use('/api',deviceWorkObservationRoutes(deviceWorkObservationStore));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
