@@ -229,10 +229,53 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
   }finally{await client.query('rollback');client.release();}
  });
 
+
+ it('serializes concurrent observations of the same Work revision',async()=>{
+  const [a,b]=await Promise.all([
+    post(recordPath()).send(recordBody()),
+    post(recordPath()).send(recordBody()),
+  ]);
+  expect([a.status,b.status].sort()).toEqual([201,409]);
+  expect((await db.admin.query('select count(*)::integer n from factact.device_work_field_observations'))
+    .rows[0].n).toBe(1);
+  expect((await db.admin.query(`select count(*)::integer n from factact.evidence
+    where title='SUPPORT Device field direct observation'`)).rows[0].n).toBe(1);
+  expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+    where event_type='SUPPORT_DEVICE_FIELD_OBSERVED'`)).rows[0].n).toBe(1);
+  expect((await db.admin.query('select device_status from factact.devices where id=$1',
+    [ids.device])).rows[0].device_status).toBe('UNKNOWN');
+ });
+
+ it('rolls back HTTP Observation, Evidence and Audit together on injected audit failure',async()=>{
+  await db.admin.query(`create function factact_private.synthetic_s3c1b_http_audit_failure()
+    returns trigger language plpgsql as $begin
+      if new.event_type='SUPPORT_DEVICE_FIELD_OBSERVED' then
+        raise exception 'synthetic S3c1B audit failure'; end if;
+      return new;
+    end$`);
+  await db.admin.query(`create trigger synthetic_s3c1b_http_audit_failure
+    before insert on factact.audit_events for each row
+    execute function factact_private.synthetic_s3c1b_http_audit_failure()`);
+  try {
+    await post(recordPath()).send(recordBody()).expect(500);
+    expect((await db.admin.query('select count(*)::integer n from factact.device_work_field_observations'))
+      .rows[0].n).toBe(0);
+    expect((await db.admin.query(`select count(*)::integer n from factact.evidence
+      where title='SUPPORT Device field direct observation'`)).rows[0].n).toBe(0);
+    expect((await db.admin.query(`select count(*)::integer n from factact.audit_events
+      where event_type='SUPPORT_DEVICE_FIELD_OBSERVED'`)).rows[0].n).toBe(0);
+  }finally{
+    await db.admin.query('drop trigger synthetic_s3c1b_http_audit_failure on factact.audit_events');
+    await db.admin.query('drop function factact_private.synthetic_s3c1b_http_audit_failure()');
+  }
+ });
+
  it('restricts new Session RPC grants and preserves legacy Device write protection',async()=>{
   const {rows}=await db.admin.query(`select
     has_function_privilege('factact_runtime',
       'factact.device_record_observation_session(text,jsonb)','EXECUTE') as new_record,
+    has_function_privilege('public',
+      'factact.device_record_observation_session(text,jsonb)','EXECUTE') as public_record,
     has_function_privilege('factact_runtime',
       'factact.record_support_device_field_observation(uuid,uuid,jsonb)','EXECUTE') as old_record,
     has_function_privilege('factact_runtime',
@@ -240,6 +283,6 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
     (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='factact' and c.relkind='r' and c.relrowsecurity and c.relforcerowsecurity)
       as forced_rls`);
-  expect(rows[0]).toMatchObject({new_record:true,old_record:false,old_propose:false,forced_rls:35});
+  expect(rows[0]).toMatchObject({new_record:true,public_record:false,old_record:false,old_propose:false,forced_rls:35});
  });
 });
