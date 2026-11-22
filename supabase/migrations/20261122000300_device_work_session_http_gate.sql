@@ -30,7 +30,7 @@ begin
 
   -- The real SUPPORT Person Work determines the Customer Organization;
   -- only one active Organization ServiceRecipient is admissible.
-  select count(*)::integer,min(o.id) into v_count,v_recipient
+  select count(*)::integer,(array_agg(o.id))[1] into v_count,v_recipient
     from factact.work w
     join factact.service_recipients person_r
       on person_r.tenant_id=w.tenant_id and person_r.id=w.service_recipient_id
