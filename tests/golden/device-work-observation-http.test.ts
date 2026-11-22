@@ -195,6 +195,40 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
     .rows[0].n).toBe(0);
  });
 
+
+ it('hides other-customer Device identity even within the same Tenant',async()=>{
+  const customerB=randomUUID(),deviceB=randomUUID();
+  await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
+    values($1,$2,'Unrelated synthetic customer','ACTIVE')`,[customerB,ids.tenant]);
+  await db.admin.query(`insert into factact.devices
+    (id,tenant_id,organization_id,asset_tag,display_name,device_status,registry_revision)
+    values($1,$2,$3,'PC-B','Other customer','UNKNOWN',1)`,
+    [deviceB,ids.tenant,customerB]);
+  const outside=await post(recordPath()).send({...recordBody(),deviceId:deviceB}).expect(404);
+  const missing=await post(recordPath()).send({...recordBody(),deviceId:randomUUID()}).expect(404);
+  expect(outside.body.error).toEqual(missing.body.error);
+  expect((await db.admin.query('select count(*)::integer n from factact.device_work_field_observations'))
+    .rows[0].n).toBe(0);
+ });
+
+ it('rotates the verified Session and rejects the previous token/hash',async()=>{
+  const newToken='s3c1b-rotated-operator-session';
+  const switched=await identity.switchSessionContext(tokenHash(actorToken),tokenHash(newToken),
+    ids.tenant,'rotated-csrf');
+  expect(switched?.operatorId).toBe(ids.operator);
+  await post(recordPath()).send(recordBody()).expect(401);
+  const row=(await post(recordPath(),newToken,'rotated-csrf')
+    .send(recordBody()).expect(201)).body.data;
+  expect(row.observationId).toMatch(/^[0-9a-f-]{36}$/);
+  const client=await db.runtime.connect();
+  try{
+    await client.query('begin');
+    await client.query("select set_config('factact.tenant_id',$1,true)",[ids.tenant]);
+    await expect(client.query('select factact.device_propose_observation_session($1,$2,$3)',
+      [tokenHash(actorToken),row.observationId,randomUUID()])).rejects.toMatchObject({code:'42501'});
+  }finally{await client.query('rollback');client.release();}
+ });
+
  it('restricts new Session RPC grants and preserves legacy Device write protection',async()=>{
   const {rows}=await db.admin.query(`select
     has_function_privilege('factact_runtime',
