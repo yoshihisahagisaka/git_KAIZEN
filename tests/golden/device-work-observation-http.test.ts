@@ -373,7 +373,8 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
       where id=$2`,[ids.operator,reviewerGrant]);
     await waitForBlockedQuery('update factact.scoped_actor_grants');
     // Issue the HTTP Confirm only after the revocation has entered the lock queue.
-    confirm=post(confirmPath(changeId),reviewerToken,'csrf-b').send(confirmBody);
+    // Start the SuperTest thenable now; merely constructing a Test does not dispatch it.
+    confirm=Promise.resolve(post(confirmPath(changeId),reviewerToken,'csrf-b').send(confirmBody));
     await waitForBlockedQuery('device_confirm_observation_session');
     await holder.query('commit');released=true;
     await revoke;
