@@ -2,8 +2,10 @@ import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import {withTenant} from '../../apps/web/src/server/persistence/database.js';
 import {PgJoinUnitOfWork} from '../../apps/web/src/server/persistence/join-repository.js';
+import {PgSupportUnitOfWork} from '../../apps/web/src/server/persistence/support-repository.js';
 import {JoinCommands} from '../../packages/application/src/join-commands.js';
 import {JoinQueries} from '../../packages/application/src/join-queries.js';
+import {SupportCommands} from '../../packages/application/src/support-commands.js';
 import type {Operator} from '../../packages/domain/src/operator.js';
 import {ids,testDatabase} from '../fixtures/database.js';
 
@@ -11,6 +13,8 @@ type Db=Awaited<ReturnType<typeof testDatabase>>;
 let db:Db;
 let recipient:string,reviewer:string,evidenceId:string;
 const assetTag='SYNTH-DEVICE-001';
+const operator:Operator={id:ids.operator,tenantId:ids.tenant,displayName:'Synthetic Operator',
+  tenantName:'atLIB Development',roles:['ADMIN','OPERATOR','REVIEWER']};
 
 beforeAll(async()=>{db=await testDatabase();});
 beforeEach(async()=>{
@@ -66,20 +70,34 @@ async function committedInitial(){
 }
 async function verifyField(deviceId:string,field:'assetTag'|'deviceStatus',value:string,
   expectedRevision:number,requestKey:string){
-  const fieldEvidence=randomUUID();
-  await db.admin.query(`insert into factact.evidence
-    (id,tenant_id,evidence_type,title,content_text,created_by_operator_id,created_at)
-    values($1,$2,'SOURCE_REFERENCE',$3,'Synthetic physical verification',$4,now())`,
-    [fieldEvidence,ids.tenant,`Verify ${field}`,ids.operator]);
-  const source={kind:'PHYSICAL_INVENTORY',evidenceId:fieldEvidence,
-    locator:`inspection:${deviceId}:${field}`,observedAt:'2026-11-21T04:00:00.000Z'};
-  const command={changeId:randomUUID(),serviceId:ids.service,contractProfileId:ids.contract,
-    serviceRecipientId:recipient,organizationId:ids.organization,deviceId,workId:'',
-    kind:'DEVICE_FIELD_VERIFICATION',requestKey,expectedRevision,
-    effect:{field,observedValue:value,verificationSource:source},fingerprint:'e'.repeat(64),
-    sources:[{fieldKey:field,fieldValue:value,evidenceId:fieldEvidence,
-      sourceKind:'PHYSICAL_INVENTORY',locator:source.locator,observedAt:source.observedAt}]};
-  await propose(command);await confirm(command.changeId,`verified ${field}`);
+  const support=new SupportCommands(new PgSupportUnitOfWork(db.runtime),
+    {id:randomUUID,now:()=> '2026-11-21T04:00:00.000Z'});
+  const event=await support.createEvent(operator,{requestId:randomUUID(),personId:ids.person,
+    serviceId:ids.service,symptom:`Verify ${field}`});
+  const evaluated=await support.evaluate(operator,event.id,'REQUIRED',`Verify ${field}`);
+  const work=evaluated.work!;
+  const context=await support.confirmContextDevice(operator,work.id,{requestId:randomUUID(),
+    expectedRevision:0,deviceId,confirmationSource:'OPERATOR'});
+  await db.admin.query(`insert into factact.scoped_actor_grants
+    (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+     service_recipient_id,work_id,object_kind,operations,status,effective_from,issued_by_operator_id)
+    values($1,$2,$3,$4,$5,'WORK',$6,$7,'SUPPORT',array['UPDATE'],'ACTIVE',now()-interval '1 day',$3)`,
+    [randomUUID(),ids.tenant,ids.operator,ids.service,ids.contract,work.serviceRecipientId,work.id]);
+  const client=await db.admin.connect();let observation:string,changeId=randomUUID();
+  try{
+    await client.query('begin');
+    await client.query("select set_config('factact.tenant_id',$1,true)",[ids.tenant]);
+    await client.query('set local role factact_device_executor');
+    observation=(await client.query<{id:string}>(
+      'select factact.record_support_device_field_observation($1,$2,$3::jsonb) id',
+      [ids.tenant,ids.operator,{requestId:randomUUID(),workId:work.id,targetContextId:context.id,
+        deviceId,organizationServiceRecipientId:recipient,fieldKey:field,
+        observedValue:value,expectedRevision:0}])).rows[0]!.id;
+    await client.query('select factact.propose_observed_device_field_change($1,$2,$3,$4,$5)',
+      [ids.tenant,ids.operator,observation,changeId,requestKey]);
+    await client.query('commit');
+  }catch(error){await client.query('rollback');throw error;}finally{client.release();}
+  await confirm(changeId,`verified ${field}`);
 }
 async function correctField(deviceId:string,field:'displayName',value:string,
   expectedRevision:number,requestKey:string){
@@ -241,7 +259,7 @@ describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
     await expect(propose(stale)).rejects.toMatchObject({code:'40001'});
   });
 
-  it('verifies one physical field without promoting unrelated fields or creating a Relation',async()=>{
+  it('rejects a free physical label without promoting fields or creating a Relation',async()=>{
     const original=await committedInitial();
     const physical=randomUUID();
     await db.admin.query(`insert into factact.evidence
@@ -257,12 +275,12 @@ describe('S2b-2 authoritative Device DB commands / PostgreSQL 17',()=>{
       fingerprint:'d'.repeat(64),sources:[{fieldKey:'deviceStatus',fieldValue:'AVAILABLE',
         evidenceId:physical,sourceKind:'PHYSICAL_INVENTORY',locator:source.locator,
         observedAt:source.observedAt}]};
-    await propose(verification);await confirm(verification.changeId,'physical review');
+    await expect(propose(verification)).rejects.toMatchObject({code:'42501'});
     expect((await db.admin.query('select device_status,registry_revision from factact.devices where id=$1',
-      [original.deviceId])).rows[0]).toEqual({device_status:'AVAILABLE',registry_revision:'2'});
+      [original.deviceId])).rows[0]).toEqual({device_status:'UNKNOWN',registry_revision:'1'});
     expect((await db.admin.query(`select field_key,event_kind from factact.device_field_events
       where source_change_id=$1`,[verification.changeId])).rows).toEqual([
-      {field_key:'deviceStatus',event_kind:'FIELD_VERIFIED'}]);
+      ]);
     expect((await db.admin.query('select 1 from factact.relations where to_entity_id=$1',[original.deviceId])).rowCount)
       .toBe(0);
   });

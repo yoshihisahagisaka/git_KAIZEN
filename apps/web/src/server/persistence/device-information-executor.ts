@@ -1,5 +1,8 @@
 import type { PoolClient } from 'pg';
 import type { DeviceInformationChange } from '../../../../../packages/domain/src/device-information.js';
+import type {DeviceWorkFieldEvidencePort,ProposeObservedDeviceFieldChangeInput,
+  RecordSupportDeviceFieldObservationInput} from '../../../../../packages/application/src/device-work-field-evidence.js';
+import type {VerifiedDeviceSession} from '../../../../../packages/application/src/device-information-write-commands.js';
 
 type DeviceSourceRow={fieldKey:string;fieldValue:string;evidenceId:string;sourceKind:string;
   locator:string;observedAt:string;workId?:string};
@@ -23,5 +26,22 @@ export class DeviceInformationDatabaseExecutor {
     const result=await this.client.query<{id:string}>(
       'select factact.device_confirm_change($1,$2,$3,$4) id',[tenantId,actorId,changeId,summary]);
     return result.rows[0]!.id;
+  }
+}
+
+/** Internal server adapter only. S3c-1A intentionally has no HTTP endpoint. */
+export class PgDeviceWorkFieldEvidenceExecutor implements DeviceWorkFieldEvidencePort {
+  constructor(private readonly client:PoolClient) {}
+  async record(actor:VerifiedDeviceSession,input:RecordSupportDeviceFieldObservationInput){
+    const {rows}=await this.client.query<{id:string}>(
+      'select factact.record_support_device_field_observation($1,$2,$3::jsonb) id',
+      [actor.tenantId,actor.operatorId,input]);
+    return rows[0]!.id;
+  }
+  async propose(actor:VerifiedDeviceSession,input:ProposeObservedDeviceFieldChangeInput & {changeId:string}){
+    const {rows}=await this.client.query<{id:string}>(
+      'select factact.propose_observed_device_field_change($1,$2,$3,$4,$5) id',
+      [actor.tenantId,actor.operatorId,input.observationId,input.changeId,input.requestKey]);
+    return rows[0]!.id;
   }
 }
