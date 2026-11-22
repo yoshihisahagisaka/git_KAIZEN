@@ -73,10 +73,10 @@ async function propose(observationId:string,key='s3c1a-'+randomUUID()){
       .propose(deviceActor,{observationId,requestKey:key}));
   return {changeId:result,key};
 }
-async function confirm(changeId:string,who=reviewer){
+async function confirm(changeId:string,who=reviewer,summary='Independent direct-observation review'){
   return withTenant(db.runtime,ids.tenant,client=>client.query(
     'select factact.device_confirm_change($1,$2,$3,$4)',
-    [ids.tenant,who,changeId,'Independent direct-observation review']));
+    [ids.tenant,who,changeId,summary]));
 }
 
 describe('S3c-1A SUPPORT Work direct Device field observation / PostgreSQL 17',()=>{
@@ -140,6 +140,97 @@ describe('S3c-1A SUPPORT Work direct Device field observation / PostgreSQL 17',(
       .rejects.toMatchObject({code:'23505'});
   });
 
+  it('replays proposal and confirmation after commit without duplicate Device effects',async()=>{
+    const observation=await record();
+    const key='s3c1a-post-commit-'+randomUUID(),changeId=randomUUID();
+    await withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).propose(deviceActor,
+      {observationId:observation.id,requestKey:key,changeId}));
+    await confirm(changeId);
+    const before=(await db.admin.query(`select
+      (select count(*)::int from factact.changes where id=$1) changes,
+      (select count(*)::int from factact.device_field_events where source_change_id=$1) events,
+      (select count(*)::int from factact.audit_events where aggregate_id=$1) audits,
+      (select registry_revision from factact.devices where id=$2) revision`,[changeId,ids.device])).rows[0];
+    expect(await withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).propose(deviceActor,
+      {observationId:observation.id,requestKey:key,changeId}))).toBe(changeId);
+    await confirm(changeId);
+    expect((await db.admin.query(`select
+      (select count(*)::int from factact.changes where id=$1) changes,
+      (select count(*)::int from factact.device_field_events where source_change_id=$1) events,
+      (select count(*)::int from factact.audit_events where aggregate_id=$1) audits,
+      (select registry_revision from factact.devices where id=$2) revision`,[changeId,ids.device])).rows[0])
+      .toEqual(before);
+    await expect(confirm(changeId,reviewer,'Changed replay summary'))
+      .rejects.toMatchObject({code:'40001'});
+  });
+
+  it('revalidates current proposer and reviewer authority before any replay result',async()=>{
+    const observation=await record(),proposal=await propose(observation.id);
+    await confirm(proposal.changeId);
+    await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+      revoked_by_operator_id=$2,revoked_at=now(),revocation_reason='S3c replay revoke'
+      where actor_operator_id=$1 and object_kind='REGISTRY'`,[ids.operator,reviewer]);
+    await expect(withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).record(
+      deviceActor,observation.input))).rejects.toMatchObject({code:'42501'});
+    await expect(withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).propose(
+      deviceActor,{observationId:observation.id,requestKey:proposal.key,
+        changeId:proposal.changeId}))).rejects.toMatchObject({code:'42501'});
+    await expect(confirm(proposal.changeId)).rejects.toMatchObject({code:'42501'});
+  });
+
+  it('rejects committed confirmation replay after reviewer authority is revoked',async()=>{
+    const observation=await record(),proposal=await propose(observation.id);
+    await confirm(proposal.changeId);
+    await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+      revoked_by_operator_id=$2,revoked_at=now(),revocation_reason='S3c reviewer replay revoke'
+      where actor_operator_id=$1 and object_kind='REGISTRY'`,[reviewer,ids.operator]);
+    await expect(confirm(proposal.changeId)).rejects.toMatchObject({code:'42501'});
+  });
+
+  it('rejects exact retries after Work completion or Target Context termination',async()=>{
+    const observation=await record(),proposal=await propose(observation.id);
+    await confirm(proposal.changeId);
+    const support=new SupportCommands(new PgSupportUnitOfWork(db.runtime),runtime);
+    await support.recordSupportResponse(actor,workId,{requestId:randomUUID(),
+      expectedLifecycleRevision:0,expectedRecordRevision:0,responseText:'現物確認を完了',
+      disposition:'COMPLETED',followUpAt:null,close:{outcome:'RESOLVED',
+        closeReason:'確認完了',confirmsOutstandingResponsibilityEnded:true}});
+    await expect(withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).record(
+      deviceActor,observation.input))).rejects.toMatchObject({code:'42501'});
+    await expect(withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).propose(
+      deviceActor,{observationId:observation.id,requestKey:proposal.key,
+        changeId:proposal.changeId}))).rejects.toMatchObject({code:'42501'});
+    await expect(confirm(proposal.changeId)).rejects.toMatchObject({code:'42501'});
+  });
+
+  it('moves UNKNOWN Device status to AVAILABLE only after independent confirmation',async()=>{
+    await db.admin.query(`update factact.devices set device_status='UNKNOWN'
+      where tenant_id=$1 and id=$2`,[ids.tenant,ids.device]);
+    const before=(await db.admin.query(`select device_status,registry_revision from factact.devices
+      where tenant_id=$1 and id=$2`,[ids.tenant,ids.device])).rows[0];
+    const relations=(await db.admin.query('select * from factact.relations order by id')).rows;
+    expect(before.device_status).toBe('UNKNOWN');
+    const observation=await record(0,'AVAILABLE','deviceStatus');
+    expect((await db.admin.query(`select device_status,registry_revision from factact.devices
+      where tenant_id=$1 and id=$2`,[ids.tenant,ids.device])).rows[0]).toEqual(before);
+    const proposal=await propose(observation.id);
+    expect((await db.admin.query(`select device_status,registry_revision from factact.devices
+      where tenant_id=$1 and id=$2`,[ids.tenant,ids.device])).rows[0]).toEqual(before);
+    await confirm(proposal.changeId);
+    expect((await db.admin.query(`select device_status,registry_revision from factact.devices
+      where tenant_id=$1 and id=$2`,[ids.tenant,ids.device])).rows[0]).toEqual({
+        device_status:'AVAILABLE',registry_revision:String(Number(before.registry_revision)+1)});
+    expect((await db.admin.query(`select field_key,field_value,event_kind,source_work_id
+      from factact.device_field_events where source_change_id=$1`,[proposal.changeId])).rows)
+      .toEqual([{field_key:'deviceStatus',field_value:'AVAILABLE',event_kind:'FIELD_VERIFIED',
+        source_work_id:workId}]);
+    expect((await db.admin.query('select * from factact.relations order by id')).rows).toEqual(relations);
+    expect((await db.admin.query(`select event_type from factact.audit_events
+      where aggregate_id in ($1,$2) order by sequence`,[observation.id,proposal.changeId])).rows
+      .map(x=>x.event_type)).toEqual(['SUPPORT_DEVICE_FIELD_OBSERVED','DEVICE_CHANGE_PROPOSED',
+        'DEVICE_CHANGE_VERIFIED','DEVICE_CHANGE_COMMITTED']);
+  });
+
   it('rejects wrong value, stale revision, self-review and revoked authority without mutation',async()=>{
     const mismatch=await record(0,'FORGED-NOT-CURRENT');
     await expect(propose(mismatch.id)).rejects.toMatchObject({code:'42501'});
@@ -159,10 +250,15 @@ describe('S3c-1A SUPPORT Work direct Device field observation / PostgreSQL 17',(
 
   it('rejects ended/currently replaced context and superseded observation replay',async()=>{
     const observation=await record();
+    const proposal=await propose(observation.id);
+    await confirm(proposal.changeId);
     const support=new SupportCommands(new PgSupportUnitOfWork(db.runtime),runtime);
     await support.endContextDevice(actor,workId,{requestId:randomUUID(),expectedRevision:1,
       reason:'対象を再確認する'});
+    await expect(withExecutor(client=>new PgDeviceWorkFieldEvidenceExecutor(client).record(
+      deviceActor,observation.input))).rejects.toMatchObject({code:'42501'});
     await expect(propose(observation.id)).rejects.toMatchObject({code:'42501'});
+    await expect(confirm(proposal.changeId)).rejects.toMatchObject({code:'42501'});
   });
 
   it('keeps mismatch observations immutable, rejects UNKNOWN status, and only proposes the latest field observation',async()=>{

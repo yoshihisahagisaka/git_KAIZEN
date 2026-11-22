@@ -56,15 +56,15 @@ beforeEach(async()=>{
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('FACTACT Core V1 integrated Registry / JOIN / Device gate',()=>{
-  it('applies the complete 41-migration ledger as a non-superuser with FORCE RLS',async()=>{
+  it('applies the complete 42-migration ledger as a non-superuser with FORCE RLS',async()=>{
     const isolated=await testDatabase({
       migrationAsNonSuperuser:true,seedAsNonSuperuserWithRls:true,
     });
     try{
       const migrations=(await readdir('supabase/migrations'))
         .filter(name=>/^\d+.*\.sql$/u.test(name)).sort();
-      expect(migrations).toHaveLength(41);
-      expect(migrations.at(-1)).toBe('20261122000100_support_device_field_observation_gate.sql');
+      expect(migrations).toHaveLength(42);
+      expect(migrations.at(-1)).toBe('20261122000200_device_work_replay_authority.sql');
       expect((await isolated.admin.query(`select rolsuper,rolbypassrls from pg_roles
         where rolname='factact_migrator'`)).rows)
         .toEqual([{rolsuper:false,rolbypassrls:false}]);
