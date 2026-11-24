@@ -48,7 +48,10 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
   return ()=>{active=false;};
  },[open,revision]);
  const refresh=()=>setRevision(x=>x+1);
- const change=(v:Draft)=>{setDraft(v);setApprovalChecked(false);setNotice('');};
+ const change=(patch:Partial<Draft>)=>{
+  setDraft(previous=>previous?{...previous,...patch}:previous);
+  setApprovalChecked(false);setNotice('');
+ };
  const requestId=(op:string,payload:object)=>{
   const key=JSON.stringify({op,payload});
   if(retry.current?.key===key)return retry.current.id;
@@ -100,7 +103,7 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
      <button type="button" disabled={busy} onClick={()=>{setDraft(fresh());retry.current=null;setApprovalChecked(false);}}>新しいページ</button>
      <ul>{overview.pages.map(p=><li key={p.id}>
       <button type="button" className="secondary" disabled={busy}
-       onClick={()=>{change(fromPage(p));retry.current=null;}}>
+       onClick={()=>{setDraft(fromPage(p));setApprovalChecked(false);setNotice('');retry.current=null;}}>
        {p.title} / {p.status==='PUBLISHED'?'公開':p.status==='HIDDEN'?'非表示':'下書き'}
       </button></li>)}</ul>
      {!overview.pages.length&&<p>まだ手順書はありません。</p>}
@@ -110,29 +113,29 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
       <h3>{draft.id?'手順書を編集':'新規手順書'}</h3>
       <label htmlFor="procedure-admin-scope">適用範囲</label>
       <select id="procedure-admin-scope" disabled={busy||!!draft.id} value={draft.scopeKind}
-       onChange={event=>change({...draft,scopeKind:event.target.value as ProcedureScope})}>
+       onChange={event=>change({scopeKind:event.target.value as ProcedureScope})}>
        <option value="SERVICE">サービス別</option><option value="COMMON">共通</option>
       </select>
       {draft.scopeKind==='SERVICE'&&<>
        <label htmlFor="procedure-admin-service">サービス</label>
        <select id="procedure-admin-service" disabled={busy||!!draft.id} value={draft.serviceId}
-        onChange={event=>change({...draft,serviceId:event.target.value})}>
+        onChange={event=>change({serviceId:event.target.value})}>
         <option value="">選択してください</option>
         {overview.services.map(service=><option key={service.id} value={service.id}>{service.name}</option>)}
        </select>
       </>}
       <label htmlFor="procedure-admin-title">タイトル</label>
       <input id="procedure-admin-title" maxLength={160} value={draft.title} disabled={busy}
-       onChange={event=>change({...draft,title:event.target.value})}/>
+       onChange={event=>change({title:event.target.value})}/>
       <ProcedureBodyEditor category={draft.category} body={draft.bodyText} disabled={busy}
-       onChange={value=>change({...draft,...value})}/>
+       onChange={value=>change(value)}/>
       <label htmlFor="procedure-admin-order">表示順</label>
       <input id="procedure-admin-order" type="number" min={-100000} max={100000}
        value={draft.sortOrder} disabled={busy}
-       onChange={event=>change({...draft,sortOrder:Number(event.target.value)})}/>
+       onChange={event=>change({sortOrder:Number(event.target.value)})}/>
       <label htmlFor="procedure-admin-reason">作成・編集・公開の理由</label>
       <textarea id="procedure-admin-reason" value={draft.reason} disabled={busy}
-       maxLength={1000} onChange={event=>setDraft({...draft,reason:event.target.value})}/>
+       maxLength={1000} onChange={event=>{const reason=event.target.value;setDraft(previous=>previous?{...previous,reason}:previous);}}/>
       <button type="button" disabled={busy||!draft.title.trim()||!draft.reason.trim()||
         !validProcedureBody(draft.bodyText)||(!draft.serviceId&&draft.scopeKind==='SERVICE')||
         (!!draft.id&&draft.status==='PUBLISHED'&&!approvalChecked)}
