@@ -5,10 +5,15 @@ import {
 } from '../../../../packages/domain/src/procedure-page-text.js';
 
 export function ProcedureBodyText({body}:{body:string}) {
+ const lines=body.replace(/\r\n/g,'\n').split('\n');
  return <div className="procedure-body-text" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
-  {splitProcedureLinks(body).map((part,index)=>part.href
-   ?<a key={index} href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
-   :<span key={index}>{part.text}</span>)}
+  {lines.map((line,lineIndex)=><span key={lineIndex}>
+   {/^【[^】\n]{1,60}】$/u.test(line.trim())?<strong>{line}</strong>:
+    splitProcedureLinks(line).map((part,index)=>part.href
+     ?<a key={index} href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
+     :<span key={index}>{part.text}</span>)}
+   {lineIndex<lines.length-1?'\n':null}
+  </span>)}
  </div>;
 }
 
