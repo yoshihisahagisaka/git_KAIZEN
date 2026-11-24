@@ -57,7 +57,8 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
  };
  async function save(){
   if(!draft||busy||!draft.reason.trim()||!draft.title.trim()||
-   !validProcedureBody(draft.bodyText)||(!draft.serviceId&&draft.scopeKind==='SERVICE'))return;
+   !validProcedureBody(draft.bodyText)||(!draft.serviceId&&draft.scopeKind==='SERVICE')||
+   (!!draft.id&&draft.status==='PUBLISHED'&&!approvalChecked))return;
   setBusy(true);setError('');setNotice('');
   try {
    const payload={category:draft.category,title:draft.title,bodyText:draft.bodyText,
@@ -133,13 +134,14 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
       <textarea id="procedure-admin-reason" value={draft.reason} disabled={busy}
        maxLength={1000} onChange={event=>setDraft({...draft,reason:event.target.value})}/>
       <button type="button" disabled={busy||!draft.title.trim()||!draft.reason.trim()||
-        !validProcedureBody(draft.bodyText)||(!draft.serviceId&&draft.scopeKind==='SERVICE')}
+        !validProcedureBody(draft.bodyText)||(!draft.serviceId&&draft.scopeKind==='SERVICE')||
+        (!!draft.id&&draft.status==='PUBLISHED'&&!approvalChecked)}
        onClick={()=>void save()}>保存</button>
       {draft.id&&<>
        <p>現在の状態：{draft.status==='PUBLISHED'?'公開中':draft.status==='HIDDEN'?'非表示':'下書き'}</p>
-       {draft.status!=='PUBLISHED'&&<label><input type="checkbox" checked={approvalChecked}
+       {<label><input type="checkbox" checked={approvalChecked}
         onChange={event=>setApprovalChecked(event.target.checked)}/>
-        内容・外部リンクの承認と閲覧権限を確認しました</label>}
+        {draft.status==='PUBLISHED'?'公開中の本文変更は承認済みです':'内容・外部リンクの承認と閲覧権限を確認しました'}</label>}
        {draft.status!=='PUBLISHED'
         ?<button type="button" disabled={busy||!draft.reason.trim()||!approvalChecked||
           draft.bodyText===initialProcedureBody(draft.category)}
