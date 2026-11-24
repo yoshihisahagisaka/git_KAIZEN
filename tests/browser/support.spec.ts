@@ -302,7 +302,10 @@ test('P0-C: ADMIN edits and publishes a simple procedure in the browser without 
  await admin.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await admin.getByLabel('タイトル').fill('初回受付のFAQ');
  const editedBody='【質問】\n受付について\n【回答】\nご案内します。';
+ page.on('console',m=>{if(m.text().startsWith('P0C_'))console.log('TEST_PAGE',m.text());});
+ console.log('TEST_BEFORE_FILL', (await admin.getByLabel('本文（テキスト形式）').inputValue()).length);
  await admin.getByLabel('本文（テキスト形式）').fill(editedBody);
+ console.log('TEST_AFTER_FILL',JSON.stringify(await admin.getByLabel('本文（テキスト形式）').inputValue()));
  await expect(admin.getByLabel('本文（テキスト形式）')).toHaveValue(editedBody);
  await admin.getByLabel('作成・編集・公開の理由').fill('Synthetic FAQ作成');
  await admin.getByRole('button',{name:'保存',exact:true}).click();
