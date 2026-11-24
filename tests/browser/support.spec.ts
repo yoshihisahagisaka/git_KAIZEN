@@ -307,7 +307,16 @@ test('P0-C: ADMIN edits and publishes a simple procedure in the browser without 
  await expect(admin.getByRole('status')).toContainText('保存しました。');
  await admin.getByLabel('作成・編集・公開の理由').fill('承認済み資料');
  await admin.getByRole('checkbox',{name:'内容・外部リンクの承認と閲覧権限を確認しました'}).check();
- await admin.getByRole('button',{name:'確認して公開'}).click();
+ const pub=admin.getByRole('button',{name:'確認して公開'});
+ console.log('P0C_PUBLISH_STATE',JSON.stringify({
+  reason:await admin.getByLabel('作成・編集・公開の理由').inputValue(),
+  body:await admin.getByLabel('本文（テキスト形式）').inputValue(),
+  kind:await admin.getByLabel('種類').inputValue(),
+  checked:await admin.getByRole('checkbox').isChecked(),
+  enabled:await pub.isEnabled(),
+ }));
+ await expect(pub).toBeEnabled({timeout:5000});
+ await pub.click();
  await expect(admin.getByText('現在の状態：公開中')).toBeVisible();
  const records=await db.admin.query('select title,status,revision from factact.procedure_pages where title=$1',['初回受付のFAQ']);
  expect(records.rows).toEqual([{title:'初回受付のFAQ',status:'PUBLISHED',revision:2}]);
