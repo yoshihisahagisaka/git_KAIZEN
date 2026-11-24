@@ -15,6 +15,7 @@ import { JoinQueries } from '../../packages/application/src/join-queries.js';
 import { PgExploreSearchUnitOfWork } from '../../apps/web/src/server/persistence/explore-repository.js';
 import { ExploreQueries } from '../../packages/application/src/explore-queries.js';
 import { createApp } from '../../apps/web/src/server/app.js';
+import {PgProcedurePageStore} from '../../apps/web/src/server/persistence/procedure-page-store.js';
 import type { Config } from '../../apps/web/src/server/config.js';
 
 let db:Awaited<ReturnType<typeof testDatabase>>,server:Server,origin:string;
@@ -27,7 +28,9 @@ test.beforeAll(async()=>{
   // Production main.ts always uses the Google provider; no bypass flag or test route is shipped.
   const provider={authorizationUrl:(login:{state:string})=>`${origin}/auth/callback?code=test-code&state=${login.state}`,
     verifyCallback:async(url:URL,login:{state:string})=>{if(url.searchParams.get('code')!=='test-code'||url.searchParams.get('state')!==login.state)throw new Error('Invalid test callback');return{issuer:'https://seed.example.invalid',subject:'development-operator'};}};
-  const app=createApp(config,new PgIdentityStore(db.runtime,db.oidc),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},{commands:new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(new PgSupportUnitOfWork(db.runtime))},{queries:new ExploreQueries(new PgExploreSearchUnitOfWork(db.runtime))});
+  const app=createApp(config,new PgIdentityStore(db.runtime,db.oidc),provider,pino({level:'silent'}),{commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},{commands:new SupportCommands(new PgSupportUnitOfWork(db.runtime),{id:randomUUID,now:()=>new Date().toISOString()}),queries:new SupportQueries(new PgSupportUnitOfWork(db.runtime))},{queries:new ExploreQueries(new PgExploreSearchUnitOfWork(db.runtime))},
+    undefined,undefined,undefined,undefined,undefined,undefined,undefined,
+    new PgProcedurePageStore(db.runtime));
   server=await new Promise<Server>(ok=>{const s=app.listen(port,'127.0.0.1',()=>ok(s));});
 });
 test.afterAll(async()=>{if(server)await new Promise<void>((ok,fail)=>server.close(e=>e?fail(e):ok()));await db?.close();});
@@ -262,4 +265,50 @@ test('Responsibility management shows explainable My Work, Waiting and follow-up
  await expect(page.getByRole('heading',{name:'田中 一郎さんからの問い合わせ',exact:true})).toBeVisible();
  expect((await db.admin.query('select count(*)::int n from factact.audit_events')).rows[0].n).toBe(beforeAudit);
  expect((await db.admin.query('select waiting,status,work_owner_operator_id from factact.work where id=$1',[work.id])).rows[0]).toEqual({waiting:true,status:'IN_PROGRESS',work_owner_operator_id:actor.id});
+});
+
+
+test('P0-C: approved procedure page is searchable from SUPPORT without losing response draft',async({page})=>{
+ const docs=new PgProcedurePageStore(db.runtime);
+ const created=await docs.create(ids.tenant,ids.operator,{
+  requestId:randomUUID(),scopeKind:'SERVICE',serviceId:ids.service,category:'SCRIPT',
+  title:'リモートサポート案内',bodyText:'【案内する内容】\\n案内します。\\nhttps://docs.google.com/document/d/test。',
+  sortOrder:0,reason:'Synthetic approved script'});
+ await docs.changeStatus(ids.tenant,ids.operator,created.id,'PUBLISHED',{
+  requestId:randomUUID(),expectedRevision:1,reason:'承認済みテキストを公開'});
+ await login(page);await intake(page,'START');
+ const draft=page.getByLabel('対応内容');
+ await draft.fill('まだ保存しない対応メモ');
+ const assist=page.getByRole('complementary',{name:'対応アシスト'});
+ await assist.getByRole('button',{name:'手順書・トーク・FAQを検索'}).click();
+ const dialog=page.getByRole('dialog',{name:'手順書・FAQ'});
+ await expect(dialog.getByText('リモートサポート案内')).toBeVisible();
+ await dialog.getByRole('button',{name:'リモートサポート案内'}).click();
+ const content=dialog.getByRole('region',{name:'公開手順書の内容'});
+ await expect(content).toContainText('案内します。');
+ const link=content.getByRole('link',{name:'https://docs.google.com/document/d/test'});
+ await expect(link).toHaveAttribute('href','https://docs.google.com/document/d/test');
+ await expect(link).toHaveAttribute('target','_blank');
+ await expect(link).toHaveAttribute('rel','noopener noreferrer');
+ await dialog.getByRole('button',{name:'閉じる'}).click();
+ await expect(draft).toHaveValue('まだ保存しない対応メモ');
+});
+
+test('P0-C: ADMIN edits and publishes a simple procedure in the browser without deploy',async({page})=>{
+ await login(page);
+ const admin=page.getByRole('region',{name:'手順書管理'});
+ await admin.getByRole('button',{name:/手順書管理 を開く/}).click();
+ await admin.getByRole('button',{name:'新しいページ'}).click();
+ await admin.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await admin.getByLabel('タイトル').fill('初回受付のFAQ');
+ await admin.getByLabel('本文（テキスト形式）').fill('【質問】\\n受付について\\n【回答】\\nご案内します。');
+ await admin.getByLabel('作成・編集・公開の理由').fill('Synthetic FAQ作成');
+ await admin.getByRole('button',{name:'保存',exact:true}).click();
+ await expect(admin.getByRole('status')).toContainText('保存しました。');
+ await admin.getByLabel('作成・編集・公開の理由').fill('承認済み資料');
+ await admin.getByRole('checkbox',{name:'内容・外部リンクの承認と閲覧権限を確認しました'}).check();
+ await admin.getByRole('button',{name:'確認して公開'}).click();
+ await expect(admin.getByText('現在の状態：公開中')).toBeVisible();
+ const records=await db.admin.query('select title,status,revision from factact.procedure_pages where title=$1',['初回受付のFAQ']);
+ expect(records.rows).toEqual([{title:'初回受付のFAQ',status:'PUBLISHED',revision:2}]);
 });
