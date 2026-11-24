@@ -197,3 +197,24 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 @media(max-width:1000px) { .scoped-support-panels { grid-template-columns:1fr; } }
 @media(max-width:700px) { .scoped-action-fields { grid-template-columns:1fr; } }
 @media(max-width:700px) { .scoped-support-layout { grid-template-columns:1fr; } .scoped-support-navigation { padding:10px 16px; min-height:0; } .scoped-support-navigation strong { display:block; font-size:18px; } .scoped-support-navigation p { display:none; } .scoped-support-heading { flex-wrap:wrap; } .context-picker { width:100%; max-width:none; } }
+
+
+/* SONIX P0-C: lightweight service/common Procedure pages, no document CMS. */
+.procedure-reference { margin:12px 0; }
+.procedure-reference .context-dialog { max-width:min(920px,94vw); }
+.procedure-reference ul { margin:14px 0; padding:0; list-style:none; }
+.procedure-reference li { padding:8px 0; border-bottom:1px solid #e0e9eb; }
+.procedure-reference li small { color:#506970; }
+.procedure-body-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.75; }
+.procedure-body-text strong { font-weight:750; }
+.procedure-body-text a { overflow-wrap:anywhere; }
+.procedure-body-editor textarea { width:100%; min-height:330px; box-sizing:border-box; line-height:1.65; font-family:inherit; }
+.procedure-body-editor [role=group] { border:1px solid #b9cdd1; padding:12px; margin:12px 0; }
+.procedure-admin-grid { display:grid; grid-template-columns:minmax(220px,0.75fr) minmax(0,2fr); gap:20px; margin-top:14px; }
+.procedure-admin-grid > section { min-width:0; padding:16px; border:1px solid #d5e1e3; border-radius:7px; background:white; }
+.procedure-admin-grid ul { padding:0; list-style:none; }
+.procedure-admin-grid li { margin:6px 0; }
+.procedure-admin-grid li button { display:block; width:100%; text-align:left; overflow-wrap:anywhere; }
+.procedure-admin-grid input,.procedure-admin-grid select,.procedure-admin-grid textarea { max-width:100%; box-sizing:border-box; }
+.procedure-admin-grid label { margin-top:12px; }
+@media(max-width:900px) { .procedure-admin-grid { grid-template-columns:1fr; } }
