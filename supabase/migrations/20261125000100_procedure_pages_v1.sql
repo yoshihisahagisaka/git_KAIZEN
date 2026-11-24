@@ -1,6 +1,6 @@
 -- P0-C: simple service/common procedure pages, never Knowledge Candidates or Registry Facts.
 -- Forward-only, no document store/CMS and no publication by migration.
-begin;
+-- Migration runner owns the transaction; no nested BEGIN/COMMIT.
 
 create table factact.procedure_pages (
  id uuid primary key,
@@ -75,4 +75,3 @@ grant select,insert,update(title,body_text,category,sort_order,status,revision,u
  on factact.procedure_pages to factact_runtime;
 grant select,insert on factact.procedure_page_edits to factact_runtime;
 
-commit;
