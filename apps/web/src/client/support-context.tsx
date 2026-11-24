@@ -4,6 +4,7 @@ import type {PersonContextView,WorkDetailView} from '../../../../packages/applic
 import {useRead} from './support-ui.js';
 import {Notes} from './support-wizard.js';
 import {isLegacySupportRecord} from '../../../../packages/domain/src/support.js';
+import {ProcedurePageReference} from './procedure-page-reference.js';
 
 const time=(s:string)=>new Date(s).toLocaleString('ja-JP');
 // Native modal: keeps the Work mounted, traps focus, supports Escape and restores focus.
@@ -58,7 +59,8 @@ function SupportContextContent({v,revision,target}:{v:SupportDetailView;revision
   </section>
   <section className="support-assist-group" aria-label="手順・ナレッジ">
    <h3>手順・ナレッジ</h3>
-   <p>参考知識は未承認の候補です。正式な手順書・FAQの検索は今後の拡張対象です。</p>
+   {v.work&&<ProcedurePageReference workId={v.work.id}/>}
+   <p>公開済みの手順書と未承認の参考知識候補は別に扱います。</p>
    <ContextDialog title="参考知識を見る"><p>参考候補です。承認済みの手順・ルールではありません。</p>{!v.relatedKnowledge.length&&<p>このサービスの候補はまだありません。</p>}{v.relatedKnowledge.map(k=><article key={k.id}><h3>{k.title}</h3><p>参考知識の候補 / 未承認 — 適用ルールではありません</p><p>{k.contentText}</p><details className="audit-detail"><summary>元の対応・確認根拠</summary><p>Work: {k.sourceWorkId}</p><p>Evidence: {k.sourceEvidenceId}</p><p>Decision: {k.sourceDecisionId}</p></details></article>)}</ContextDialog>
    <p><a href="#/explore">情報を探す</a></p>
   </section>
