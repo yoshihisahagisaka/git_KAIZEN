@@ -49,6 +49,7 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
  },[open,revision]);
  const refresh=()=>setRevision(x=>x+1);
  const change=(patch:Partial<Draft>)=>{
+  if(typeof patch.bodyText==='string')console.log('P0C_ADMIN_PATCH_LEN',patch.bodyText.length);
   setDraft(previous=>previous?{...previous,...patch}:previous);
   setApprovalChecked(false);setNotice('');
  };
