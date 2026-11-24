@@ -1,4 +1,6 @@
 import { supportRoutes, type SupportServices } from './support-routes.js';
+import {procedurePageRoutes} from './procedure-page-routes.js';
+import type {PgProcedurePageStore} from './persistence/procedure-page-store.js';
 import express, { type ErrorRequestHandler } from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -25,7 +27,7 @@ import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
 import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 import {deviceWorkObservationRoutes,type AuthenticatedDeviceWorkObservationStore} from './device-work-observation-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -49,6 +51,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (registryReview && registryEditCommands) app.use('/api',registryReviewRoutes(registryReview,registryEditCommands));
   if (operatorPolicyAdmin) app.use('/api',operatorPolicyAdminRoutes(operatorPolicyAdmin));
   if (deviceWorkObservationStore) app.use('/api',deviceWorkObservationRoutes(deviceWorkObservationStore));
+  if (procedurePageStore) app.use('/api',procedurePageRoutes(procedurePageStore));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
