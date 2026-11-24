@@ -26,7 +26,11 @@ export function ProcedureBodyEditor({category,body,onChange,disabled=false}:{
  const [askReplace,setAskReplace]=useState(false);
  const changeCategory=(next:ProcedureCategory)=>{
   setAskReplace(false);
-  onChange({category:next,body:bodyForNewCategory(body,next)});
+  // An untouched auto-generated starter may follow the new category.
+  // User-edited text (even incomplete) is never replaced implicitly.
+  const nextBody=body===initialProcedureBody(category)
+   ?initialProcedureBody(next):bodyForNewCategory(body,next);
+  onChange({category:next,body:nextBody});
  };
  const insert=()=>{
   if(body.trim()){setAskReplace(true);return;}
