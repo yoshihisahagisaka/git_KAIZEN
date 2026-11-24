@@ -1,7 +1,7 @@
 # FACTACT P0-C — Simple Procedure Pages / SONIX Service-In 2027-01
 
-**Status:** Product Owner direction accepted 2026-11-25. **Implementation input, not an implementation or release acceptance.**  
-**Source:** [SONIX P0 #100](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/100), [P0-C #103](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/103), [SUPPORT assist #18](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/18).  
+**Status:** Product Owner direction accepted 2026-11-25. **Implementation input, not an implementation or release acceptance.**
+**Source:** [SONIX P0 #100](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/100), [P0-C #103](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/103), [SUPPORT assist #18](https://github.com/yoshihisahagisaka/git_KAIZEN/issues/18).
 **Reference tree:** Core Draft PR #94 HEAD `11f2e7dc64e13bf5f760a214d6b2a5b9927862a4`, not main or the diverged historical PR #21.
 
 ## 1. Final product decision
