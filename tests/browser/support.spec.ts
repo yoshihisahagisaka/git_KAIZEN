@@ -301,20 +301,18 @@ test('P0-C: ADMIN edits and publishes a simple procedure in the browser without 
  await admin.getByRole('button',{name:'新しいページ'}).click();
  await admin.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await admin.getByLabel('タイトル').fill('初回受付のFAQ');
- await admin.getByLabel('本文（テキスト形式）').fill('【質問】\\n受付について\\n【回答】\\nご案内します。');
+ const editedBody='【質問】\n受付について\n【回答】\nご案内します。';
+ await admin.getByLabel('本文（テキスト形式）').fill(editedBody);
+ await expect(admin.getByLabel('本文（テキスト形式）')).toHaveValue(editedBody);
  await admin.getByLabel('作成・編集・公開の理由').fill('Synthetic FAQ作成');
  await admin.getByRole('button',{name:'保存',exact:true}).click();
  await expect(admin.getByRole('status')).toContainText('保存しました。');
+ await expect(admin.getByLabel('本文（テキスト形式）')).toHaveValue(editedBody);
+ const saved=await db.admin.query('select body_text from factact.procedure_pages where title=$1',['初回受付のFAQ']);
+ expect(saved.rows[0]?.body_text).toBe(editedBody);
  await admin.getByLabel('作成・編集・公開の理由').fill('承認済み資料');
  await admin.getByRole('checkbox',{name:'内容・外部リンクの承認と閲覧権限を確認しました'}).check();
  const pub=admin.getByRole('button',{name:'確認して公開'});
- console.log('P0C_PUBLISH_STATE',JSON.stringify({
-  reason:await admin.getByLabel('作成・編集・公開の理由').inputValue(),
-  body:await admin.getByLabel('本文（テキスト形式）').inputValue(),
-  kind:await admin.getByLabel('種類').inputValue(),
-  checked:await admin.getByRole('checkbox').isChecked(),
-  enabled:await pub.isEnabled(),
- }));
  await expect(pub).toBeEnabled({timeout:5000});
  await pub.click();
  await expect(admin.getByText('現在の状態：公開中')).toBeVisible();
