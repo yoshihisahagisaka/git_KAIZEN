@@ -21,6 +21,7 @@ import {PgRegistryEditStore} from './persistence/registry-edit-store.js';
 import {PgRegistryReviewReader} from './persistence/registry-review-reader.js';
 import {PgOperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 import {PgDeviceWorkObservationSessionStore} from './persistence/device-work-observation-session-store.js';
+import {PgProcedurePageStore} from './persistence/procedure-page-store.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'oidcSessionDatabaseUrl', 'req.headers', 'res.headers'] });
 async function main() {
@@ -44,7 +45,8 @@ async function main() {
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
       {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader,
       new RegistryEditCommands(new PgRegistryEditStore(pool)),new PgRegistryReviewReader(pool),
-      new PgOperatorPolicyAdmin(pool),new PgDeviceWorkObservationSessionStore(pool));
+      new PgOperatorPolicyAdmin(pool),new PgDeviceWorkObservationSessionStore(pool),
+      new PgProcedurePageStore(pool));
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });
