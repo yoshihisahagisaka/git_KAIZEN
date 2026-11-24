@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {ProcedurePageReference} from './procedure-page-reference.js';
 import {api,ApiError} from './api.js';
 import {ScopedRegistryReviewUI} from './scoped-registry-review-ui.js';
 import type {
@@ -357,6 +358,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
                 <h3>{detail.title}</h3><WorkSummary work={detail}/>
+                 <ProcedurePageReference workId={detail.workId}/>
                 {detail.registryOrganizationId&&<ScopedRegistryContext csrf={csrf}
                   key={`${detail.workId}:${detail.registryOrganizationId}`} work={detail}/>}
                 {writeNotice&&<p role="status" className="scoped-write-notice">{writeNotice}</p>}
