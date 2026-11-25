@@ -277,3 +277,73 @@ describe('P0-A5 authorized registered Caller intake reusing SUPPORT',()=>{
    .toEqual([{n:0}]);
  });
 });
+
+
+describe('P0-A6 scoped new Person at an existing Organization',()=>{
+ async function setup(){
+  await grant();
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async dbClient=>
+   new PgJoinRepository(dbClient,ids.tenant).ensureOrganizationRecipient(
+    randomUUID(),ids.service,ids.organization));
+ }
+ const request=(id=randomUUID(),name='新規受付 担当',distinct=false)=>({
+  requestId:id,serviceId:ids.service,symptom:'既存企業から別の担当者の相談',
+  caller:{kind:'NEW' as const,organizationId:ids.organization,
+   displayName:name,distinctPersonConfirmed:distinct},
+  decision:'REQUIRED' as const,reason:'本人が相談した内容から担当者が判断',
+ });
+ it('uses existing Organization, creates exactly one UNVERIFIED Person and Event/Work',async()=>{
+  await setup();await otherGrant('REGISTRY',['READ','CREATE']);
+  const before=(await db.admin.query('select count(*)::int n from factact.organizations')).rows[0].n;
+  const arg=request(),first=await commands.recordScopedNewPersonAtExistingOrganization(scoped,arg);
+  expect((await commands.recordScopedNewPersonAtExistingOrganization(scoped,arg))).toEqual(first);
+  expect(first.workId).toBeTruthy();
+  expect((await db.admin.query('select count(*)::int n from factact.organizations')).rows[0].n).toBe(before);
+  const people=await db.admin.query(`select display_name,organization_id from factact.people
+    where display_name=$1`,[arg.caller.displayName]);
+  expect(people.rows).toEqual([{display_name:arg.caller.displayName,organization_id:ids.organization}]);
+  const event=await db.admin.query('select caller_input_snapshot from factact.support_events where id=$1',[first.eventId]);
+  expect(event.rows[0].caller_input_snapshot).toMatchObject({
+   kind:'NEW',organizationId:ids.organization,
+   displayName:arg.caller.displayName,distinctPersonConfirmed:false,
+  });
+  expect((await db.admin.query('select reliability from factact.recipient_observations where support_event_id=$1',[first.eventId])).rows)
+   .toEqual([{reliability:'UNVERIFIED'}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+ });
+ it('requires separate REGISTRY CREATE; SUPPORT CREATE+READ alone cannot register a Person',async()=>{
+  await setup();await otherGrant('REGISTRY',['READ']);
+  await expect(commands.recordScopedNewPersonAtExistingOrganization(scoped,request()))
+   .rejects.toMatchObject({status:404});
+  expect((await db.admin.query('select count(*)::int n from factact.support_events')).rows)
+   .toEqual([{n:0}]);
+  await otherGrant('REGISTRY',['CREATE']);
+  expect((await commands.recordScopedNewPersonAtExistingOrganization(scoped,request())).workId).toBeTruthy();
+ });
+ it('same-name Person must be explicitly confirmed as distinct, without merging any Person',async()=>{
+  await setup();await otherGrant('REGISTRY',['READ','CREATE']);
+  const person=(await db.admin.query('select display_name from factact.people where id=$1',[ids.person])).rows[0].display_name as string;
+  await expect(commands.recordScopedNewPersonAtExistingOrganization(scoped,request(randomUUID(),person)))
+   .rejects.toMatchObject({code:'DUPLICATE_PERSON'});
+  const input=request(randomUUID(),person,true);
+  const result=await commands.recordScopedNewPersonAtExistingOrganization(scoped,input);
+  expect(result.eventId).toBeTruthy();
+  expect((await db.admin.query('select count(*)::int n from factact.people where organization_id=$1 and display_name=$2',
+   [ids.organization,person])).rows).toEqual([{n:2}]);
+ });
+ it('forged Organization outside Service does not produce a Person or Event',async()=>{
+  await setup();await otherGrant('REGISTRY',['READ','CREATE']);
+  const wrong=randomUUID();
+  await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
+   values($1,$2,'別サービスのみ','ACTIVE')`,[wrong,ids.tenant]);
+  await expect(commands.recordScopedNewPersonAtExistingOrganization(scoped,{
+   ...request(),caller:{kind:'NEW',organizationId:wrong,displayName:'認可されない対象',
+    distinctPersonConfirmed:false},
+  })).rejects.toMatchObject({status:404});
+  expect((await db.admin.query('select count(*)::int n from factact.support_events')).rows)
+   .toEqual([{n:0}]);
+ });
+});
