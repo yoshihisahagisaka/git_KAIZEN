@@ -155,6 +155,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed}:{csrf:str
    {open&&!single&&<p>サービスを切り替えるには受付画面を閉じてください。</p>}
   </section>
   {service&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
-   open={open} onOpenChange={setOpen} onBeneficiaryConfirmed={onBeneficiaryConfirmed}/>}
+   open={open} onOpenChange={setOpen}
+   {...(onBeneficiaryConfirmed?{onBeneficiaryConfirmed}:{})}/>}
  </>;
 }
