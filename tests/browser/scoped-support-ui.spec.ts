@@ -602,3 +602,48 @@ test('SONIX P0-A6: register new unverified Person at authorized existing company
  await expect(intake.getByRole('region',{name:'支援対象企業を確認'}))
   .toContainText('Example株式会社');
 });
+
+
+test('SONIX P0-A7: approved human Close and Reopen preserve the same Work and history',async({page})=>{
+ await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+  [grantId,['READ','UPDATE','APPROVE']]);
+ await login(page);
+ await page.locator('.scoped-work-button').click();
+ const lifecycle=page.getByRole('region',{name:'対応の完了・再開'});
+ await expect(lifecycle).toBeVisible();
+ const close=lifecycle.getByRole('form',{name:'対応完了の確認'});
+ await close.getByLabel('最後の対応内容').fill('機器の設定を確認し、操作案内で解消');
+ await close.getByLabel('終了理由').fill('問い合わせが解決し、未完了の作業がない');
+ await close.getByRole('checkbox',{
+  name:'未完了の責任・必須Verificationが残っていないことを確認しました',
+ }).check();
+ await close.getByRole('button',{name:'確認して完了'}).click();
+ await expect(lifecycle.getByRole('form',{name:'完了済み対応の再開'})).toBeVisible();
+ const closed=await db.admin.query('select status,lifecycle_revision from factact.work where id=$1',[workA]);
+ expect(closed.rows).toEqual([{status:'COMPLETED',lifecycle_revision:1}]);
+ const reopen=lifecycle.getByRole('form',{name:'完了済み対応の再開'});
+ await reopen.getByLabel('対応を再開する理由').fill('追加の確認が必要になった');
+ await reopen.getByLabel('次回確認予定').fill('2026-11-28T10:00');
+ await reopen.getByRole('button',{name:'確認して再開'}).click();
+ await expect(lifecycle.getByRole('form',{name:'対応完了の確認'})).toBeVisible();
+ expect((await db.admin.query('select status,lifecycle_revision from factact.work where id=$1',[workA])).rows)
+  .toEqual([{status:'IN_PROGRESS',lifecycle_revision:2}]);
+ expect((await db.admin.query('select count(*)::int n from factact.work where id=$1',[workA])).rows)
+  .toEqual([{n:1}]);
+ expect((await db.admin.query('select count(*)::int n from factact.support_work_close_decisions where work_id=$1',[workA])).rows)
+  .toEqual([{n:1}]);
+ expect((await db.admin.query('select count(*)::int n from factact.support_work_lifecycle_events where work_id=$1',[workA])).rows)
+  .toEqual([{n:2}]);
+ // Only the authorized company A must appear after lifecycle transitions.
+ await expect(page.getByRole('region',{name:'許可された対応一覧'})).not.toContainText('Customer B confidential');
+});
+
+test('SONIX P0-A7: UPDATE without APPROVE does not expose lifecycle controls',async({page})=>{
+ await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
+  [grantId,['READ','UPDATE']]);
+ await login(page);await page.locator('.scoped-work-button').click();
+ await expect(page.getByRole('region',{name:'対応の記録'})).toBeVisible();
+ await expect(page.getByRole('region',{name:'対応の完了・再開'})).toHaveCount(0);
+ const response=await page.request.get(`${origin}/api/scoped/support-work/${workA}/lifecycle-context`);
+ expect(response.status()).toBe(404);
+});
