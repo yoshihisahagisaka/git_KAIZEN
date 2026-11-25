@@ -450,8 +450,9 @@ test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller
  await form.getByLabel('新しい所属・企業名').fill('新規受付の所属先');
  await form.getByLabel('問い合わせ者名').fill('新規受付 担当者');
  await form.getByLabel('問い合わせ内容').fill('初めての問い合わせ');
- await form.getByLabel('判断理由').fill('受付担当者が対応必要と判断');
- await form.getByRole('button',{name:'受付を記録'}).click();
+
+ await expect(form.getByLabel('判断理由',{exact:true})).toHaveCount(0);
+ await form.getByRole('button',{name:'受付して対応を開始'}).click();
  await expect(form.getByRole('status')).toContainText('受付記録を作成しました。');
  const audit=await db.admin.query(`select count(*)::int n from factact.audit_events
    where actor_operator_id=$1 and event_type='SUPPORT_RECEIVED'`,[scopedActor]);
@@ -484,8 +485,9 @@ test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until indepe
  await intake.getByLabel('新しい所属・企業名').fill('P0-A4顧客候補');
  await intake.getByLabel('問い合わせ者名').fill('P0-A4受付者');
  await intake.getByLabel('問い合わせ内容').fill('接続の相談');
- await intake.getByLabel('判断理由').fill('実際の相談内容から対応必要と判断');
- await intake.getByRole('button',{name:'受付を記録'}).click();
+
+ await expect(intake.getByLabel('判断理由',{exact:true})).toHaveCount(0);
+ await intake.getByRole('button',{name:'受付して対応を開始'}).click();
  await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
  const target=intake.getByRole('region',{name:'支援対象企業を確認'});
  await expect(target).toContainText('P0-A4顧客候補');
@@ -548,8 +550,9 @@ test('SONIX P0-A5: service-first existing company and Person intake reuses Regis
  await expect(existing.getByLabel('問い合わせ者')).toContainText('田中 一郎');
  await existing.getByLabel('問い合わせ者').selectOption(ids.person);
  await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
- await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
- await existing.getByRole('button',{name:'登録済み問い合わせを受付'}).click();
+
+ await expect(existing.getByLabel('判断理由',{exact:true})).toHaveCount(0);
+ await existing.getByRole('button',{name:'受付して対応を開始'}).click();
  await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
  const events=(await db.admin.query(`select caller_input_snapshot from factact.support_events
   where created_by_operator_id=$1`,[scopedActor])).rows;
@@ -614,8 +617,9 @@ test('SONIX P0-A6: new Person in existing company uses common reception',async({
  await existing.getByLabel('問い合わせ者',{exact:true}).selectOption('NEW');
  await existing.getByLabel('新しい問い合わせ者のお名前').fill('P0-A6新規担当者');
  await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
- await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
- await existing.getByRole('button',{name:'新しい問い合わせ者を登録して受付'}).click();
+
+ await expect(existing.getByLabel('判断理由',{exact:true})).toHaveCount(0);
+ await existing.getByRole('button',{name:'受付して対応を開始'}).click();
  await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
  const events=(await db.admin.query(`select caller_input_snapshot from factact.support_events
   where created_by_operator_id=$1`,[scopedActor])).rows;
