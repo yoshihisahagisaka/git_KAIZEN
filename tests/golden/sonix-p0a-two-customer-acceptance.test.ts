@@ -32,7 +32,7 @@ beforeEach(async()=>{
  await db.reset();
  const personName=(await db.admin.query('select display_name from factact.people where id=$1',[ids.person])).rows[0].display_name;
  await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
-  values($1,$2,'機密B社','ACTIVE')`,[orgB,ids.tenant]);
+  values($1,$2,'AAA機密B社','ACTIVE')`,[orgB,ids.tenant]);
  await db.admin.query(`insert into factact.people(id,tenant_id,organization_id,display_name,lifecycle_status)
   values($1,$2,$3,$4,'ACTIVE')`,[personB,ids.tenant,orgB,personName]);
  await db.admin.query(`insert into factact.services
@@ -127,10 +127,10 @@ describe('SONIX P0-A cross-customer/cross-service scoped acceptance',()=>{
  });
  it('authorized intake company selector is recipient-filtered BEFORE LIMIT, search and counts',async()=>{
   const {registry}=await setupA();
-  const all=await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,20,null);
+  const all=await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,1,null);
   expect(all.items).toEqual([{id:ids.organization,name:'Example株式会社'}]);
   expect(all.nextCursor).toBeNull();
-  expect(JSON.stringify(all)).not.toContain('機密B社');
+  expect(JSON.stringify(all)).not.toContain('AAA機密B社');
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,1,null,'機密')).items)
    .toEqual([]);
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorA,serviceB,20,null)).items)
@@ -138,15 +138,19 @@ describe('SONIX P0-A cross-customer/cross-service scoped acceptance',()=>{
   const registryPeople=await reader.registryPeople(ids.tenant,actorA,ids.service,orgB,20,null);
   expect(registryPeople).toBeNull();
   // Explicit SERVICE-scope REGISTRY READ is an intentional broader delegation.
-  await grant(actorA,ids.service,ids.contract,'REGISTRY',['READ'],'SERVICE');
+  const serviceWide=await grant(actorA,ids.service,ids.contract,'REGISTRY',['READ'],'SERVICE');
   const broad=await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,20,null);
   expect(broad.items.map(x=>x.id).sort()).toEqual([ids.organization,orgB].sort());
   await db.admin.query(`update factact.scoped_actor_grants set
    status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,
    revocation_reason='個別契約権限失効' where id=$1`,[registry,ids.operator]);
   const after=await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,20,null);
-  expect(after.items.map(x=>x.id)).toEqual([ids.organization,orgB].sort((a,b)=>a.localeCompare(b))
-   .filter((_id,index,array)=>true));
+  expect(after.items.map(x=>x.id).sort()).toEqual([ids.organization,orgB].sort());
+  await db.admin.query(`update factact.scoped_actor_grants set
+   status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,
+   revocation_reason='サービス全体権限失効' where id=$1`,[serviceWide,ids.operator]);
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorA,ids.service,20,null)).items)
+   .toEqual([]);
  });
  it('revocation removes Work and customer-detail access without granting a different customer',async()=>{
   const {read,registry}=await setupA();
