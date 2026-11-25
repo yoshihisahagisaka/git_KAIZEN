@@ -8,41 +8,16 @@ interface ServicePage {items:Service[];nextCursor:string|null}
 interface Receipt {eventId:string;workId:string|null}
 type Decision='REQUIRED'|'NOT_APPLICABLE';
 
-export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;onBeneficiaryConfirmed?:()=>void}){
- const [open,setOpen]=useState(false),[services,setServices]=useState<Service[]>([]);
+function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void}){
  const [mode,setMode]=useState<'NEW'|'EXISTING'>('NEW');
- const [cursor,setCursor]=useState<string|null>(null),[serviceId,setServiceId]=useState('');
  const [organizationName,setOrganizationName]=useState(''),[displayName,setDisplayName]=useState('');
  const [email,setEmail]=useState(''),[symptom,setSymptom]=useState('');
  const [decision,setDecision]=useState<Decision>('REQUIRED');
  const [reason,setReason]=useState('');
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
- const [loading,setLoading]=useState(false),[receipt,setReceipt]=useState<Receipt|null>(null);
+ const [receipt,setReceipt]=useState<Receipt|null>(null);
  const retry=useRef<{key:string;requestId:string}|null>(null);
  const pending=useRef(false);
- useEffect(()=>{
-  if(!open)return;
-  let live=true;setLoading(true);setError('');setServices([]);setCursor(null);
-  api<ServicePage>('/api/scoped/support-intake/services?limit=20')
-   .then(page=>{if(!live)return;setServices(page.items);setCursor(page.nextCursor);})
-   .catch(()=>{if(live)setError('受付可能なサービスを確認できませんでした。');})
-   .finally(()=>{if(live)setLoading(false);});
-  return ()=>{live=false;};
- },[open]);
- async function more(){
-  if(!cursor||busy)return;
-  setBusy(true);setError('');
-  try{
-   const page=await api<ServicePage>(
-    '/api/scoped/support-intake/services?limit=20&cursor='+encodeURIComponent(cursor));
-   setServices(prev=>{
-    const seen=new Set(prev.map(s=>s.id));
-    return [...prev,...page.items.filter(s=>!seen.has(s.id))];
-   });
-   setCursor(page.nextCursor);
-  }catch{setError('サービスの続きを取得できませんでした。');}
-  finally{setBusy(false);}
- }
  const changed=(change:()=>void)=>{
   change();setReceipt(null);setError('');
   // A retry after a network failure reuses the request ID only for an
@@ -50,7 +25,7 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
  };
  async function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault();
-  if(pending.current||busy||loading||!serviceId)return;
+  if(pending.current||busy||!serviceId)return;
   const payload={
    serviceId,symptom:symptom.trim(),
    caller:{kind:'NEW',organizationName:organizationName.trim(),
@@ -71,24 +46,13 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
   finally{pending.current=false;setBusy(false);}
  }
  return <section className="scoped-intake" aria-label="問い合わせ受付">
-  <button type="button" className="secondary" onClick={()=>setOpen(p=>!p)}>
+  <button type="button" className="secondary" disabled={busy||!serviceId} onClick={()=>{if(!open||window.confirm("受付画面を閉じますか？未保存の入力がある場合は失われることがあります。"))onOpenChange(!open);}}>
    {open?'受付画面を閉じる':'問い合わせを受付'}
   </button>
   {open&&<div>
    <h2>問い合わせ受付</h2>
-   <p>サービスを選択し、登録済み・未登録の問い合わせ者を受付します。会員資格や支援対象の確認は別操作です。</p>
+   <p>登録済み・未登録の問い合わせ者を受付します。会員資格や支援対象の確認は別操作です。</p>
    {error&&<p role="alert">{error}</p>}
-   {loading&&<p role="status">受付可能なサービスを確認しています…</p>}
-   {!loading&&!services.length&&!error&&<p>受付権限のあるサービスはありません。</p>}
-   {services.length>0&&<>
-   <label htmlFor="scoped-intake-service">サービス</label>
-   <select id="scoped-intake-service" value={serviceId} disabled={busy}
-    onChange={event=>changed(()=>setServiceId(event.target.value))}>
-    <option value="">サービスを選択してください</option>
-    {services.map(service=><option key={service.id} value={service.id}>{service.name}</option>)}
-   </select>
-   {cursor&&<button type="button" className="secondary" disabled={busy}
-    onClick={()=>void more()}>さらにサービスを表示</button>}
    <label htmlFor="scoped-intake-mode">問い合わせ者の登録状況</label>
    <select id="scoped-intake-mode" value={mode} disabled={busy||!!receipt}
     onChange={event=>changed(()=>setMode(event.target.value as typeof mode))}>
@@ -123,7 +87,6 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
    {mode==='EXISTING'&&!receipt&&
     <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
      onReceived={data=>{setReceipt(data);setError('');}}/>}
-  </>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
      <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
@@ -138,4 +101,60 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
    </>}
   </div>}
  </section>;
+}
+
+/** Reception context is chosen before opening the form. CREATE candidates
+ * are not the Work READ directory; existing authorized Work remains available
+ * independently. Server-side command authorization is unchanged. */
+export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed}:{csrf:string;onBeneficiaryConfirmed?:()=>void}){
+ const [services,setServices]=useState<Service[]>([]);
+ const [cursor,setCursor]=useState<string|null>(null);
+ const [chosen,setChosen]=useState('');
+ const [open,setOpen]=useState(false);
+ const [loading,setLoading]=useState(true),[error,setError]=useState('');
+ const [moreBusy,setMoreBusy]=useState(false);
+ const [refresh,setRefresh]=useState(0);
+ useEffect(()=>{
+  let live=true;
+  setLoading(true);setError('');setServices([]);setCursor(null);setChosen('');
+  api<ServicePage>('/api/scoped/support-intake/services?limit=20')
+   .then(page=>{if(live){setServices(page.items);setCursor(page.nextCursor);}})
+   .catch(()=>{if(live)setError('受付可能なサービスを確認できませんでした。');})
+   .finally(()=>{if(live)setLoading(false);});
+  return ()=>{live=false;};
+ },[refresh]);
+ const single=!cursor&&services.length===1;
+ const serviceId=single?services[0]!.id:chosen;
+ const service=services.find(item=>item.id===serviceId);
+ async function more(){
+  if(!cursor||moreBusy||open)return;
+  setMoreBusy(true);setError('');
+  try{
+   const page=await api<ServicePage>('/api/scoped/support-intake/services?limit=20&cursor='+encodeURIComponent(cursor));
+   setServices(prev=>{const seen=new Set(prev.map(item=>item.id));return [...prev,...page.items.filter(item=>!seen.has(item.id))];});
+   setCursor(page.nextCursor);
+  }catch{setError('サービスの続きを取得できませんでした。');}
+  finally{setMoreBusy(false);}
+ }
+ return <>
+  <section aria-label="受付サービスコンテキスト" className="card">
+   <h2>受付サービス</h2>
+   {loading&&<p role="status">受付可能なサービスを確認しています…</p>}
+   {error&&<><p role="alert">{error}</p><button type="button" className="secondary" disabled={open||moreBusy} onClick={()=>setRefresh(n=>n+1)}>受付サービスを再確認</button></>}
+   {!loading&&!error&&!services.length&&<p>受付権限のあるサービスはありません。</p>}
+   {single&&service&&<p><strong>{service.name}</strong></p>}
+   {!single&&services.length>0&&<>
+    <label htmlFor="scoped-reception-service">受付サービスを切り替える</label>
+    <select id="scoped-reception-service" value={chosen} disabled={open||moreBusy}
+     onChange={event=>setChosen(event.target.value)}>
+     <option value="">サービスを選択してください</option>
+     {services.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
+    </select>
+    {cursor&&<button type="button" className="secondary" disabled={open||moreBusy} onClick={()=>void more()}>さらにサービスを表示</button>}
+   </>}
+   {open&&!single&&<p>サービスを切り替えるには受付画面を閉じてください。</p>}
+  </section>
+  {service&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
+   open={open} onOpenChange={setOpen} onBeneficiaryConfirmed={onBeneficiaryConfirmed}/>}
+ </>;
 }

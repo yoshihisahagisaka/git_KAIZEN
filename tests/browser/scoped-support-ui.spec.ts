@@ -444,8 +444,9 @@ test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller
  ]);
  await login(page);
  const form=page.getByRole('region',{name:'問い合わせ受付'});
+ await expect(page.getByRole('region',{name:'受付サービスコンテキスト'})).toBeVisible();
  await form.getByRole('button',{name:'問い合わせを受付'}).click();
- await form.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await expect(form.getByLabel('サービス',{exact:true})).toHaveCount(0);
  await form.getByLabel('新しい所属・企業名').fill('新規受付の所属先');
  await form.getByLabel('問い合わせ者名').fill('新規受付 担当者');
  await form.getByLabel('問い合わせ内容').fill('初めての問い合わせ');
@@ -477,8 +478,9 @@ test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until indepe
  ]);
  await login(page);
  const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await expect(page.getByRole('region',{name:'受付サービスコンテキスト'})).toBeVisible();
  await intake.getByRole('button',{name:'問い合わせを受付'}).click();
- await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await expect(intake.getByLabel('サービス',{exact:true})).toHaveCount(0);
  await intake.getByLabel('新しい所属・企業名').fill('P0-A4顧客候補');
  await intake.getByLabel('問い合わせ者名').fill('P0-A4受付者');
  await intake.getByLabel('問い合わせ内容').fill('接続の相談');
@@ -535,8 +537,9 @@ test('SONIX P0-A5: service-first existing company and Person intake reuses Regis
  const before=(await db.admin.query('select count(*)::int n from factact.people')).rows[0].n;
  await login(page);
  const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await expect(page.getByRole('region',{name:'受付サービスコンテキスト'})).toBeVisible();
  await intake.getByRole('button',{name:'問い合わせを受付'}).click();
- await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await expect(intake.getByLabel('サービス',{exact:true})).toHaveCount(0);
  await intake.getByLabel('問い合わせ者の登録状況').selectOption('EXISTING');
  const existing=intake.getByRole('region',{name:'登録済み問い合わせ者の受付'});
  await existing.getByLabel('企業名で検索').fill('Example');
