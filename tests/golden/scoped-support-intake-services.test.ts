@@ -1,0 +1,70 @@
+import {randomUUID} from 'node:crypto';
+import {beforeAll,beforeEach,afterAll,describe,expect,it} from 'vitest';
+import {ids,testDatabase} from '../fixtures/database.js';
+import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
+
+const actorId='20000000-0000-4000-8000-000000000111';
+const serviceB='60000000-0000-4000-8000-000000000111';
+const contractB='70000000-0000-4000-8000-000000000111';
+const at='2026-11-25T04:00:00.000Z';
+let db:Awaited<ReturnType<typeof testDatabase>>,reader:PgScopedAccessReader;
+beforeAll(async()=>{db=await testDatabase();reader=new PgScopedAccessReader(db.runtime,{now:()=>at});},60_000);
+beforeEach(async()=>{
+ await db.reset();
+ await db.admin.query(`insert into factact.operators(id,tenant_id,email,display_name,status)
+  values($1,$2,'scoped-intake@example.invalid','Scoped operator','ACTIVE')`,
+  [actorId,ids.tenant]);
+ await db.admin.query(`insert into factact.services
+  (id,tenant_id,organization_id,service_model_code,name,status)
+  values($1,$2,$3,'HELPDESK','Service B','ACTIVE')`,
+  [serviceB,ids.tenant,ids.organization]);
+ await db.admin.query(`insert into factact.contract_profiles
+  (id,tenant_id,service_id,version,effective_from,status,configuration_json)
+  values($1,$2,$3,1,$4,'ACTIVE',$5)`,
+  [contractB,ids.tenant,serviceB,'2026-11-01T00:00:00Z',
+   {support:{enabled:true,executeRoles:['OPERATOR']}}]);
+},60_000);
+afterAll(async()=>await db?.close());
+async function grant(serviceId:string,contractId:string,operations:string[]=['CREATE']){
+ const id=randomUUID();
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+   scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',$6,$7,$8)`,
+  [id,ids.tenant,actorId,serviceId,contractId,operations,
+   '2026-11-01T00:00:00Z',ids.operator]);
+ return id;
+}
+const list=(limit=20)=>reader.scopedIntakeServices(ids.tenant,actorId,limit,null);
+describe('SONIX P0-A1 scoped service-first selector',()=>{
+ it('returns only services delegated for current SUPPORT CREATE, without customer data',async()=>{
+  await grant(ids.service,ids.contract);
+  await grant(serviceB,contractB,['READ']);
+  const data=await list();
+  expect(data.items).toEqual([{id:ids.service,name:'情シスKAIZEN'}]);
+  expect(data.nextCursor).toBeNull();
+  expect(JSON.stringify(data)).not.toContain('Service B');
+  expect(JSON.stringify(data)).not.toContain('organization');
+ });
+ it('re-checks revocation and actor status on every request',async()=>{
+  const id=await grant(ids.service,ids.contract);
+  expect((await list()).items).toHaveLength(1);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='契約終了'
+   where id=$1`,[id,ids.operator]);
+  expect((await list()).items).toEqual([]);
+  await grant(ids.service,ids.contract);
+  await db.admin.query("update factact.operators set status='INACTIVE' where id=$1",[actorId]);
+  expect((await list()).items).toEqual([]);
+ });
+ it('denies ambiguous active contracts and unrelated tenant',async()=>{
+  await grant(ids.service,ids.contract);
+  await db.admin.query(`insert into factact.contract_profiles
+   (id,tenant_id,service_id,version,effective_from,status,configuration_json)
+   values($1,$2,$3,2,'2026-11-01T00:00:00Z','ACTIVE',$4)`,
+   [randomUUID(),ids.tenant,ids.service,{support:{enabled:true,executeRoles:['OPERATOR']}}]);
+  expect((await list()).items).toEqual([]);
+  const other=await reader.scopedIntakeServices('10000000-0000-4000-8000-000000000099',actorId,20,null);
+  expect(other.items).toEqual([]);
+ });
+});
