@@ -7,6 +7,8 @@ export interface SupportRepository {
  organizations():Promise<{id:string;name:string;status:string}[]>;
  insertCallerOrganization(id:string,name:string):Promise<void>;
  insertCallerPerson(id:string,organizationId:string,name:string,email:string|null):Promise<void>;
+ activeCallerOrganization(id:string):Promise<boolean>;
+ matchingCallerPeople(organizationId:string,displayName:string):Promise<boolean>;
  lockCallerKey(key:string):Promise<void>;
  managementRows():Promise<SupportManagementRow[]>;
  deviceContexts(workId:string):Promise<import('../../domain/src/support.js').SupportDeviceContext[]>;
@@ -79,6 +81,12 @@ export interface ScopedSupportUpdateBoundary {
   * Organization ServiceRecipient before invoking the common Event path. */
  runSupportExistingCallerIntake?<T>(tenantId:string,actorId:string,
   serviceId:string,personId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+ /** An existing Organization is not automatically writable. Require
+  * explicit REGISTER/CREATE delegation for that recipient in addition
+  * to SUPPORT CREATE and REGISTRY READ. */
+ runSupportNewPersonAtExistingOrganization?<T>(tenantId:string,actorId:string,
+  serviceId:string,organizationId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
  /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
   * the caller's source affiliation or a separately authorized Registry
