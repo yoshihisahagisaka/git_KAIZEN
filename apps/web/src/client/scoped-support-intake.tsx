@@ -57,7 +57,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
    <select id="scoped-intake-mode" value={mode} disabled={busy||!!receipt}
     onChange={event=>changed(()=>setMode(event.target.value as typeof mode))}>
     <option value="NEW">未登録企業・新規問い合わせ者</option>
-    <option value="EXISTING">登録済み問い合わせ者</option>
+    <option value="EXISTING">登録済みの所属・企業</option>
    </select>
    {mode==='NEW'&&!receipt&&<form onSubmit={event=>void submit(event)}>
     <label htmlFor="scoped-intake-org">新しい所属・企業名</label>

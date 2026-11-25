@@ -19,6 +19,9 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  const [orgId,setOrgId]=useState('');
  const [people,setPeople]=useState<Person[]>([]),[peopleCursor,setPeopleCursor]=useState<string|null>(null);
  const [personId,setPersonId]=useState('');
+ const [newName,setNewName]=useState(''),[newEmail,setNewEmail]=useState('');
+ const [distinct,setDistinct]=useState(false);
+ const [peopleLoading,setPeopleLoading]=useState(false),[peopleFailed,setPeopleFailed]=useState(false);
  const [symptom,setSymptom]=useState(''),[reason,setReason]=useState('');
  const [decision,setDecision]=useState<Decision>('REQUIRED');
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -37,12 +40,14 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
   return ()=>{alive=false;};
  },[serviceId,search]);
  useEffect(()=>{
-  if(!orgId){setPeople([]);setPeopleCursor(null);setPersonId('');return;}
-  let alive=true;setPeople([]);setPeopleCursor(null);setPersonId('');setError('');
+  setNewName('');setNewEmail('');setDistinct(false);setPeopleFailed(false);
+  if(!orgId){setPeople([]);setPeopleCursor(null);setPersonId('');setPeopleLoading(false);return;}
+  let alive=true;setPeopleLoading(true);setPeople([]);setPeopleCursor(null);setPersonId('');setError('');
   api<PeoplePage>(`/api/scoped/registry/organizations/${orgId}/people?${new URLSearchParams({
    serviceId,limit:'20',
   })}`).then(data=>{if(alive){setPeople(data.items);setPeopleCursor(data.nextCursor);}})
-   .catch(()=>{if(alive)setError('この企業の問い合わせ者を参照できませんでした。');});
+   .catch(()=>{if(alive){setPeopleFailed(true);setError('この企業の問い合わせ者を参照できませんでした。');}})
+   .finally(()=>{if(alive)setPeopleLoading(false);});
   return ()=>{alive=false;};
  },[serviceId,orgId]);
  const changed=(action:()=>void)=>{action();setError('');};
@@ -78,24 +83,26 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  }
  async function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault();
-  if(sending.current||busy||!serviceId||!orgId||!personId||!symptom.trim()||!reason.trim())
+  if(sending.current||busy||loading||peopleLoading||peopleFailed||!serviceId||!orgId||!personId||!symptom.trim()||!reason.trim()||(personId==='NEW'&&!newName.trim()))
    return;
   const payload={
-   serviceId,caller:{kind:'EXISTING',personId},symptom:symptom.trim(),
+   serviceId,caller:personId==='NEW'?{kind:'NEW',organizationId:orgId,displayName:newName.trim(),
+    ...(newEmail.trim()?{email:newEmail.trim()}:{}),distinctPersonConfirmed:distinct}:{kind:'EXISTING',personId},symptom:symptom.trim(),
    decision,reason:reason.trim(),
   };
   const key=JSON.stringify(payload);
   if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};
   sending.current=true;setBusy(true);setError('');
   try{
-   const receipt=await api<Receipt>('/api/scoped/support-intake/existing-caller',csrf,
+   const endpoint=personId==='NEW'?'/api/scoped/support-intake/new-caller-in-organization':'/api/scoped/support-intake/existing-caller';
+   const receipt=await api<Receipt>(endpoint,csrf,
     {...payload,requestId:retry.current.id});
    retry.current=null;onReceived(receipt);
-  }catch{setError('登録済み問い合わせ者の受付ができませんでした。選択対象と権限を確認してください。');}
+  }catch{setError('受付できませんでした。選択対象・権限を確認してください。同名の方がいる場合は既存登録を選択するか、別人と確認してください。');}
   finally{sending.current=false;setBusy(false);}
  }
  return <section className="scoped-existing-caller" aria-label="登録済み問い合わせ者の受付">
-  <h3>登録済みの問い合わせ者を選択</h3>
+  <h3>登録済みの所属・企業から受付</h3>
   <p>登録情報の閲覧には別途Registry権限が必要です。
    登録済みというだけで会員資格や支援対象を確定しません。</p>
   {error&&<p role="alert">{error}</p>}
@@ -118,12 +125,23 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
     {orgCursor&&<button className="secondary" type="button" disabled={busy}
      onClick={()=>void moreOrgs()}>さらに企業候補を表示</button>}
     <label htmlFor="scoped-existing-person">問い合わせ者</label>
-    <select id="scoped-existing-person" value={personId} disabled={busy||!orgId}
+    <select id="scoped-existing-person" value={personId} disabled={busy||!orgId||peopleLoading||peopleFailed}
      onChange={event=>changed(()=>setPersonId(event.target.value))}>
      <option value="">問い合わせ者を選択してください</option>
      {people.map(x=><option key={x.personId} value={x.personId}>
       {x.displayName}</option>)}
+     <option value="NEW">＋ 新しい問い合わせ者</option>
     </select>
+    {personId==='NEW'&&<>
+     <label htmlFor="scoped-existing-new-name">新しい問い合わせ者のお名前</label>
+     <input id="scoped-existing-new-name" value={newName} maxLength={200} required disabled={busy}
+      onChange={event=>changed(()=>{setNewName(event.target.value);setDistinct(false);})}/>
+     <label htmlFor="scoped-existing-new-email">メールアドレス（任意）</label>
+     <input id="scoped-existing-new-email" type="email" maxLength={320} value={newEmail} disabled={busy}
+      onChange={event=>changed(()=>setNewEmail(event.target.value))}/>
+     <label><input type="checkbox" checked={distinct} disabled={busy}
+      onChange={event=>changed(()=>setDistinct(event.target.checked))}/>同名の登録がある場合、別人であることを確認しました</label>
+    </>}
     {peopleCursor&&<button className="secondary" type="button" disabled={busy}
      onClick={()=>void morePeople()}>さらに問い合わせ者候補を表示</button>}
     <label htmlFor="scoped-existing-symptom">問い合わせ内容</label>
@@ -138,8 +156,8 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
     <label htmlFor="scoped-existing-reason">判断理由</label>
     <textarea id="scoped-existing-reason" maxLength={4000} value={reason} disabled={busy}
      onChange={event=>changed(()=>setReason(event.target.value))}/>
-    <button type="submit" disabled={busy||!orgId||!personId||!symptom.trim()||!reason.trim()}>
-     登録済み問い合わせを受付
+    <button type="submit" disabled={busy||loading||peopleLoading||peopleFailed||!orgId||!personId||!symptom.trim()||!reason.trim()||(personId==='NEW'&&!newName.trim())}>
+     {personId==='NEW'?'新しい問い合わせ者を登録して受付':'登録済み問い合わせを受付'}
     </button>
    </form>
   </>}
