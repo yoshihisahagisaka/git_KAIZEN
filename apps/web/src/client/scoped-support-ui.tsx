@@ -206,6 +206,12 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
   const [writeBusy,setWriteBusy]=useState(false);
   const [writeError,setWriteError]=useState('');
   const [writeNotice,setWriteNotice]=useState('');
+  const [lifecycleMode,setLifecycleMode]=useState<'CLOSE'|'REOPEN'|null>(null);
+  const [lifecycleReason,setLifecycleReason]=useState('');
+  const [closeOutcome,setCloseOutcome]=useState('RESOLVED');
+  const [responsibilityEnded,setResponsibilityEnded]=useState(false);
+  const lifecycleRetry=useRef<{key:string;id:string}|null>(null);
+  const [reopenAt,setReopenAt]=useState('');
   const selectedRequestId=useRef<string|null>(null);
   const writeInFlight=useRef(false);
   const responseRequestId=useRef<string|null>(null);
@@ -216,6 +222,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     setCorrectionTarget(null);setCorrectionText('');setCorrectionReason('');
     responseRequestId.current=null;correctionRequestId.current=null;
     setWriteError('');setWriteNotice('');
+    setLifecycleMode(null);setLifecycleReason('');setResponsibilityEnded(false);setReopenAt('');lifecycleRetry.current=null;
   }
   const changeService=useCallback((id:string)=>{
     setServiceId(id);setItems([]);setNextCursor(null);setListServiceId(null);
@@ -249,6 +256,31 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
         setWriteError('記録できませんでした。権限や更新状況を確認してください。再送時は同じ内容で試してください。');
       }
     } finally {writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
+  }
+  async function submitLifecycle(event:React.FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    if(!detail||!selectedId||writeInFlight.current||!lifecycleReason.trim())return;
+    const closing=lifecycleMode==='CLOSE';
+    if(closing?!detail.canClose||!responsibilityEnded||!responseText.trim():lifecycleMode!=='REOPEN'||!detail.canReopen||!reopenAt)return;
+    const follow=new Date(reopenAt);
+    if(!closing&&!Number.isFinite(follow.getTime()))return;
+    const payload=closing?{expectedLifecycleRevision:detail.lifecycleRevision,expectedRecordRevision:detail.recordRevision,
+      responseText:responseText.trim(),outcome:closeOutcome,closeReason:lifecycleReason.trim(),confirmsOutstandingResponsibilityEnded:true}:
+      {expectedLifecycleRevision:detail.lifecycleRevision,expectedCloseDecisionId:detail.latestCloseDecisionId??null,
+       reason:lifecycleReason.trim(),disposition:'INVESTIGATING',followUpAt:follow.toISOString()};
+    const key=JSON.stringify(payload);
+    if(lifecycleRetry.current?.key!==key)lifecycleRetry.current={key,id:crypto.randomUUID()};
+    const workId=selectedId;
+    writeInFlight.current=true;setWriteBusy(true);setWriteError('');setWriteNotice('');
+    try{
+      await api('/api/scoped/support-work/'+workId+(closing?'/close':'/reopen'),csrf,{...payload,requestId:lifecycleRetry.current.id});
+      if(selectedRequestId.current!==workId)return;
+      setLifecycleMode(null);setLifecycleReason('');setResponsibilityEnded(false);setReopenAt('');setResponseText('');setFollowUpLocal('');
+      lifecycleRetry.current=null;
+      setWriteNotice(closing?'対応を完了しました。':'対応を再開しました。');refreshWork();
+    }catch{
+      if(selectedRequestId.current===workId)setWriteError('操作できませんでした。権限・残る責任・確認状況を確認してください。');
+    }finally{writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
   }
   async function submitCorrection(event:React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -344,7 +376,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     <nav aria-label="許可された対応" className="scoped-support-navigation"><strong>SUPPORT</strong><p>許可された対応のみ表示しています。</p></nav>
     <div className="page-content scoped-support-content">
       <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
-        <button className="secondary" disabled={busy} onClick={()=>{selectWork(null);setRevision(r=>r+1);}}>一覧を更新</button></div>
+        <button className="secondary" disabled={busy||writeBusy} onClick={()=>{if(!responseText.trim()&&!lifecycleMode||window.confirm('未保存の入力を破棄しますか？')){selectWork(null);setRevision(r=>r+1);}}}>一覧を更新</button></div>
       <ScopedReceptionWorkspace csrf={csrf} onBeneficiaryConfirmed={refreshWork}
        onServiceChange={changeService} contextLocked={contextLocked}/>
       <ScopedRegistryReviewUI csrf={csrf}/>
@@ -356,7 +388,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
             : !error&&items.length===0?<p>現在、閲覧できる対応はありません。</p>:null}
           <ul className="scoped-work-list">{(listServiceId===serviceId?items:[]).map(work=><li key={work.workId}>
             <button type="button" className={work.workId===selectedId?'scoped-work-button active':'scoped-work-button'}
-              aria-current={work.workId===selectedId?'true':undefined} onClick={()=>selectWork(work.workId)}>
+              aria-current={work.workId===selectedId?'true':undefined} disabled={writeBusy} onClick={()=>{if(work.workId===selectedId)return;if((responseText.trim()||lifecycleMode)&&!window.confirm('未保存の入力を破棄しますか？'))return;selectWork(work.workId);}}>
               <strong>{work.title}</strong><span>{statusLabels[work.status]}</span><small>更新: {date(work.updatedAt)}</small>
             </button>
           </li>)}</ul>
@@ -364,7 +396,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
         </section>
         <section aria-label="選択した対応の詳細">
           {!selectedId?<><h2>対応の詳細</h2><p>一覧から確認したい対応を選んでください。</p></>:
-            <><div className="scoped-support-heading"><h2>対応の詳細</h2><button className="secondary" onClick={()=>selectWork(null)}>閉じる</button></div>
+            <><div className="scoped-support-heading"><h2>対応の詳細</h2><button className="secondary" disabled={writeBusy} onClick={()=>{if(!responseText.trim()&&!lifecycleMode||window.confirm('未保存の入力を破棄しますか？'))selectWork(null);}}>閉じる</button></div>
               {detailError&&<p role="alert">{detailError}</p>}
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
@@ -396,6 +428,32 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
                     <button type="submit" disabled={writeBusy||detailBusy||!responseText.trim()||!followUpLocal}>対応を記録</button>
                   </form>
                 </section>}
+                {detail.canClose&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
+                 onClick={()=>{setLifecycleMode('CLOSE');setLifecycleReason('');setResponsibilityEnded(false);setCloseOutcome('RESOLVED');}}>対応を完了</button>}
+                {detail.canReopen&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
+                 onClick={()=>{setLifecycleMode('REOPEN');setLifecycleReason('');}}>対応を再開</button>}
+                {lifecycleMode&&((lifecycleMode==='CLOSE'&&detail.canClose)||(lifecycleMode==='REOPEN'&&detail.canReopen))&&
+                 <section className="scoped-action" aria-label={lifecycleMode==='CLOSE'?'対応完了の確認':'対応再開の確認'}>
+                  <h3>{lifecycleMode==='CLOSE'?'対応完了の確認':'対応再開の確認'}</h3>
+                  <form onSubmit={event=>void submitLifecycle(event)}>
+                   {lifecycleMode==='CLOSE'&&<>
+                    <label htmlFor="scoped-close-outcome">終了区分</label>
+                    <select id="scoped-close-outcome" value={closeOutcome} disabled={writeBusy} onChange={e=>setCloseOutcome(e.target.value)}>
+                     <option value="RESOLVED">解決</option><option value="NOT_ELIGIBLE">支援対象外</option>
+                     <option value="WITHDRAWN">取り下げ</option><option value="OTHER_RESPONSIBILITY_ENDED">その他の責任終了</option>
+                    </select>
+                    <label><input type="checkbox" checked={responsibilityEnded} disabled={writeBusy} onChange={e=>setResponsibilityEnded(e.target.checked)}/>残る対応責任が終了したことを確認しました</label>
+                   </>}
+                   <label htmlFor="scoped-lifecycle-reason">{lifecycleMode==='CLOSE'?'終了理由':'再開理由'}</label>
+                   <textarea id="scoped-lifecycle-reason" value={lifecycleReason} maxLength={1000} required disabled={writeBusy} onChange={e=>setLifecycleReason(e.target.value)}/>
+                   {lifecycleMode==='REOPEN'&&<><label htmlFor="scoped-reopen-at">再開後の次回確認予定</label>
+                    <input id="scoped-reopen-at" type="datetime-local" value={reopenAt} required disabled={writeBusy} onChange={e=>setReopenAt(e.target.value)}/></>}
+                   <button type="submit" disabled={writeBusy||detailBusy||!lifecycleReason.trim()||(lifecycleMode==='CLOSE'?(!responsibilityEnded||!responseText.trim()):!reopenAt)}>
+                    {lifecycleMode==='CLOSE'?'完了を記録':'再開を記録'}
+                   </button>
+                   <button type="button" className="secondary" disabled={writeBusy} onClick={()=>{setLifecycleMode(null);lifecycleRetry.current=null;}}>キャンセル</button>
+                  </form>
+                 </section>}
                 {detail.canUpdate&&correctionTarget&&<section aria-label="対応内容の訂正" className="scoped-action">
                   <h3>対応内容を訂正</h3><p>状態や次回確認予定は変更せず、訂正履歴を追記します。</p>
                   <form onSubmit={event=>void submitCorrection(event)}>
