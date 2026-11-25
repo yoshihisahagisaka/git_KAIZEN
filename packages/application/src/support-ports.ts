@@ -69,5 +69,10 @@ export interface ScopedSupportWorkUpdateContext {
 export interface ScopedSupportUpdateBoundary {
  runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
   mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>;
+ /** Separate single-Service CREATE boundary for an explicitly submitted intake.
+  * The caller never provides any Tenant/Actor/Contract authorization input.
+  * No callback runs until live Grant and Contract checks succeed. */
+ runSupportIntake?<T>(tenantId:string,actorId:string,serviceId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
 }
 export type SupportRuntime=JoinRuntime;
