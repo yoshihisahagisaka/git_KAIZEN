@@ -1083,3 +1083,34 @@ describe('scoped SUPPORT Work detail and bounded activity history',()=>{
   await getHistory(workA,`?serviceRecipientId=${recipientB}`).expect(400);
  });
 });
+
+
+describe('scoped explicit close and reopen approval gate',()=>{
+ it('requires independent UPDATE and APPROVE, retains one Work and append-only close history',async()=>{
+  const close=(id:string,body:object)=>request(app).post('/api/scoped/support-work/'+id+'/close')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+  const reopen=(id:string,body:object)=>request(app).post('/api/scoped/support-work/'+id+'/reopen')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+  const input={requestId:randomUUID(),expectedLifecycleRevision:0,expectedRecordRevision:0,
+   responseText:'案内後に正常動作を確認',outcome:'RESOLVED',closeReason:'継続責任が終了',
+   confirmsOutstandingResponsibilityEnded:true};
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await close(workA,input).expect(404);
+  await grant('WORK',recipientA,workA,{operations:['APPROVE']});
+  await close(workA,{...input,confirmsOutstandingResponsibilityEnded:false}).expect(400);
+  await close(workB,input).expect(404);
+  const first=(await close(workA,input).expect(200)).body.data;
+  expect((await close(workA,input).expect(200)).body.data.id).toBe(first.id);
+  const decisions=(await db.admin.query('select id from factact.support_work_close_decisions where work_id=$1',[workA])).rows;
+  expect(decisions).toHaveLength(1);
+  await get(workA).expect(404); // lifecycle approval does not grant READ
+  const resume={requestId:randomUUID(),expectedLifecycleRevision:1,expectedCloseDecisionId:decisions[0].id,
+   reason:'再問い合わせ',disposition:'INVESTIGATING',followUpAt:'2026-11-08T00:00:00.000Z'};
+  const restarted=(await reopen(workA,resume).expect(200)).body.data;
+  expect((await reopen(workA,resume).expect(200)).body.data.id).toBe(restarted.id);
+  expect((await db.admin.query('select status from factact.work where id=$1',[workA])).rows).toEqual([{status:'IN_PROGRESS'}]);
+  expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[eventA])).rows).toEqual([{n:1}]);
+  await close(workA,{...input,requestId:randomUUID(),expectedLifecycleRevision:2,expectedRecordRevision:1}).expect(200);
+  expect((await db.admin.query('select count(*)::int n from factact.support_work_close_decisions where work_id=$1',[workA])).rows).toEqual([{n:2}]);
+ });
+});
