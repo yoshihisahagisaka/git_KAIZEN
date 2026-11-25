@@ -52,6 +52,10 @@ export interface ScopedIntakeServicePage {
  items:ScopedIntakeService[];
  nextCursor:ScopedIntakeServiceCursor|null;
 }
+export interface ScopedSupportLifecycleContext {
+ workId:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';
+ lifecycleRevision:number;recordRevision:number;latestCloseDecisionId:string|null;
+}
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
 export interface ScopedSupportWorkCursor {updatedAt:string;workId:string}
 export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
@@ -768,6 +772,31 @@ export class PgScopedAccessReader {
    const items=rows.slice(0,limit),last=items.at(-1);
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};
+  },true);
+ }
+
+ /** Only a Read+Update+Approve authorized Work may reveal lifecycle controls.
+  * The exact latest Close ID is server-derived and checked again on POST. */
+ async scopedSupportLifecycleContext(tenantId:string,actorId:string,workId:string):
+  Promise<ScopedSupportLifecycleContext|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   if(!work)return null;
+   for(const operation of ['UPDATE','APPROVE'] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id!,workId},
+     objectKind:'SUPPORT',operation,
+    },at))return null;
+   }
+   const close=await db.query<{id:string}>(`
+    select id from factact.support_work_close_decisions
+    where work_id=$1 order by close_sequence desc limit 1`,[workId]);
+   return {workId,status:work.status,lifecycleRevision:work.lifecycle_revision,
+    recordRevision:work.record_revision,latestCloseDecisionId:close.rows[0]?.id??null};
   },true);
  }
 
