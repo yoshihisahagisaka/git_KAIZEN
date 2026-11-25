@@ -3,9 +3,10 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportLifecycleContext,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ scopedSupportLifecycleContext?(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportLifecycleContext|null>;
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
@@ -21,7 +22,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewPersonAtExistingOrganization'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewPersonAtExistingOrganization'|'recordScopedSupportClose'|'reopenScopedSupportWork'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -114,6 +115,14 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const history=found(await reader.supportWorkHistory(actor.tenantId,actor.id,workId,query.limit,cursor));
   res.json({ok:true,data:history});
  });
+ if(reader.scopedSupportLifecycleContext){
+  router.get('/scoped/support-work/:id/lifecycle-context',async(req,res)=>{
+   const workId=z.uuid().parse(req.params.id);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const context=await reader.scopedSupportLifecycleContext!(actor.tenantId,actor.id,workId);
+   res.json({ok:true,data:found(context)});
+  });
+ }
  router.get('/scoped/support-work/:id',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);
   const actor=(res.locals.session as {operator:Operator}).operator;
@@ -193,7 +202,41 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
      kind:result.kind,eventId}});
    });
   }
-  // One explicit response command only: no Close/approve/reopen, Caller or
+  // A separate Human Close/Reopen approval route. The storage adapter verifies
+  // both Work UPDATE and independent Work APPROVE at entry and before COMMIT.
+  if(writer.recordScopedSupportClose&&writer.reopenScopedSupportWork){
+   const closeInput=z.strictObject({
+    requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),
+    expectedRecordRevision:z.number().int().nonnegative(),
+    responseText:z.string().trim().min(1).max(4000),
+    disposition:z.literal('COMPLETED'),followUpAt:z.null(),
+    close:z.strictObject({
+     outcome:z.enum(['RESOLVED','NOT_ELIGIBLE','WITHDRAWN',
+      'FORMALLY_TRANSFERRED','OTHER_RESPONSIBILITY_ENDED']),
+     closeReason:z.string().trim().min(1).max(1000),
+     confirmsOutstandingResponsibilityEnded:z.literal(true),
+    }),
+   });
+   router.post('/scoped/support-work/:id/close',async(req,res)=>{
+    const workId=z.uuid().parse(req.params.id),input=closeInput.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const record=await writer.recordScopedSupportClose!(actor,workId,input);
+    res.json({ok:true,data:{recordId:record.id,revision:record.revision}});
+   });
+   const reopenInput=z.strictObject({
+    requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),
+    expectedCloseDecisionId:z.uuid().nullable(),reason:z.string().trim().min(1).max(1000),
+    disposition:z.enum(['CUSTOMER_WAIT','INVESTIGATING','MONITORING']),
+    followUpAt:z.string().datetime({offset:true}),
+   });
+   router.post('/scoped/support-work/:id/reopen',async(req,res)=>{
+    const workId=z.uuid().parse(req.params.id),input=reopenInput.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const event=await writer.reopenScopedSupportWork!(actor,workId,input);
+    res.json({ok:true,data:{eventId:event.id,revision:event.revision}});
+   });
+  }
+  // Existing response recording remains UPDATE-only and cannot silently Close.
   // client-selected Actor/Recipient/Service, and no broad SUPPORT write path.
   const responseInput=z.strictObject({
    requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),

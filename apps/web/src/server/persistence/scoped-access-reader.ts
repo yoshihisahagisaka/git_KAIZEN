@@ -52,6 +52,10 @@ export interface ScopedIntakeServicePage {
  items:ScopedIntakeService[];
  nextCursor:ScopedIntakeServiceCursor|null;
 }
+export interface ScopedSupportLifecycleContext {
+ workId:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';
+ lifecycleRevision:number;recordRevision:number;latestCloseDecisionId:string|null;
+}
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
 export interface ScopedSupportWorkCursor {updatedAt:string;workId:string}
 export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
@@ -257,7 +261,8 @@ export class PgScopedAccessReader {
   * are resolved from the DB in the mutation/Audit transaction. Unauthorized
   * Work is never passed to the callback. */
  async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
-  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>{
+  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>,
+  options?:{lifecycle:'CLOSE'|'REOPEN'}):Promise<T|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
@@ -270,6 +275,14 @@ export class PgScopedAccessReader {
     [tenantId,actorId]);
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
    if(!work)return null;
+   if(options?.lifecycle){
+    const approve:ResolvedAccessTarget={
+     tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id!,workId},
+     objectKind:'SUPPORT',operation:'APPROVE',
+    };
+    if(!await this.authorizedInTransaction(db,actorId,approve,at))return null;
+   }
    const repository=new PgSupportRepository(db,tenantId);
    const assertWork=(id:string)=>{
     if(id!==workId)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
@@ -307,22 +320,35 @@ export class PgScopedAccessReader {
     closeDecisions:id=>{assertWork(id);return repository.closeDecisions(workId);},
     insertRecord:row=>{
      assertRecord(row);
-     if(row.kind!=='RESPONSE'&&row.kind!=='RESPONSE_CORRECTION')
+     if((options?.lifecycle==='CLOSE'&&row.kind!=='RESPONSE')||
+        (options?.lifecycle==='REOPEN')||
+        (!options?.lifecycle&&row.kind!=='RESPONSE'&&row.kind!=='RESPONSE_CORRECTION'))
       throw Error('SCOPED_UPDATE_RECORD_KIND_MISMATCH');
      return repository.insertRecord(row);
     },
     insertLifecycleEvent:row=>{
      assertRecord(row);
-     if(row.kind!=='RESPONSE_RECORDED')throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
+     if(row.kind!==(options?.lifecycle==='REOPEN'?'REOPENED':'RESPONSE_RECORDED'))
+      throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
      return repository.insertLifecycleEvent(row);
     },
     insertFollowUp:row=>{
      assertRecord(row);
-     if(row.kind!=='SET')throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
+     if(row.kind!==(options?.lifecycle==='CLOSE'?'CLEARED':'SET'))
+      throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
      return repository.insertFollowUp(row);
     },
-    insertCloseDecision:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
-    verificationItems:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
+    insertCloseDecision:row=>{
+     if(options?.lifecycle!=='CLOSE'||row.tenantId!==tenantId||
+       row.workId!==workId||row.decidedByOperatorId!==actorId)
+      throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');
+     return repository.insertCloseDecision(row);
+    },
+    verificationItems:id=>{
+     if(options?.lifecycle!=='CLOSE')throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');
+     assertWork(id);
+     return repository.verificationItems(workId);
+    },
     progress,
     audit:row=>{
      if(row.tenantId!==tenantId||row.aggregateType!=='SUPPORT_EVENT'||
@@ -338,8 +364,14 @@ export class PgScopedAccessReader {
    const result=await mutation(context);
    // Still re-check time-bound eligibility before commit. The actor-keyed
    // transaction lock closes the Grant/Actor status change-to-COMMIT race.
-   if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE'))
+   const current=this.clock.now();
+   if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,current,'UPDATE'))
     throw Error('SCOPED_UPDATE_AUTHORITY_CHANGED');
+   if(options?.lifecycle&&!await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id!,workId},
+     objectKind:'SUPPORT',operation:'APPROVE',
+   },current))throw Error('SCOPED_LIFECYCLE_AUTHORITY_CHANGED');
    return result;
   });
  }
@@ -740,6 +772,31 @@ export class PgScopedAccessReader {
    const items=rows.slice(0,limit),last=items.at(-1);
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};
+  },true);
+ }
+
+ /** Only a Read+Update+Approve authorized Work may reveal lifecycle controls.
+  * The exact latest Close ID is server-derived and checked again on POST. */
+ async scopedSupportLifecycleContext(tenantId:string,actorId:string,workId:string):
+  Promise<ScopedSupportLifecycleContext|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   if(!work)return null;
+   for(const operation of ['UPDATE','APPROVE'] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+     scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id!,workId},
+     objectKind:'SUPPORT',operation,
+    },at))return null;
+   }
+   const close=await db.query<{id:string}>(`
+    select id from factact.support_work_close_decisions
+    where work_id=$1 order by close_sequence desc limit 1`,[workId]);
+   return {workId,status:work.status,lifecycleRevision:work.lifecycle_revision,
+    recordRevision:work.record_revision,latestCloseDecisionId:close.rows[0]?.id??null};
   },true);
  }
 
