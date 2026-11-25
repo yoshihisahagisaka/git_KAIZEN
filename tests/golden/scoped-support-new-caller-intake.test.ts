@@ -120,3 +120,108 @@ describe('SONIX P0-A3 first scoped new/unlisted caller intake',()=>{
   expect(res.rows[0].n).toBe(2);
  });
 });
+
+
+async function otherGrant(objectKind:'SUPPORT'|'REGISTRY',operations:string[]){
+ const id=randomUUID();
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+   scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE',$6,$7,$8,$9)`,[
+  id,ids.tenant,scopedId,ids.service,ids.contract,objectKind,operations,
+  '2026-11-01T00:00:00Z',ids.operator,
+ ]);
+ return id;
+}
+const confirm=(eventId:string,organizationId:string,requestId=randomUUID(),
+ expectedRevision=0)=>commands.recordScopedIntakeBeneficiary(scoped,ids.service,eventId,{
+  requestId,expectedRevision,kind:'CONFIRMED',organizationId,
+  reason:'担当者が問い合わせ内容と支援対象企業を明示確認',
+});
+
+describe('P0-A4 explicit beneficiary attribution after SCOPED intake',()=>{
+ it('shows only own new Caller organization without automatic beneficiary or Work visibility',async()=>{
+  await grant();
+  const received=await commands.recordScopedNewCallerIntake(scoped,input());
+  const reader=new PgScopedAccessReader(db.runtime,{now:()=>at});
+  const receipt=await reader.scopedIntakeReceipt(ids.tenant,scopedId,ids.service,received.eventId);
+  expect(receipt).toMatchObject({
+   eventId:received.eventId,serviceId:ids.service,
+   workId:received.workId,callerOrganizationName:'未登録の問い合わせ企業',
+   beneficiaryRevision:0,beneficiaryKind:null,canConfirm:false,
+  });
+  expect((await reader.supportWorkPage(ids.tenant,scopedId,20,null)).items).toEqual([]);
+  const rows=await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions');
+  expect(rows.rows).toEqual([{n:0}]);
+ });
+ it('requires extra explicit SUPPORT UPDATE for human beneficiary decision; reuses existing Work',async()=>{
+  await grant();
+  const received=await commands.recordScopedNewCallerIntake(scoped,input());
+  const reader=new PgScopedAccessReader(db.runtime,{now:()=>at});
+  const receipt=(await reader.scopedIntakeReceipt(ids.tenant,scopedId,ids.service,received.eventId))!;
+  await expect(confirm(received.eventId,receipt.callerOrganizationId)).rejects.toMatchObject({status:404});
+  await otherGrant('SUPPORT',['UPDATE']);
+  const requestId=randomUUID();
+  const result=await confirm(received.eventId,receipt.callerOrganizationId,requestId);
+  expect(result).toMatchObject({
+   kind:'CONFIRMED',revision:1,recordedByOperatorId:scopedId,
+  });
+  const replay=await confirm(received.eventId,receipt.callerOrganizationId,requestId);
+  expect(replay.id).toBe(result.id);
+  expect((await reader.scopedIntakeReceipt(ids.tenant,scopedId,ids.service,received.eventId))?.beneficiaryRevision).toBe(1);
+  expect(await reader.supportWorkSummary(ids.tenant,scopedId,received.workId!)).toBeNull();
+  const rows=await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[received.eventId]);
+  expect(rows.rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions where support_event_id=$1',[received.eventId])).rows).toEqual([{n:1}]);
+  await otherGrant('SUPPORT',['READ']);
+  const accessible=await reader.supportWorkSummary(ids.tenant,scopedId,received.workId!);
+  expect(accessible?.workId).toBe(received.workId);
+  expect(accessible?.serviceRecipientId).toBe(result.serviceRecipientId);
+  // Attribution never promotes the Caller statement into verified Registry.
+  expect((await db.admin.query(`select reliability from factact.recipient_observations
+   where support_event_id=$1`,[received.eventId])).rows).toEqual([{reliability:'UNVERIFIED'}]);
+ });
+ it('rejects a forged other-customer Organization ID without separately authorized Registry',async()=>{
+  await grant();await otherGrant('SUPPORT',['UPDATE']);
+  const received=await commands.recordScopedNewCallerIntake(scoped,input());
+  await expect(confirm(received.eventId,ids.organization)).rejects.toMatchObject({status:404});
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+  expect(await new PgScopedAccessReader(db.runtime,{now:()=>at})
+   .scopedIntakeReceipt(ids.tenant,ids.operator,ids.service,received.eventId)).toBeNull();
+ });
+ it('allows a different registered service recipient only with independent REGISTRY READ',async()=>{
+  await grant();await otherGrant('SUPPORT',['UPDATE']);
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async client=>{
+   await new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(
+    randomUUID(),ids.service,ids.organization);
+  });
+  const received=await commands.recordScopedNewCallerIntake(scoped,input());
+  await expect(confirm(received.eventId,ids.organization)).rejects.toMatchObject({status:404});
+  await otherGrant('REGISTRY',['READ']);
+  const result=await confirm(received.eventId,ids.organization);
+  expect(result.kind).toBe('CONFIRMED');
+  const target=await db.admin.query(`select recipient_organization_id
+    from factact.service_recipients where id=$1`,[result.serviceRecipientId]);
+  expect(target.rows).toEqual([{recipient_organization_id:ids.organization}]);
+ });
+ it('respects revocation, another Event owner and optimistic human revision',async()=>{
+  await grant();
+  const update=await otherGrant('SUPPORT',['UPDATE']);
+  const received=await commands.recordScopedNewCallerIntake(scoped,input());
+  const own=(await new PgScopedAccessReader(db.runtime,{now:()=>at})
+   .scopedIntakeReceipt(ids.tenant,scopedId,ids.service,received.eventId))!;
+  await db.admin.query(`update factact.scoped_actor_grants
+    set status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,
+     revocation_reason='委任終了' where id=$1`,[update,ids.operator]);
+  await expect(confirm(received.eventId,own.callerOrganizationId)).rejects.toMatchObject({status:404});
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+  await otherGrant('SUPPORT',['UPDATE']);
+  await confirm(received.eventId,own.callerOrganizationId);
+  await expect(confirm(received.eventId,own.callerOrganizationId,randomUUID(),0))
+   .rejects.toMatchObject({code:'STALE_REVISION'});
+ });
+});
