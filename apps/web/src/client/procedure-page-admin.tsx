@@ -49,7 +49,6 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
  },[open,revision]);
  const refresh=()=>setRevision(x=>x+1);
  const change=(patch:Partial<Draft>)=>{
-  if(typeof patch.bodyText==='string')console.log('P0C_ADMIN_PATCH_LEN',patch.bodyText.length);
   setDraft(previous=>previous?{...previous,...patch}:previous);
   setApprovalChecked(false);setNotice('');
  };
@@ -129,7 +128,7 @@ export function ProcedurePageAdmin({csrf}:{csrf:string}){
       <input id="procedure-admin-title" maxLength={160} value={draft.title} disabled={busy}
        onChange={event=>change({title:event.target.value})}/>
       <ProcedureBodyEditor category={draft.category} body={draft.bodyText} disabled={busy}
-       onChange={value=>change(value)}/>
+       onChange={({category,body})=>change({category,bodyText:body})}/>
       <label htmlFor="procedure-admin-order">表示順</label>
       <input id="procedure-admin-order" type="number" min={-100000} max={100000}
        value={draft.sortOrder} disabled={busy}
