@@ -433,3 +433,35 @@ test('proposer sees own returned reason and can submit a fresh correction withou
   ]));
   expect(rows).toHaveLength(2);
 });
+
+test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller without cross-customer read',async({page})=>{
+ await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+    scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',array['CREATE'],$6,$7)`,[
+   randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,
+   '2026-11-01T00:00:00.000Z',ids.operator,
+ ]);
+ await login(page);
+ const form=page.getByRole('region',{name:'未登録の問い合わせ受付'});
+ await form.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ await form.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await form.getByLabel('新しい所属・企業名').fill('新規受付の所属先');
+ await form.getByLabel('問い合わせ者名').fill('新規受付 担当者');
+ await form.getByLabel('問い合わせ内容').fill('初めての問い合わせ');
+ await form.getByLabel('判断理由').fill('受付担当者が対応必要と判断');
+ await form.getByRole('button',{name:'受付を記録'}).click();
+ await expect(form.getByRole('status')).toContainText('受付記録を作成しました。');
+ const audit=await db.admin.query(`select count(*)::int n from factact.audit_events
+   where actor_operator_id=$1 and event_type='SUPPORT_RECEIVED'`,[scopedActor]);
+ expect(audit.rows).toEqual([{n:1}]);
+ const org=await db.admin.query('select count(*)::int n from factact.organizations where name=$1',
+   ['新規受付の所属先']);
+ expect(org.rows).toEqual([{n:1}]);
+ const observations=await db.admin.query(`select reliability from factact.recipient_observations
+   where recorded_by_operator_id=$1`,[scopedActor]);
+ expect(observations.rows).toEqual([{reliability:'UNVERIFIED'}]);
+ const decisions=await db.admin.query(`select count(*)::int n from factact.support_event_beneficiary_decisions
+   where recorded_by_operator_id=$1`,[scopedActor]);
+ expect(decisions.rows).toEqual([{n:0}]);
+});

@@ -218,3 +218,14 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .procedure-admin-grid input,.procedure-admin-grid select,.procedure-admin-grid textarea { max-width:100%; box-sizing:border-box; }
 .procedure-admin-grid label { margin-top:12px; }
 @media(max-width:900px) { .procedure-admin-grid { grid-template-columns:1fr; } }
+
+
+/* Shared actor-scoped intake: regular SUPPORT form, no SONIX-specific layout. */
+.scoped-intake { margin:14px 0; padding:16px 20px; background:white;
+ border:1px solid #cbdadd; border-radius:8px; }
+.scoped-intake form { display:grid; gap:8px; max-width:750px; }
+.scoped-intake label { font-weight:600; margin-top:8px; }
+.scoped-intake input,.scoped-intake textarea,.scoped-intake select {
+ width:100%;max-width:100%;box-sizing:border-box; }
+.scoped-intake textarea { min-height:84px; }
+.scoped-intake [role=status] { margin:12px 0; overflow-wrap:anywhere; }
