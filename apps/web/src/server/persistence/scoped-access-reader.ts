@@ -31,6 +31,12 @@ export interface ScopedSupportWorkSummary {
  registryOrganizationId:string|null;
 }
 
+export interface ScopedIntakeService {id:string;name:string}
+export interface ScopedIntakeServiceCursor {name:string;id:string}
+export interface ScopedIntakeServicePage {
+ items:ScopedIntakeService[];
+ nextCursor:ScopedIntakeServiceCursor|null;
+}
 export interface ScopedSupportWorkPage {items:ScopedSupportWorkSummary[];nextCursor:string|null}
 export interface ScopedSupportWorkCursor {updatedAt:string;workId:string}
 export interface ScopedSupportHistoryCursor {occurredAt:string;id:string}
@@ -329,6 +335,57 @@ export class PgScopedAccessReader {
   * inside the SAME repeatable-read tenant transaction. Never accept client-
   * supplied Service/Contract/Recipient/Grant context for this lookup.
   */
+ /**
+  * Entry point for the existing service-first SUPPORT intake.
+  * Only an explicitly delegated SERVICE-level SUPPORT CREATE grant makes a
+  * Service visible. No Organization, Person or Work data are projected here.
+  * REGISTRY reads remain a separate independent gate in subsequent slices.
+  */
+ async scopedIntakeServices(tenantId:string,actorId:string,limit:number,
+  cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>{
+  if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>20||
+    (cursor&&(!z.uuid().safeParse(cursor.id).success||!cursor.name||
+      cursor.name.length>200)))return {items:[],nextCursor:null};
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return {items:[],nextCursor:null};
+  return withTenant(this.pool,tenantId,async db=>{
+   // Filter authorization before LIMIT. Never page a tenant-wide service list
+   // and then hide unauthorized rows or return tenant-level total counts.
+   const {rows}=await db.query<{id:string;name:string}>(`
+    select s.id,s.name from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$2::timestamptz
+      and (c.effective_to is null or c.effective_to>$2::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.status='ACTIVE'
+      and (select count(*) from factact.contract_profiles only_current
+       where only_current.tenant_id=s.tenant_id and only_current.service_id=s.id
+        and only_current.status='ACTIVE'
+        and only_current.effective_from<=$2::timestamptz
+        and (only_current.effective_to is null or only_current.effective_to>$2::timestamptz))=1
+      and exists (
+        select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=s.tenant_id
+          and g.actor_operator_id=a.id and g.service_id=s.id
+          and g.contract_profile_id=c.id and g.scope_kind='SERVICE'
+          and g.object_kind='SUPPORT' and 'CREATE'=any(g.operations)
+          and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
+          and (g.effective_until is null or g.effective_until>$2::timestamptz))
+      and ($3::text is null or (s.name,s.id)>($3::text,$4::uuid))
+    order by s.name,s.id limit $5`,
+    [actorId,at,cursor?.name??null,cursor?.id??null,limit+1]);
+   const items=rows.slice(0,limit);
+   const last=items.at(-1);
+   return {items,nextCursor:rows.length>limit&&last?
+    {name:last.name,id:last.id}:null};
+  },true);
+ }
+
  async supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
