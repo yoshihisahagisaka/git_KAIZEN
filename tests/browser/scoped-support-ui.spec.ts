@@ -628,3 +628,35 @@ test('SONIX P0-A6: new Person in existing company uses common reception',async({
  expect((await db.admin.query('select count(*)::int n from factact.people')).rows[0].n).toBe(before+1);
  expect((await db.admin.query('select count(*)::int n from factact.people where organization_id=$1 and display_name=$2',[ids.organization,'P0-A6新規担当者'])).rows).toEqual([{n:1}]);
 });
+
+
+test('SONIX pending reception survives reload and starts same Event',async({page})=>{
+ await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+    scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',array['CREATE','UPDATE'],$6,$7)`,[
+   randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,
+   '2026-11-01T00:00:00.000Z',ids.operator,
+ ]);
+ await login(page);
+ const form=page.getByRole('region',{name:'問い合わせ受付'});
+ await form.getByRole('button',{name:'問い合わせを受付'}).click();
+ await form.getByLabel('新しい所属・企業名').fill('保留企業');
+ await form.getByLabel('問い合わせ者名').fill('保留担当者');
+ await form.getByLabel('問い合わせ内容').fill('折り返しの相談');
+ await form.getByLabel('担当者による必要性判断').selectOption('DEFERRED');
+ await form.getByRole('button',{name:'受付のみ',exact:true}).click();
+ await expect(form.getByRole('status')).toContainText('受付記録を作成しました。');
+ const events=(await db.admin.query('select id from factact.support_events where created_by_operator_id=$1',[scopedActor])).rows;
+ expect(events).toHaveLength(1);
+ const eventId=events[0].id;
+ expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[eventId])).rows).toEqual([{n:0}]);
+ await page.reload();
+ const held=page.getByRole('region',{name:'保留中の受付'});
+ await expect(held).toContainText('保留担当者');
+ await expect(held).toContainText('折り返しの相談');
+ await held.getByRole('button',{name:'対応を開始',exact:true}).click();
+ await expect(form.getByRole('status')).toContainText('Workが作成されました。');
+ expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[eventId])).rows).toEqual([{n:1}]);
+ expect((await db.admin.query('select count(*)::int n from factact.support_events where created_by_operator_id=$1',[scopedActor])).rows).toEqual([{n:1}]);
+});

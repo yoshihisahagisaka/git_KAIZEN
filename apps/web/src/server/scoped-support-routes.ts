@@ -3,7 +3,7 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
@@ -12,6 +12,7 @@ export interface ScopedSupportReader {
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedSupportServiceContextPage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
   limit:number,cursor:ScopedIntakeOrganizationCursor|null,q?:string):Promise<ScopedIntakeOrganizationPage>;
+ scopedPendingReceipts?(tenantId:string,actorId:string,serviceId:string,limit:number,cursor:{createdAt:string;eventId:string}|null):Promise<ScopedPendingReceiptPage>;
  scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
@@ -107,6 +108,20 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   });
  }
  // Own newly received Caller context, not an all-Tenant SUPPORT read.
+ if(reader.scopedPendingReceipts){
+  const schema=z.strictObject({serviceId:z.uuid(),limit:z.coerce.number().int().min(1).max(20).default(20),cursor:z.string().max(400).optional()});
+  const cursorSchema=z.strictObject({createdAt:z.string().datetime({offset:true}),eventId:z.uuid()});
+  router.get('/scoped/support-intake/pending',async(req,res)=>{
+   const query=schema.parse(req.query);
+   let cursor:{createdAt:string;eventId:string}|null=null;
+   if(query.cursor){
+    try{cursor=cursorSchema.parse(JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown);}
+    catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+   }
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:await reader.scopedPendingReceipts!(actor.tenantId,actor.id,query.serviceId,query.limit,cursor)});
+  });
+ }
  if(reader.scopedIntakeReceipt){
   router.get('/scoped/support-intake/events/:eventId/beneficiary',async(req,res)=>{
    const eventId=z.uuid().parse(req.params.eventId);

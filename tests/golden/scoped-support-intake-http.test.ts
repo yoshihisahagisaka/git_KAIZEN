@@ -239,3 +239,22 @@ describe('P0-A receive-only preserves an unevaluated Event',()=>{
   await request(app).get('/api/scoped/support-work/'+started.workId).set('Cookie',cookie).expect(404);
  });
 });
+
+describe('own pending receipts',()=>{
+ it('lists own unevaluated Events for the selected service only and removes them after authorized evaluation',async()=>{
+  const grantId=await grant();
+  const held=(await post({...intake(),decision:'DEFERRED',reason:''}).expect(201)).body.data;
+  await post({...intake(),caller:{...intake().caller,organizationName:'別受付企業'}}).expect(201);
+  const list=(serviceId:string=ids.service)=>request(app).get('/api/scoped/support-intake/pending?serviceId='+serviceId).set('Cookie',cookie);
+  expect((await list().expect(200)).body.data.items).toEqual([expect.objectContaining({eventId:held.eventId,canStart:false})]);
+  expect((await list(randomUUID()).expect(200)).body.data.items).toEqual([]);
+  await operationGrant('UPDATE');
+  expect((await list().expect(200)).body.data.items).toEqual([expect.objectContaining({eventId:held.eventId,canStart:true})]);
+  await request(app).post('/api/scoped/support-intake/events/'+held.eventId+'/evaluate')
+   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token','csrf')
+   .send({serviceId:ids.service,decision:'REQUIRED',reason:''}).expect(200);
+  expect((await list().expect(200)).body.data.items).toEqual([]);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='停止' where id=$1`,[grantId,ids.operator]);
+  expect((await list().expect(200)).body.data.items).toEqual([]);
+ });
+});
