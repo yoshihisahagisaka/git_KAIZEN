@@ -82,6 +82,12 @@ export interface ScopedSupportUpdateBoundary {
  runSupportExistingCallerIntake?<T>(tenantId:string,actorId:string,
   serviceId:string,personId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+ /** An existing Organization is not automatically writable. Require
+  * explicit REGISTER/CREATE delegation for that recipient in addition
+  * to SUPPORT CREATE and REGISTRY READ. */
+ runSupportNewPersonAtExistingOrganization?<T>(tenantId:string,actorId:string,
+  serviceId:string,organizationId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
  /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
   * the caller's source affiliation or a separately authorized Registry
   * recipient, and revalidates before COMMIT. Never auto-confirms by Caller. */
