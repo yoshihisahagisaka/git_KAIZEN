@@ -9,7 +9,7 @@ export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
-  limit:number,cursor:ScopedIntakeOrganizationCursor|null):Promise<ScopedIntakeOrganizationPage>;
+  limit:number,cursor:ScopedIntakeOrganizationCursor|null,q?:string):Promise<ScopedIntakeOrganizationPage>;
  scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
@@ -69,6 +69,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const orgQuery=z.strictObject({
    limit:z.coerce.number().int().min(1).max(20).default(20),
    cursor:z.string().max(400).optional(),
+   q:z.string().max(100).default(''),
   });
   const orgCursor=z.strictObject({name:z.string().min(1).max(200),id:z.uuid()});
   router.get('/scoped/support-intake/services/:serviceId/organizations',async(req,res)=>{
@@ -81,7 +82,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
     }catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
    }
    const actor=(res.locals.session as {operator:Operator}).operator;
-   const data=await reader.scopedIntakeOrganizations!(actor.tenantId,actor.id,serviceId,query.limit,cursor);
+   const data=await reader.scopedIntakeOrganizations!(actor.tenantId,actor.id,serviceId,query.limit,cursor,query.q);
    res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
     Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
   });

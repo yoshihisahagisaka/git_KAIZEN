@@ -443,8 +443,8 @@ test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller
    '2026-11-01T00:00:00.000Z',ids.operator,
  ]);
  await login(page);
- const form=page.getByRole('region',{name:'未登録の問い合わせ受付'});
- await form.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ const form=page.getByRole('region',{name:'問い合わせ受付'});
+ await form.getByRole('button',{name:'問い合わせを受付'}).click();
  await form.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await form.getByLabel('新しい所属・企業名').fill('新規受付の所属先');
  await form.getByLabel('問い合わせ者名').fill('新規受付 担当者');
@@ -476,8 +476,8 @@ test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until indepe
   ['CREATE','UPDATE'],'2026-11-01T00:00:00.000Z',ids.operator,
  ]);
  await login(page);
- const intake=page.getByRole('region',{name:'未登録の問い合わせ受付'});
- await intake.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await intake.getByRole('button',{name:'問い合わせを受付'}).click();
  await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await intake.getByLabel('新しい所属・企業名').fill('P0-A4顧客候補');
  await intake.getByLabel('問い合わせ者名').fill('P0-A4受付者');
@@ -517,4 +517,44 @@ test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until indepe
  await expect(authorized).toContainText('P0-A4受付者');
  await authorized.getByRole('button',{name:/P0-A4受付者/}).click();
  await expect(page.getByRole('heading',{name:'対応の詳細'})).toBeVisible();
+});
+
+
+test('SONIX P0-A5: service-first existing company and Person intake reuses Registry Person',async({page})=>{
+ for(const [kind,operations] of [
+  ['SUPPORT',['CREATE']],['REGISTRY',['READ']],
+ ] as const){
+  await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+    object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE',$6,$7,$8,$9)`,[
+   randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,kind,operations,
+   '2026-11-01T00:00:00.000Z',ids.operator,
+  ]);
+ }
+ const before=(await db.admin.query('select count(*)::int n from factact.people')).rows[0].n;
+ await login(page);
+ const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await intake.getByRole('button',{name:'問い合わせを受付'}).click();
+ await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await intake.getByLabel('問い合わせ者の登録状況').selectOption('EXISTING');
+ const existing=intake.getByRole('region',{name:'登録済み問い合わせ者の受付'});
+ await existing.getByLabel('企業名で検索').fill('Example');
+ await existing.getByRole('button',{name:'企業を探す'}).click();
+ await existing.getByLabel('所属・企業').selectOption(ids.organization);
+ await expect(existing.getByLabel('問い合わせ者')).toContainText('田中 一郎');
+ await existing.getByLabel('問い合わせ者').selectOption(ids.person);
+ await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
+ await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
+ await existing.getByRole('button',{name:'登録済み問い合わせを受付'}).click();
+ await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
+ const events=(await db.admin.query(`select caller_input_snapshot from factact.support_events
+  where created_by_operator_id=$1`,[scopedActor])).rows;
+ expect(events).toHaveLength(1);
+ expect(events[0].caller_input_snapshot).toMatchObject({kind:'EXISTING',personId:ids.person});
+ expect((await db.admin.query('select count(*)::int n from factact.people')).rows[0].n).toBe(before);
+ expect((await db.admin.query(`select count(*)::int n from factact.support_event_beneficiary_decisions
+  where recorded_by_operator_id=$1`,[scopedActor])).rows).toEqual([{n:0}]);
+ await expect(intake.getByRole('region',{name:'支援対象企業を確認'}))
+  .toContainText('Example株式会社');
 });

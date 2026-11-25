@@ -633,12 +633,13 @@ export class PgScopedAccessReader {
   * SUPPORT CREATE cannot unlock Registry browsing: REGISTRY READ is independent.
   */
  async scopedIntakeOrganizations(tenantId:string,actorId:string,serviceId:string,
-  limit:number,cursor:ScopedIntakeOrganizationCursor|null):Promise<ScopedIntakeOrganizationPage>{
+  limit:number,cursor:ScopedIntakeOrganizationCursor|null,q:string=''):Promise<ScopedIntakeOrganizationPage>{
   const empty:ScopedIntakeOrganizationPage={items:[],nextCursor:null};
   if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success)||
-    !Number.isInteger(limit)||limit<1||limit>20||
+    !Number.isInteger(limit)||limit<1||limit>20||typeof q!=='string'||q.length>100||
     (cursor&&(!z.uuid().safeParse(cursor.id).success||!cursor.name||
       cursor.name.length>200)))return empty;
+  const query=q.trim().normalize('NFKC').toLocaleLowerCase();
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return empty;
   return withTenant(this.pool,tenantId,async db=>{
@@ -671,8 +672,9 @@ export class PgScopedAccessReader {
      where r.service_id=$1 and r.status='ACTIVE'
        and r.recipient_type='ORGANIZATION'
        and ($2::text is null or (o.name,o.id)>($2::text,$3::uuid))
-     order by o.name,o.id limit $4`,
-     [serviceId,cursor?.name??null,cursor?.id??null,limit+1]);
+       and ($4::text='' or strpos(lower(normalize(o.name,NFKC)),$4)>0)
+     order by o.name,o.id limit $5`,
+     [serviceId,cursor?.name??null,cursor?.id??null,query,limit+1]);
    const items=rows.slice(0,limit),last=items.at(-1);
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};

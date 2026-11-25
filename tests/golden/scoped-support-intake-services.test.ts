@@ -93,6 +93,12 @@ describe('SONIX P0-A2 isolated service recipient directory',()=>{
     '2026-11-01T00:00:00Z',ids.operator]);
   const visible=await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null);
   expect(visible.items).toEqual([{id:ids.organization,name:'Example株式会社'}]);
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null,'ＥＸＡＭＰＬＥ')).items)
+   .toEqual([{id:ids.organization,name:'Example株式会社'}]);
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null,'private')).items)
+   .toEqual([]);
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null,'%')).items)
+   .toEqual([]);
   expect(JSON.stringify(visible)).not.toContain('private customer');
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,serviceB,20,null)).items).toEqual([]);
   await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',

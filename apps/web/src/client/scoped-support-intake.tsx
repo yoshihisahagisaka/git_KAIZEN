@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {api} from './api.js';
 import {ScopedBeneficiaryConfirmation} from './scoped-beneficiary-confirmation.js';
+import {ScopedExistingCallerForm} from './scoped-existing-caller-form.js';
 
 interface Service {id:string;name:string}
 interface ServicePage {items:Service[];nextCursor:string|null}
@@ -9,6 +10,7 @@ type Decision='REQUIRED'|'NOT_APPLICABLE';
 
 export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;onBeneficiaryConfirmed?:()=>void}){
  const [open,setOpen]=useState(false),[services,setServices]=useState<Service[]>([]);
+ const [mode,setMode]=useState<'NEW'|'EXISTING'>('NEW');
  const [cursor,setCursor]=useState<string|null>(null),[serviceId,setServiceId]=useState('');
  const [organizationName,setOrganizationName]=useState(''),[displayName,setDisplayName]=useState('');
  const [email,setEmail]=useState(''),[symptom,setSymptom]=useState('');
@@ -68,25 +70,32 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
   }catch{setError('受付できませんでした。権限や内容を確認してください。通信が不安定な場合は同じ内容で再送してください。');}
   finally{pending.current=false;setBusy(false);}
  }
- return <section className="scoped-intake" aria-label="未登録の問い合わせ受付">
+ return <section className="scoped-intake" aria-label="問い合わせ受付">
   <button type="button" className="secondary" onClick={()=>setOpen(p=>!p)}>
-   {open?'新規受付を閉じる':'未登録企業・新規問い合わせ者を受付'}
+   {open?'受付画面を閉じる':'問い合わせを受付'}
   </button>
   {open&&<div>
-   <h2>未登録企業からの問い合わせ受付</h2>
-   <p>会員資格や所属を確認済みとみなしません。権限のあるサービスに対して受付記録を作ります。</p>
+   <h2>問い合わせ受付</h2>
+   <p>サービスを選択し、登録済み・未登録の問い合わせ者を受付します。会員資格や支援対象の確認は別操作です。</p>
    {error&&<p role="alert">{error}</p>}
    {loading&&<p role="status">受付可能なサービスを確認しています…</p>}
    {!loading&&!services.length&&!error&&<p>受付権限のあるサービスはありません。</p>}
-   {services.length>0&&<form onSubmit={event=>void submit(event)}>
-    <label htmlFor="scoped-intake-service">サービス</label>
-    <select id="scoped-intake-service" value={serviceId} disabled={busy}
-     onChange={event=>changed(()=>setServiceId(event.target.value))}>
-     <option value="">サービスを選択してください</option>
-     {services.map(service=><option key={service.id} value={service.id}>{service.name}</option>)}
-    </select>
-    {cursor&&<button type="button" className="secondary" disabled={busy}
-     onClick={()=>void more()}>さらにサービスを表示</button>}
+   {services.length>0&&<>
+   <label htmlFor="scoped-intake-service">サービス</label>
+   <select id="scoped-intake-service" value={serviceId} disabled={busy}
+    onChange={event=>changed(()=>setServiceId(event.target.value))}>
+    <option value="">サービスを選択してください</option>
+    {services.map(service=><option key={service.id} value={service.id}>{service.name}</option>)}
+   </select>
+   {cursor&&<button type="button" className="secondary" disabled={busy}
+    onClick={()=>void more()}>さらにサービスを表示</button>}
+   <label htmlFor="scoped-intake-mode">問い合わせ者の登録状況</label>
+   <select id="scoped-intake-mode" value={mode} disabled={busy||!!receipt}
+    onChange={event=>changed(()=>setMode(event.target.value as typeof mode))}>
+    <option value="NEW">未登録企業・新規問い合わせ者</option>
+    <option value="EXISTING">登録済み問い合わせ者</option>
+   </select>
+   {mode==='NEW'&&!receipt&&<form onSubmit={event=>void submit(event)}>
     <label htmlFor="scoped-intake-org">新しい所属・企業名</label>
     <input id="scoped-intake-org" value={organizationName} disabled={busy} maxLength={200}
      onChange={event=>changed(()=>setOrganizationName(event.target.value))}/>
@@ -111,6 +120,10 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
     <button type="submit" disabled={busy||!serviceId||!organizationName.trim()||
      !displayName.trim()||!symptom.trim()||!reason.trim()||!!receipt}>受付を記録</button>
    </form>}
+   {mode==='EXISTING'&&!receipt&&
+    <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
+     onReceived={data=>{setReceipt(data);setError('');}}/>}
+  </>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
      <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
@@ -121,7 +134,7 @@ export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;o
     <button type="button" className="secondary" onClick={()=>{
      setReceipt(null);setOrganizationName('');setDisplayName('');
      setEmail('');setSymptom('');setDecision('REQUIRED');setReason('');
-    }}>次の新規受付</button>
+    }}>次の問い合わせ</button>
    </>}
   </div>}
  </section>;
