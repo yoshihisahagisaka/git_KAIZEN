@@ -74,6 +74,12 @@ export interface ScopedSupportUpdateBoundary {
   * No callback runs until live Grant and Contract checks succeed. */
  runSupportIntake?<T>(tenantId:string,actorId:string,serviceId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+ /** Registered Caller identity is *not* service eligibility. Resolve an
+  * already registered Person under a current, explicitly authorized
+  * Organization ServiceRecipient before invoking the common Event path. */
+ runSupportExistingCallerIntake?<T>(tenantId:string,actorId:string,
+  serviceId:string,personId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
  /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
   * the caller's source affiliation or a separately authorized Registry
   * recipient, and revalidates before COMMIT. Never auto-confirms by Caller. */
