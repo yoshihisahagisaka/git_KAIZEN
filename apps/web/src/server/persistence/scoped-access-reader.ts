@@ -31,6 +31,15 @@ export interface ScopedSupportWorkSummary {
  registryOrganizationId:string|null;
 }
 
+/** A just-received inquiry remains non-authoritative until an Operator
+ * explicitly attributes its beneficiary. Being a beneficiary is NOT
+ * membership verification, identity verification, or an access Grant. */
+export interface ScopedIntakeReceipt {
+ eventId:string;serviceId:string;workId:string|null;
+ callerOrganizationId:string;callerOrganizationName:string;
+ beneficiaryRevision:number;beneficiaryKind:'CONFIRMED'|'CLEARED'|null;
+ canConfirm:boolean;
+}
 export interface ScopedIntakeOrganization {id:string;name:string}
 export interface ScopedIntakeOrganizationCursor {name:string;id:string}
 export interface ScopedIntakeOrganizationPage {
@@ -385,6 +394,125 @@ export class PgScopedAccessReader {
    tenantId,serviceId,contractProfileId:rows[0]!.contract_id,
    scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'CREATE',
   },at);
+ }
+
+ /** The own receipt is distinct from a tenant-wide SUPPORT detail.
+  * The caller's *newly entered* affiliation is shown only to its receiving
+  * Actor. The selected beneficiary is not populated automatically. */
+ async scopedIntakeReceipt(tenantId:string,actorId:string,serviceId:string,
+  eventId:string):Promise<ScopedIntakeReceipt|null>{
+  if(![tenantId,actorId,serviceId,eventId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
+   const receipt=await this.ownNewIntake(db,tenantId,actorId,serviceId,eventId,at);
+   if(!receipt)return null;
+   const canConfirm=await this.authorizedInTransaction(db,actorId,{
+    tenantId,serviceId,contractProfileId:receipt.contractProfileId,
+    scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'UPDATE',
+   },at);
+   return {eventId:receipt.eventId,serviceId,workId:receipt.workId,
+    callerOrganizationId:receipt.callerOrganizationId,
+    callerOrganizationName:receipt.callerOrganizationName,
+    beneficiaryRevision:receipt.beneficiaryRevision,
+    beneficiaryKind:receipt.beneficiaryKind,canConfirm};
+  },true);
+ }
+
+ private async ownNewIntake(db:PoolClient,tenantId:string,actorId:string,
+  serviceId:string,eventId:string,at:string):Promise<{
+   eventId:string;contractProfileId:string;callerOrganizationId:string;
+   callerOrganizationName:string;beneficiaryRevision:number;
+   beneficiaryKind:'CONFIRMED'|'CLEARED'|null;workId:string|null;
+  }|null>{
+  const {rows}=await db.query<{
+   event_id:string;contract_profile_id:string;
+   caller_organization_id:string;caller_organization_name:string;
+   beneficiary_revision:number;beneficiary_kind:'CONFIRMED'|'CLEARED'|null;
+   work_id:string|null;
+  }>(`
+   select e.id as event_id,e.contract_profile_id,
+    org.id as caller_organization_id,org.name as caller_organization_name,
+    coalesce(latest.revision,0)::integer as beneficiary_revision,
+    latest.kind as beneficiary_kind,w.id as work_id
+   from factact.support_events e
+   join factact.contract_profiles c on c.tenant_id=e.tenant_id
+     and c.id=e.contract_profile_id and c.service_id=e.service_id
+     and c.status='ACTIVE' and c.effective_from<=$5::timestamptz
+     and (c.effective_to is null or c.effective_to>$5::timestamptz)
+   join factact.service_recipients caller on caller.tenant_id=e.tenant_id
+     and caller.id=e.service_recipient_id and caller.recipient_type='PERSON'
+   join factact.people person on person.tenant_id=caller.tenant_id
+     and person.id=caller.recipient_id
+   join factact.organizations org on org.tenant_id=person.tenant_id
+     and org.id=person.organization_id and org.status='ACTIVE'
+   left join factact.work w on w.tenant_id=e.tenant_id
+     and w.support_event_id=e.id and w.lane='SUPPORT'
+   left join lateral (
+    select d.kind,d.revision
+    from factact.support_event_beneficiary_decisions d
+    where d.tenant_id=e.tenant_id and d.support_event_id=e.id
+    order by d.revision desc limit 1
+   ) latest on true
+   where e.tenant_id=$1 and e.created_by_operator_id=$2
+     and e.service_id=$3 and e.id=$4
+     and e.caller_input_snapshot->>'kind'='NEW'
+     and coalesce(e.caller_input_snapshot->>'organizationName','')<>''`,
+   [tenantId,actorId,serviceId,eventId,at]);
+  const row=rows[0];
+  if(!row)return null;
+  return {eventId:row.event_id,contractProfileId:row.contract_profile_id,
+   callerOrganizationId:row.caller_organization_id,
+   callerOrganizationName:row.caller_organization_name,
+   beneficiaryRevision:row.beneficiary_revision,
+   beneficiaryKind:row.beneficiary_kind,workId:row.work_id};
+ }
+
+ /** All beneficiary changes are human-triggered, serialized with the Actor
+  * grant lock and Event row lock used by the existing SupportCommands. */
+ async runSupportIntakeBeneficiary<T>(tenantId:string,actorId:string,serviceId:string,
+  eventId:string,organizationId:string,
+  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,serviceId,eventId,organizationId]
+    .every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
+    [tenantId,actorId]);
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
+   const own=await this.ownNewIntake(db,tenantId,actorId,serviceId,eventId,at);
+   if(!own)return null;
+   const mayUpdate=await this.authorizedInTransaction(db,actorId,{
+    tenantId,serviceId,contractProfileId:own.contractProfileId,
+    scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'UPDATE',
+   },at);
+   if(!mayUpdate)return null;
+   const ownAffiliation=organizationId===own.callerOrganizationId;
+   if(!ownAffiliation){
+    const registry=await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId,contractProfileId:own.contractProfileId,
+     scope:{kind:'SERVICE'},objectKind:'REGISTRY',operation:'READ',
+    },at);
+    if(!registry)return null;
+    const target=await db.query(`
+      select 1 from factact.service_recipients recipient
+      join factact.organizations org on org.tenant_id=recipient.tenant_id
+        and org.id=recipient.recipient_organization_id
+        and org.status='ACTIVE'
+      where recipient.tenant_id=$1 and recipient.service_id=$2
+        and recipient.recipient_type='ORGANIZATION'
+        and recipient.status='ACTIVE'
+        and recipient.recipient_organization_id=$3`,
+     [tenantId,serviceId,organizationId]);
+    if(!target.rowCount)return null;
+   }
+   const result=await mutation(new PgSupportRepository(db,tenantId));
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now()))
+    throw Error('SCOPED_BENEFICIARY_AUTHORITY_CHANGED');
+   return result;
+  });
  }
 
  async scopedIntakeServices(tenantId:string,actorId:string,limit:number,
