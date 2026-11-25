@@ -509,7 +509,16 @@ export class PgScopedAccessReader {
     if(!target.rowCount)return null;
    }
    const result=await mutation(new PgSupportRepository(db,tenantId));
-   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now()))
+   const current=this.clock.now();
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,current)||
+     !await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId:own.contractProfileId,
+      scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'UPDATE',
+     },current)||
+     (!ownAffiliation&&!await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId:own.contractProfileId,
+      scope:{kind:'SERVICE'},objectKind:'REGISTRY',operation:'READ',
+     },current)))
     throw Error('SCOPED_BENEFICIARY_AUTHORITY_CHANGED');
    return result;
   });
