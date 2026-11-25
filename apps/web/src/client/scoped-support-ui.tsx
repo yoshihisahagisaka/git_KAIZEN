@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {ProcedurePageReference} from './procedure-page-reference.js';
 import {ScopedReceptionWorkspace} from './scoped-support-intake.js';
 import {api,ApiError} from './api.js';
@@ -186,6 +186,8 @@ function HistoryEntry({entry,onCorrect}:{entry:ScopedSupportHistoryEntry;onCorre
  * server-derived grants on each request; never calls broad internal APIs. */
 export function ScopedSupportUI({csrf}:{csrf:string}) {
   const [items,setItems]=useState<ScopedSupportWorkSummary[]>([]);
+  const [serviceId,setServiceId]=useState('');
+  const [listServiceId,setListServiceId]=useState<string|null>(null);
   const [nextCursor,setNextCursor]=useState<string|null>(null);
   const [selectedId,setSelectedId]=useState<string|null>(null);
   const [detail,setDetail]=useState<ScopedSupportWorkSummary|null>(null);
@@ -215,6 +217,11 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     responseRequestId.current=null;correctionRequestId.current=null;
     setWriteError('');setWriteNotice('');
   }
+  const changeService=useCallback((id:string)=>{
+    setServiceId(id);setItems([]);setNextCursor(null);setListServiceId(null);
+  },[]);
+  const listUrl='/api/scoped/support-work?limit=20'+(serviceId?'&serviceId='+encodeURIComponent(serviceId):'');
+  const contextLocked=!!selectedId||writeBusy||detailBusy||busy;
   function refreshWork() {setWriteError('');setRevision(r=>r+1);}
   function startCorrection(entry:ScopedSupportHistoryEntry) {
     setCorrectionTarget(entry);setCorrectionText(entry.responseText??'');setCorrectionReason('');
@@ -270,12 +277,12 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
   useEffect(()=>{
     let active=true;
     setBusy(true);setError('');setItems([]);setNextCursor(null);
-    api<ScopedSupportWorkPage>('/api/scoped/support-work?limit=20')
-      .then(page=>{if(active){setItems(page.items);setNextCursor(page.nextCursor);}})
+    api<ScopedSupportWorkPage>(listUrl)
+      .then(page=>{if(active){setItems(page.items);setNextCursor(page.nextCursor);setListServiceId(serviceId);}})
       .catch(()=>{if(active){setItems([]);setError('許可された対応を取得できませんでした。再度お試しください。');}})
       .finally(()=>{if(active)setBusy(false);});
     return ()=>{active=false;};
-  },[revision]);
+  },[revision,listUrl,serviceId]);
 
   useEffect(()=>{
     selectedRequestId.current=selectedId;
@@ -286,20 +293,21 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
       api<ScopedSupportWorkSummary>(`/api/scoped/support-work/${selectedId}`),
       api<ScopedSupportWorkHistory>(`/api/scoped/support-work/${selectedId}/history?limit=20`),
     ]).then(([work,records])=>{
-      if(work.workId!==selectedId||records.work.workId!==selectedId)throw Error('Work mismatch');
+      if(work.workId!==selectedId||records.work.workId!==selectedId||
+         (serviceId&&(work.serviceId!==serviceId||records.work.serviceId!==serviceId)))throw Error('Work mismatch');
       if(active){
         setDetail(work);setHistory(records);
       }
     }).catch(()=>{if(active){setDetail(null);setHistory(null);setDetailError('この対応の閲覧権限を確認できませんでした。一覧を更新してください。');}})
       .finally(()=>{if(active)setDetailBusy(false);});
     return ()=>{active=false;};
-  },[selectedId,revision]);
+  },[selectedId,revision,serviceId]);
 
   async function loadMore() {
-    if(!nextCursor||busy)return;
+    if(!nextCursor||busy||listServiceId!==serviceId)return;
     setBusy(true);setError('');
     try {
-      const page=await api<ScopedSupportWorkPage>(`/api/scoped/support-work?limit=20&cursor=${encodeURIComponent(nextCursor)}`);
+      const page=await api<ScopedSupportWorkPage>(`${listUrl}&cursor=${encodeURIComponent(nextCursor)}`);
       setItems(previous=>{
         const seen=new Set(previous.map(item=>item.workId));
         return [...previous,...page.items.filter(item=>!seen.has(item.workId))];
@@ -337,7 +345,8 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     <div className="page-content scoped-support-content">
       <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
         <button className="secondary" disabled={busy} onClick={()=>{selectWork(null);setRevision(r=>r+1);}}>一覧を更新</button></div>
-      <ScopedReceptionWorkspace csrf={csrf} onBeneficiaryConfirmed={refreshWork}/>
+      <ScopedReceptionWorkspace csrf={csrf} onBeneficiaryConfirmed={refreshWork}
+       onServiceChange={changeService} contextLocked={contextLocked}/>
       <ScopedRegistryReviewUI csrf={csrf}/>
       {error&&<p role="alert">{error}</p>}
       <div className="scoped-support-panels">
@@ -345,13 +354,13 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
           <h2>対応一覧</h2>
           {busy&&items.length===0?<p role="status">確認しています…</p>
             : !error&&items.length===0?<p>現在、閲覧できる対応はありません。</p>:null}
-          <ul className="scoped-work-list">{items.map(work=><li key={work.workId}>
+          <ul className="scoped-work-list">{(listServiceId===serviceId?items:[]).map(work=><li key={work.workId}>
             <button type="button" className={work.workId===selectedId?'scoped-work-button active':'scoped-work-button'}
               aria-current={work.workId===selectedId?'true':undefined} onClick={()=>selectWork(work.workId)}>
               <strong>{work.title}</strong><span>{statusLabels[work.status]}</span><small>更新: {date(work.updatedAt)}</small>
             </button>
           </li>)}</ul>
-          {nextCursor&&<button className="secondary" disabled={busy} onClick={()=>void loadMore()}>さらに表示</button>}
+          {nextCursor&&listServiceId===serviceId&&<button className="secondary" disabled={busy} onClick={()=>void loadMore()}>さらに表示</button>}
         </section>
         <section aria-label="選択した対応の詳細">
           {!selectedId?<><h2>対応の詳細</h2><p>一覧から確認したい対応を選んでください。</p></>:
