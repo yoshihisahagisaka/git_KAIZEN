@@ -18,6 +18,18 @@ export class PgSupportRepository implements SupportRepository {
  organizations(){return this.many<{id:string;name:string;status:string}>("select id,name,status from factact.organizations where status='ACTIVE' order by name,id");}
  insertCallerOrganization(id:string,name:string){return this.insert('organizations',{id,tenantId:this.tenant,name,status:'ACTIVE'});}
  insertCallerPerson(id:string,organizationId:string,name:string,email:string|null){return this.insert('people',{id,tenantId:this.tenant,organizationId,displayName:name,email,lifecycleStatus:'ACTIVE'});}
+ async activeCallerOrganization(id:string):Promise<boolean>{
+  const {rows}=await this.db.query("select 1 from factact.organizations where id=$1 and status='ACTIVE'",[id]);
+  return rows.length===1;
+ }
+ async matchingCallerPeople(organizationId:string,displayName:string):Promise<boolean>{
+  // Matching the authorized Organization, not tenant-wide Registry browsing.
+  const name=displayName.normalize('NFKC').toLowerCase();
+  const {rows}=await this.db.query(`select 1 from factact.people
+    where organization_id=$1 and lower(normalize(display_name,NFKC))=$2
+    limit 1`,[organizationId,name]);
+  return rows.length>0;
+ }
  async lockCallerKey(key:string){await this.db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[this.tenant+':caller:'+key]);}
  managementRows(){return this.many<import('../../../../../packages/application/src/support-ports.js').SupportManagementRow>(`select w.*,e.id as support_event_id,p.display_name as person_name,s.name as service_name,
   o.display_name as owner_name,o.status as owner_status
