@@ -48,6 +48,8 @@ export interface ScopedIntakeOrganizationPage {
 }
 export interface ScopedIntakeService {id:string;name:string}
 export interface ScopedIntakeServiceCursor {name:string;id:string}
+export interface ScopedSupportServiceContext extends ScopedIntakeService {canReceive:boolean}
+export interface ScopedSupportServiceContextPage {items:ScopedSupportServiceContext[];nextCursor:ScopedIntakeServiceCursor|null}
 export interface ScopedIntakeServicePage {
  items:ScopedIntakeService[];
  nextCursor:ScopedIntakeServiceCursor|null;
@@ -617,6 +619,86 @@ export class PgScopedAccessReader {
           and g.object_kind='SUPPORT' and 'CREATE'=any(g.operations)
           and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
           and (g.effective_until is null or g.effective_until>$2::timestamptz))
+      and ($3::text is null or (s.name,s.id)>($3::text,$4::uuid))
+    order by s.name,s.id limit $5`,
+    [actorId,at,cursor?.name??null,cursor?.id??null,limit+1]);
+   const items=rows.slice(0,limit);
+   const last=items.at(-1);
+   return {items,nextCursor:rows.length>limit&&last?
+    {name:last.name,id:last.id}:null};
+  },true);
+ }
+
+ /** Service navigation is not an authorization to receive or read a Work. */
+ async scopedSupportServiceContexts(tenantId:string,actorId:string,limit:number,
+  cursor:ScopedIntakeServiceCursor|null):Promise<ScopedSupportServiceContextPage>{
+  if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>20||
+    (cursor&&(!z.uuid().safeParse(cursor.id).success||!cursor.name||
+      cursor.name.length>200)))return {items:[],nextCursor:null};
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return {items:[],nextCursor:null};
+  return withTenant(this.pool,tenantId,async db=>{
+   // Navigation candidates only: independent READ and CREATE grants. Never page a tenant-wide service list
+   // and then hide unauthorized rows or return tenant-level total counts.
+   const {rows}=await db.query<ScopedSupportServiceContext>(`
+    select s.id,s.name,exists (
+        select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=s.tenant_id
+          and g.actor_operator_id=a.id and g.service_id=s.id
+          and g.contract_profile_id=c.id and g.scope_kind='SERVICE'
+          and g.object_kind='SUPPORT' and 'CREATE'=any(g.operations)
+          and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
+          and (g.effective_until is null or g.effective_until>$2::timestamptz)) as "canReceive" from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$2::timestamptz
+      and (c.effective_to is null or c.effective_to>$2::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.status='ACTIVE'
+      and (select count(*) from factact.contract_profiles only_current
+       where only_current.tenant_id=s.tenant_id and only_current.service_id=s.id
+        and only_current.status='ACTIVE'
+        and only_current.effective_from<=$2::timestamptz
+        and (only_current.effective_to is null or only_current.effective_to>$2::timestamptz))=1
+      and (exists (
+        select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=s.tenant_id
+          and g.actor_operator_id=a.id and g.service_id=s.id
+          and g.contract_profile_id=c.id and g.scope_kind='SERVICE'
+          and g.object_kind='SUPPORT' and 'CREATE'=any(g.operations)
+          and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
+          and (g.effective_until is null or g.effective_until>$2::timestamptz)) or exists (
+        select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=s.tenant_id and g.actor_operator_id=a.id
+          and g.service_id=s.id and g.contract_profile_id=c.id
+          and g.object_kind='SUPPORT' and 'READ'=any(g.operations)
+          and g.status='ACTIVE' and g.effective_from<=$2::timestamptz
+          and (g.effective_until is null or g.effective_until>$2::timestamptz)
+          and (g.scope_kind='SERVICE'
+           or exists(select 1 from factact.service_recipients sr
+             join factact.organizations org on org.tenant_id=sr.tenant_id
+               and org.id=sr.recipient_organization_id and org.status='ACTIVE'
+             where sr.tenant_id=g.tenant_id and sr.service_id=g.service_id
+               and sr.id=g.service_recipient_id and sr.status='ACTIVE'
+               and sr.recipient_type='ORGANIZATION'
+               and (g.scope_kind='SERVICE_RECIPIENT'
+                 or (g.scope_kind='WORK' and exists(select 1 from factact.work w
+                   join lateral (select d.kind,d.service_recipient_id
+                    from factact.support_event_beneficiary_decisions d
+                    where d.tenant_id=w.tenant_id and d.support_event_id=w.support_event_id
+                    order by d.revision desc limit 1) b
+                    on b.kind='CONFIRMED' and b.service_recipient_id=sr.id
+                   where w.tenant_id=g.tenant_id and w.id=g.work_id
+                     and w.service_id=g.service_id and w.contract_profile_id=g.contract_profile_id
+                     and w.lane='SUPPORT'
+                     and not exists(select 1 from factact.support_event_beneficiary_decisions prior
+                       where prior.tenant_id=w.tenant_id and prior.support_event_id=w.support_event_id
+                         and prior.kind='CONFIRMED' and prior.service_recipient_id is distinct from sr.id))))))
+      ))
       and ($3::text is null or (s.name,s.id)>($3::text,$4::uuid))
     order by s.name,s.id limit $5`,
     [actorId,at,cursor?.name??null,cursor?.id??null,limit+1]);

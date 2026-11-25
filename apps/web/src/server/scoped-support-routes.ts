@@ -3,11 +3,13 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
+ scopedSupportServiceContexts?(tenantId:string,actorId:string,limit:number,
+  cursor:ScopedIntakeServiceCursor|null):Promise<ScopedSupportServiceContextPage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
   limit:number,cursor:ScopedIntakeOrganizationCursor|null,q?:string):Promise<ScopedIntakeOrganizationPage>;
  scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
@@ -59,6 +61,23 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    }
    const actor=(res.locals.session as {operator:Operator}).operator;
    const data=await reader.scopedIntakeServices!(actor.tenantId,actor.id,query.limit,cursor);
+   res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
+    Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
+  });
+ }
+ // Separate navigation candidates: do not broaden the existing intake API.
+ if(reader.scopedSupportServiceContexts){
+  const querySchema=z.strictObject({limit:z.coerce.number().int().min(1).max(20).default(20),cursor:z.string().max(400).optional()});
+  const cursorSchema=z.strictObject({name:z.string().min(1).max(200),id:z.uuid()});
+  router.get('/scoped/support-service-contexts',async(req,res)=>{
+   const query=querySchema.parse(req.query);
+   let cursor:ScopedIntakeServiceCursor|null=null;
+   if(query.cursor){
+    try{cursor=cursorSchema.parse(JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown);}
+    catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+   }
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const data=await reader.scopedSupportServiceContexts!(actor.tenantId,actor.id,query.limit,cursor);
    res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
     Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
   });
