@@ -74,5 +74,11 @@ export interface ScopedSupportUpdateBoundary {
   * No callback runs until live Grant and Contract checks succeed. */
  runSupportIntake?<T>(tenantId:string,actorId:string,serviceId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+ /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
+  * the caller's source affiliation or a separately authorized Registry
+  * recipient, and revalidates before COMMIT. Never auto-confirms by Caller. */
+ runSupportIntakeBeneficiary?<T>(tenantId:string,actorId:string,serviceId:string,
+  eventId:string,organizationId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
 }
 export type SupportRuntime=JoinRuntime;
