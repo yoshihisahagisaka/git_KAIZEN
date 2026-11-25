@@ -5,10 +5,15 @@ import {
 } from '../../../../packages/domain/src/procedure-page-text.js';
 
 export function ProcedureBodyText({body}:{body:string}) {
+ const lines=body.replace(/\r\n/g,'\n').split('\n');
  return <div className="procedure-body-text" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
-  {splitProcedureLinks(body).map((part,index)=>part.href
-   ?<a key={index} href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
-   :<span key={index}>{part.text}</span>)}
+  {lines.map((line,lineIndex)=><span key={lineIndex}>
+   {/^【[^】\n]{1,60}】$/u.test(line.trim())?<strong>{line}</strong>:
+    splitProcedureLinks(line).map((part,index)=>part.href
+     ?<a key={index} href={part.href} target="_blank" rel="noopener noreferrer">{part.text}</a>
+     :<span key={index}>{part.text}</span>)}
+   {lineIndex<lines.length-1?'\n':null}
+  </span>)}
  </div>;
 }
 
@@ -26,7 +31,11 @@ export function ProcedureBodyEditor({category,body,onChange,disabled=false}:{
  const [askReplace,setAskReplace]=useState(false);
  const changeCategory=(next:ProcedureCategory)=>{
   setAskReplace(false);
-  onChange({category:next,body:bodyForNewCategory(body,next)});
+  // An untouched auto-generated starter may follow the new category.
+  // User-edited text (even incomplete) is never replaced implicitly.
+  const nextBody=body===initialProcedureBody(category)
+   ?initialProcedureBody(next):bodyForNewCategory(body,next);
+  onChange({category:next,body:nextBody});
  };
  const insert=()=>{
   if(body.trim()){setAskReplace(true);return;}
@@ -40,7 +49,7 @@ export function ProcedureBodyEditor({category,body,onChange,disabled=false}:{
   </select>
   <label htmlFor="procedure-body-text">本文（テキスト形式）</label>
   <textarea id="procedure-body-text" value={body} disabled={disabled}
-   rows={18} maxLength={12000} onChange={event=>onChange({category,body:event.target.value})}/>
+   rows={18} maxLength={12000} onChange={event=>onChange({category,body:event.currentTarget.value})}/>
   <p>見出しや番号は自由に編集できます。複数の https:// リンクを貼り付けると閲覧時にクリックできます。</p>
   <button type="button" className="secondary" disabled={disabled} onClick={insert}>ひな形を挿入</button>
   {askReplace&&<div role="group" aria-label="ひな形の上書き確認">

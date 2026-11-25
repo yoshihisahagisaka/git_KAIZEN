@@ -47,6 +47,14 @@ describe('P0-C safe read-only clickable URL rendering',()=>{
   ])expect(safeProcedureHref(value)).toBeNull();
   expect(safeProcedureHref('https://docs.google.com/document/d/abc')).toBeTruthy();
  });
+ it('highlights conventional bracket headings while retaining plain text steps',()=>{
+  const html=renderToStaticMarkup(<ProcedureBodyText
+   body={'【対応手順】\\n1. 起動確認\\nhttps://support.example.com/steps'}/>);
+  expect(html).toContain('<strong>【対応手順】</strong>');
+  expect(html).toContain('1. 起動確認');
+  expect(html).toContain('href="https://support.example.com/steps"');
+ });
+
  it('renders exact visible HTTPS URL with safe new tab attributes, no executable HTML',()=>{
   const body='<img src=x onerror=alert(1)>\nhttps://docs.google.com/document/d/abc\n'
    +'javascript:alert(1)\nhttps://admin:password@example.com/private';

@@ -6,6 +6,7 @@ import './style.css';
 import { JoinUI } from './join-ui.js';
 import { ScopedSupportUI } from './scoped-support-ui.js';
 import { OperatorPolicyAdminUI } from './operator-policy-admin-ui.js';
+import {ProcedurePageAdmin} from './procedure-page-admin.js';
 import { api } from './api.js';
 
 type BrowserSession = { operator: Operator; csrfToken: string };
@@ -79,6 +80,9 @@ function App() {
       <button className="secondary" onClick={() => void logout()}>ログアウト</button></div>
       <OperatorPolicyAdminUI key={`policy:${session.operator.tenantId}:${session.operator.id}`}
         csrf={session.csrfToken}/>
+      {session.operator.readAuthorityMode==='INTERNAL_V1' && session.operator.roles.includes('ADMIN')&&
+       <ProcedurePageAdmin key={`procedure:${session.operator.tenantId}:${session.operator.id}`}
+        csrf={session.csrfToken}/>}
       {session.operator.readAuthorityMode==='INTERNAL_V1'
         ? <JoinUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} operator={session.operator}/>
         : session.operator.readAuthorityMode==='SCOPED'
