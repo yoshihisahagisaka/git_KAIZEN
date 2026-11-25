@@ -811,8 +811,9 @@ export class PgScopedAccessReader {
   * LIMIT and the same policy kernel rechecks each projected Work. No total
   * tenant count or unauthorized candidate count leaves the transaction.
   */
- async supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>{
+ async supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string):Promise<ScopedSupportWorkPage>{
   if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
+     (serviceId!==undefined&&!z.uuid().safeParse(serviceId).success)||
      !Number.isInteger(limit)||limit<1||limit>50||
      (cursor&&(!z.uuid().safeParse(cursor.workId).success||!Number.isFinite(Date.parse(cursor.updatedAt)))))
    return {items:[],nextCursor:null};
@@ -847,6 +848,7 @@ export class PgScopedAccessReader {
     join factact.organizations org
       on org.id=recipient.recipient_organization_id and org.tenant_id=w.tenant_id and org.status='ACTIVE'
     where w.lane='SUPPORT'
+      and ($6::uuid is null or w.service_id=$6::uuid)
       -- Authorization and data projection must deny previously reassigned
       -- Work BEFORE LIMIT, not trim an already paginated tenant-wide result.
       and not exists (
@@ -868,7 +870,7 @@ export class PgScopedAccessReader {
           or (g.scope_kind='WORK' and g.service_recipient_id=recipient.id and g.work_id=w.id))
       )
     order by w.updated_at desc,w.id desc limit $5`,
-    [actorId,at,cursor?.updatedAt??null,cursor?.workId??null,limit]);
+    [actorId,at,cursor?.updatedAt??null,cursor?.workId??null,limit,serviceId??null]);
    const items:ScopedSupportWorkSummary[]=[];
    for(const work of rows){
     if(work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)continue;
