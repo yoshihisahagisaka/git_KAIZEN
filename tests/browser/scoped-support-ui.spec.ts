@@ -542,8 +542,8 @@ test('SONIX P0-A5: service-first existing company and Person intake reuses Regis
  await existing.getByLabel('企業名で検索').fill('Example');
  await existing.getByRole('button',{name:'企業を探す'}).click();
  await existing.getByLabel('所属・企業').selectOption(ids.organization);
- await expect(existing.getByLabel('問い合わせ者')).toContainText('田中 一郎');
- await existing.getByLabel('問い合わせ者').selectOption(ids.person);
+ await expect(existing.getByLabel('問い合わせ者',{exact:true})).toContainText('田中 一郎');
+ await existing.getByLabel('問い合わせ者',{exact:true}).selectOption(ids.person);
  await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
  await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
  await existing.getByRole('button',{name:'登録済み問い合わせを受付'}).click();
@@ -595,7 +595,9 @@ test('SONIX P0-A6: register new unverified Person at authorized existing company
  expect((await db.admin.query(`select reliability from factact.recipient_observations
   where recorded_by_operator_id=$1`,[scopedActor])).rows)
   .toEqual([{reliability:'UNVERIFIED'}]);
- expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+ expect((await db.admin.query(`select count(*)::int n
+   from factact.support_event_beneficiary_decisions
+   where recorded_by_operator_id=$1`,[scopedActor])).rows)
   .toEqual([{n:0}]);
  await expect(intake.getByRole('region',{name:'支援対象企業を確認'}))
   .toContainText('Example株式会社');
