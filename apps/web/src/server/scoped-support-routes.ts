@@ -13,7 +13,7 @@ export interface ScopedSupportReader {
  scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
- supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>;
+ supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
   cursor:ScopedSupportHistoryCursor|null):Promise<ScopedSupportWorkHistory|null>;
 }
@@ -24,7 +24,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
-  cursor:z.string().max(300).optional()});
+  cursor:z.string().max(300).optional(),serviceId:z.uuid().optional()});
  const cursorInput=z.strictObject({updatedAt:z.string().datetime({offset:true}),workId:z.uuid()});
  router.get('/scoped/support-work',async(req,res)=>{
   const query=listInput.parse(req.query);
@@ -38,7 +38,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    } catch {throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
   }
   const actor=(res.locals.session as {operator:Operator}).operator;
-  res.json({ok:true,data:await reader.supportWorkPage(actor.tenantId,actor.id,query.limit,cursor)});
+  res.json({ok:true,data:await reader.supportWorkPage(actor.tenantId,actor.id,query.limit,cursor,query.serviceId)});
  });
  // An authorization-filtered service selector; this does NOT enumerate
  // customer Organizations/People or grant Registry read permissions.

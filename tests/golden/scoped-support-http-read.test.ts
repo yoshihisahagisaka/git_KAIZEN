@@ -850,6 +850,19 @@ describe('scoped SUPPORT text-only response correction (Draft; not deployed)',()
 });
 
 describe('scoped SUPPORT Work authorized list and pagination',()=>{
+ it('filters the authorized list by service before pagination without deriving READ from selection',async()=>{
+  await grant('SERVICE_RECIPIENT',recipientA);
+  const page=(await getPage(`?serviceId=${ids.service}&limit=1`).expect(200)).body.data;
+  expect(page.items.map((w:{workId:string})=>w.workId)).toEqual([workA]);
+  expect((await getPage(`?serviceId=${ids.service}&limit=1&cursor=${page.nextCursor}`).expect(200)).body.data.items).toEqual([]);
+  expect((await getPage(`?serviceId=${randomUUID()}`).expect(200)).body.data.items).toEqual([]);
+  await getPage('?serviceId=invalid').expect(400);
+  await get(workB).expect(404);
+ });
+ it('a selected service and a CREATE grant alone do not authorize Work READ',async()=>{
+  await grant('SERVICE',null,null,{operations:['CREATE']});
+  expect((await getPage(`?serviceId=${ids.service}`).expect(200)).body.data.items).toEqual([]);
+ });
  it('returns no tenant-wide records, count or continuation without a grant, despite ADMIN Role',async()=>{
   const response=await getPage().expect(200);
   expect(response.body.data).toEqual({items:[],nextCursor:null});
