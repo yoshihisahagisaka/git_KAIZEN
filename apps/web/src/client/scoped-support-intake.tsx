@@ -31,7 +31,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
    caller:{kind:'NEW',organizationName:organizationName.trim(),
     displayName:displayName.trim(),...(email.trim()?{email:email.trim()}:{}),
     distinctPersonConfirmed:false},
-   decision,reason:reason.trim(),
+   decision,reason:reason.trim()||(decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':''),
   };
   if(!payload.symptom||!payload.caller.organizationName||!payload.caller.displayName||
    !payload.reason)return;
@@ -78,11 +78,13 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
      <option value="REQUIRED">対応が必要</option>
      <option value="NOT_APPLICABLE">現時点で対応不要</option>
     </select>
-    <label htmlFor="scoped-intake-reason">判断理由</label>
-    <textarea id="scoped-intake-reason" maxLength={4000} value={reason} disabled={busy}
-     onChange={event=>changed(()=>setReason(event.target.value))}/>
+    {decision==='NOT_APPLICABLE'&&<>
+     <label htmlFor="scoped-intake-reason">判断理由</label>
+     <textarea id="scoped-intake-reason" maxLength={4000} value={reason} disabled={busy} required
+      onChange={event=>changed(()=>setReason(event.target.value))}/>
+    </>}
     <button type="submit" disabled={busy||!serviceId||!organizationName.trim()||
-     !displayName.trim()||!symptom.trim()||!reason.trim()||!!receipt}>受付を記録</button>
+     !displayName.trim()||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||!!receipt}>{decision==='REQUIRED'?'受付して対応を開始':'対応不要として受付'}</button>
    </form>}
    {mode==='EXISTING'&&!receipt&&
     <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}

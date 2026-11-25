@@ -83,12 +83,12 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  }
  async function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault();
-  if(sending.current||busy||loading||peopleLoading||peopleFailed||!serviceId||!orgId||!personId||!symptom.trim()||!reason.trim()||(personId==='NEW'&&!newName.trim()))
+  if(sending.current||busy||loading||peopleLoading||peopleFailed||!serviceId||!orgId||!personId||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||(personId==='NEW'&&!newName.trim()))
    return;
   const payload={
    serviceId,caller:personId==='NEW'?{kind:'NEW',organizationId:orgId,displayName:newName.trim(),
     ...(newEmail.trim()?{email:newEmail.trim()}:{}),distinctPersonConfirmed:distinct}:{kind:'EXISTING',personId},symptom:symptom.trim(),
-   decision,reason:reason.trim(),
+   decision,reason:reason.trim()||(decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':''),
   };
   const key=JSON.stringify(payload);
   if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};
@@ -153,11 +153,13 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
      <option value="REQUIRED">対応が必要</option>
      <option value="NOT_APPLICABLE">現時点で対応不要</option>
     </select>
-    <label htmlFor="scoped-existing-reason">判断理由</label>
-    <textarea id="scoped-existing-reason" maxLength={4000} value={reason} disabled={busy}
-     onChange={event=>changed(()=>setReason(event.target.value))}/>
-    <button type="submit" disabled={busy||loading||peopleLoading||peopleFailed||!orgId||!personId||!symptom.trim()||!reason.trim()||(personId==='NEW'&&!newName.trim())}>
-     {personId==='NEW'?'新しい問い合わせ者を登録して受付':'登録済み問い合わせを受付'}
+    {decision==='NOT_APPLICABLE'&&<>
+     <label htmlFor="scoped-existing-reason">判断理由</label>
+     <textarea id="scoped-existing-reason" maxLength={4000} value={reason} disabled={busy} required
+      onChange={event=>changed(()=>setReason(event.target.value))}/>
+    </>}
+    <button type="submit" disabled={busy||loading||peopleLoading||peopleFailed||!orgId||!personId||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||(personId==='NEW'&&!newName.trim())}>
+     {decision==='REQUIRED'?'受付して対応を開始':'対応不要として受付'}
     </button>
    </form>
   </>}
