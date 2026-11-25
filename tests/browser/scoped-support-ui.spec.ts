@@ -443,8 +443,8 @@ test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller
    '2026-11-01T00:00:00.000Z',ids.operator,
  ]);
  await login(page);
- const form=page.getByRole('region',{name:'未登録の問い合わせ受付'});
- await form.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ const form=page.getByRole('region',{name:'問い合わせ受付'});
+ await form.getByRole('button',{name:'問い合わせを受付'}).click();
  await form.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await form.getByLabel('新しい所属・企業名').fill('新規受付の所属先');
  await form.getByLabel('問い合わせ者名').fill('新規受付 担当者');
@@ -476,8 +476,8 @@ test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until indepe
   ['CREATE','UPDATE'],'2026-11-01T00:00:00.000Z',ids.operator,
  ]);
  await login(page);
- const intake=page.getByRole('region',{name:'未登録の問い合わせ受付'});
- await intake.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await intake.getByRole('button',{name:'問い合わせを受付'}).click();
  await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
  await intake.getByLabel('新しい所属・企業名').fill('P0-A4顧客候補');
  await intake.getByLabel('問い合わせ者名').fill('P0-A4受付者');
