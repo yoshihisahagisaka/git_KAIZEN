@@ -574,3 +574,14 @@ test('service reception context filters Work list; READ alone still works',async
  await expect.poll(()=>seen.includes(ids.service)).toBe(true);
  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
 });
+
+
+test('READ-only service context does not show new reception',async({page})=>{
+ const seen:string[]=[];
+ page.on('request',r=>{const url=new URL(r.url());if(url.pathname==='/api/scoped/support-work')seen.push(url.searchParams.get('serviceId')??'');});
+ await login(page);
+ await expect.poll(()=>seen.includes(ids.service)).toBe(true);
+ await expect(page.getByRole('region',{name:'受付サービスコンテキスト'})).toContainText('情シスKAIZEN');
+ await expect(page.getByRole('button',{name:'問い合わせを受付'})).toHaveCount(0);
+ await expect(page.locator('.scoped-work-button')).toHaveCount(1);
+});

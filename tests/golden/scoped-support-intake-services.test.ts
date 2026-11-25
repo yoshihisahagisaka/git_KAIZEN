@@ -107,3 +107,26 @@ describe('SONIX P0-A2 isolated service recipient directory',()=>{
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null)).items).toEqual([]);
  });
 });
+
+
+describe('support service navigation candidates',()=>{
+ it('separates READ navigation from CREATE and keeps the original intake directory restricted',async()=>{
+  await grant(ids.service,ids.contract,['READ']);
+  await grant(serviceB,contractB,['CREATE']);
+  const page=await reader.scopedSupportServiceContexts(ids.tenant,actorId,20,null);
+  expect(page.items).toEqual(expect.arrayContaining([
+   {id:ids.service,name:'情シスKAIZEN',canReceive:false},
+   {id:serviceB,name:'Service B',canReceive:true},
+  ]));
+  expect(page.items).toHaveLength(2);
+  expect((await list()).items).toEqual([{id:serviceB,name:'Service B'}]);
+ });
+ it('does not expose services with UPDATE only or revoked READ',async()=>{
+  const id=await grant(ids.service,ids.contract,['READ']);
+  await grant(serviceB,contractB,['UPDATE']);
+  expect((await reader.scopedSupportServiceContexts(ids.tenant,actorId,20,null)).items).toHaveLength(1);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='委任終了' where id=$1`,[id,ids.operator]);
+  expect((await reader.scopedSupportServiceContexts(ids.tenant,actorId,20,null)).items).toEqual([]);
+ });
+});

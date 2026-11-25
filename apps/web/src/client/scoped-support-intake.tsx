@@ -3,7 +3,7 @@ import {api} from './api.js';
 import {ScopedBeneficiaryConfirmation} from './scoped-beneficiary-confirmation.js';
 import {ScopedExistingCallerForm} from './scoped-existing-caller-form.js';
 
-interface Service {id:string;name:string}
+interface Service {id:string;name:string;canReceive:boolean}
 interface ServicePage {items:Service[];nextCursor:string|null}
 interface Receipt {eventId:string;workId:string|null}
 type Decision='REQUIRED'|'NOT_APPLICABLE';
@@ -117,7 +117,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
  useEffect(()=>{
   let live=true;
   setLoading(true);setError('');setServices([]);setCursor(null);setChosen('');
-  api<ServicePage>('/api/scoped/support-intake/services?limit=20')
+  api<ServicePage>('/api/scoped/support-service-contexts?limit=20')
    .then(page=>{if(live){setServices(page.items);setCursor(page.nextCursor);}})
    .catch(()=>{if(live)setError('受付可能なサービスを確認できませんでした。');})
    .finally(()=>{if(live)setLoading(false);});
@@ -131,7 +131,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
   if(!cursor||moreBusy||open)return;
   setMoreBusy(true);setError('');
   try{
-   const page=await api<ServicePage>('/api/scoped/support-intake/services?limit=20&cursor='+encodeURIComponent(cursor));
+   const page=await api<ServicePage>('/api/scoped/support-service-contexts?limit=20&cursor='+encodeURIComponent(cursor));
    setServices(prev=>{const seen=new Set(prev.map(item=>item.id));return [...prev,...page.items.filter(item=>!seen.has(item.id))];});
    setCursor(page.nextCursor);
   }catch{setError('サービスの続きを取得できませんでした。');}
@@ -139,10 +139,10 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
  }
  return <>
   <section aria-label="受付サービスコンテキスト" className="card">
-   <h2>受付サービス</h2>
+   <h2>対応サービス</h2>
    {loading&&<p role="status">受付可能なサービスを確認しています…</p>}
    {error&&<><p role="alert">{error}</p><button type="button" className="secondary" disabled={open||moreBusy||contextLocked} onClick={()=>setRefresh(n=>n+1)}>受付サービスを再確認</button></>}
-   {!loading&&!error&&!services.length&&<p>受付権限のあるサービスはありません。</p>}
+   {!loading&&!error&&!services.length&&<p>利用可能なサービスはありません。</p>}
    {single&&service&&<p><strong>{service.name}</strong></p>}
    {!single&&services.length>0&&<>
     <label htmlFor="scoped-reception-service">受付サービスを切り替える</label>
@@ -156,7 +156,8 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
    {open&&!single&&<p>サービスを切り替えるには受付画面を閉じてください。</p>}
    {contextLocked&&!single&&<p>サービスを切り替えるには現在の対応を保存して閉じてください。</p>}
   </section>
-  {service&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
+  {service&&!service.canReceive&&<p>このサービスでは対応の閲覧が可能ですが、新規受付権限はありません。</p>}
+  {service?.canReceive&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
    open={open} onOpenChange={setOpen}
    {...(onBeneficiaryConfirmed?{onBeneficiaryConfirmed}:{})}/>}
  </>;
