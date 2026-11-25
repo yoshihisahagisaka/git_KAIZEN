@@ -23,7 +23,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'|'evaluateScopedReceivedEvent'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional(),serviceId:z.uuid().optional()});
@@ -150,8 +150,8 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   });
   const intakeInput=z.strictObject({
    requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
-   caller:newCaller,decision:z.enum(['REQUIRED','NOT_APPLICABLE']),
-   reason:z.string().trim().min(1).max(4000),
+   caller:newCaller,decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),
+   reason:z.string().trim().max(4000),
   });
   router.post('/scoped/support-intake/new-caller',async(req,res)=>{
    const input=intakeInput.parse(req.body);
@@ -164,7 +164,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
     requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
     caller:z.strictObject({kind:z.literal('NEW'),organizationId:z.uuid(),
      displayName:z.string().trim().min(1).max(200),email:z.email().optional(),distinctPersonConfirmed:z.boolean()}),
-    decision:z.enum(['REQUIRED','NOT_APPLICABLE']),reason:z.string().trim().min(1).max(4000),
+    decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),reason:z.string().trim().max(4000),
    });
    router.post('/scoped/support-intake/new-caller-in-organization',async(req,res)=>{
     const input=inputSchema.parse(req.body);
@@ -178,14 +178,23 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
     requestId:z.uuid(),serviceId:z.uuid(),
     symptom:z.string().trim().min(1).max(4000),
     caller:z.strictObject({kind:z.literal('EXISTING'),personId:z.uuid()}),
-    decision:z.enum(['REQUIRED','NOT_APPLICABLE']),
-    reason:z.string().trim().min(1).max(4000),
+    decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),
+    reason:z.string().trim().max(4000),
    });
    router.post('/scoped/support-intake/existing-caller',async(req,res)=>{
     const input=existingInput.parse(req.body);
     const actor=(res.locals.session as {operator:Operator}).operator;
     const result=await writer.recordScopedExistingCallerIntake!(actor,input);
     res.status(201).json({ok:true,data:result});
+   });
+  }
+  if(writer.evaluateScopedReceivedEvent){
+   const schema=z.strictObject({serviceId:z.uuid(),decision:z.enum(['REQUIRED','NOT_APPLICABLE']),reason:z.string().trim().max(4000)});
+   router.post('/scoped/support-intake/events/:eventId/evaluate',async(req,res)=>{
+    const eventId=z.uuid().parse(req.params.eventId),input=schema.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const data=await writer.evaluateScopedReceivedEvent!(actor,input.serviceId,eventId,input.decision,input.reason);
+    res.json({ok:true,data});
    });
   }
   if(writer.recordScopedIntakeBeneficiary){

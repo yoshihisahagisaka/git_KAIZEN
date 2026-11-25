@@ -211,3 +211,31 @@ describe('P0-A5 existing Caller HTTP request uses independent REGISTRY READ',()=
    .toEqual([{n:0}]);
  });
 });
+
+describe('P0-A receive-only preserves an unevaluated Event',()=>{
+ it('records one Event without Evaluation or Work, then starts it only by separate authorized human action',async()=>{
+  await grant();
+  const payload={...intake(),decision:'DEFERRED',reason:''};
+  const received=(await post(payload).expect(201)).body.data;
+  expect(received.workId).toBeNull();
+  expect((await post(payload).expect(201)).body.data).toEqual(received);
+  expect((await db.admin.query('select count(*)::int n from factact.requirement_evaluations where support_event_id=$1',[received.eventId])).rows).toEqual([{n:0}]);
+  expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[received.eventId])).rows).toEqual([{n:0}]);
+  await post({...payload,decision:'REQUIRED',reason:'対応開始'}).expect(409);
+  const evaluate=(eventId:string,body:object,csrf='csrf')=>request(app)
+   .post('/api/scoped/support-intake/events/'+eventId+'/evaluate')
+   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
+  const decision={serviceId:ids.service,decision:'REQUIRED',reason:''};
+  await evaluate(received.eventId,decision).expect(404);
+  await operationGrant('UPDATE');
+  await evaluate(received.eventId,decision,'wrong-csrf').expect(403);
+  await evaluate(randomUUID(),decision).expect(404);
+  await evaluate(received.eventId,{...decision,serviceId:randomUUID()}).expect(404);
+  const started=(await evaluate(received.eventId,decision).expect(200)).body.data;
+  expect(started.workId).toBeTruthy();
+  expect((await evaluate(received.eventId,decision).expect(200)).body.data).toEqual(started);
+  expect((await db.admin.query('select count(*)::int n from factact.requirement_evaluations where support_event_id=$1',[received.eventId])).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[received.eventId])).rows).toEqual([{n:1}]);
+  await request(app).get('/api/scoped/support-work/'+started.workId).set('Cookie',cookie).expect(404);
+ });
+});

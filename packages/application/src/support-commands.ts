@@ -334,47 +334,66 @@ export class SupportCommands {
  async recordScopedExistingCallerIntake(actor:Operator,input:{
   requestId:string;serviceId:string;symptom:string;
   caller:{kind:'EXISTING';personId:string};
-  decision:'REQUIRED'|'NOT_APPLICABLE';reason:string;
+  decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
   if(!this.scopedUpdate?.runSupportExistingCallerIntake)
    throw new DomainError('SCOPED_EXISTING_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
   const value=await this.scopedUpdate.runSupportExistingCallerIntake(
    actor.tenantId,actor.id,input.serviceId,input.caller.personId,async r=>{
-    const event=await this.createEventInRepo(r,actor,input,'SCOPED');
-    const evaluated=await this.evaluateInRepo(
-     r,actor,event.id,input.decision,input.reason,'SCOPED');
-    return {eventId:event.id,workId:evaluated.work?.id??null};
+    return this.finishScopedIntake(r,actor,input);
    });
   return found(value);
  }
  async recordScopedNewCallerInOrganization(actor:Operator,input:{
   requestId:string;serviceId:string;symptom:string;
   caller:{kind:'NEW';organizationId:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:boolean};
-  decision:'REQUIRED'|'NOT_APPLICABLE';reason:string;
+  decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
   if(!this.scopedUpdate?.runSupportNewCallerInOrganization)
    throw new DomainError('SCOPED_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
   const value=await this.scopedUpdate.runSupportNewCallerInOrganization(
    actor.tenantId,actor.id,input.serviceId,input.caller.organizationId,async r=>{
-    const event=await this.createEventInRepo(r,actor,input,'SCOPED');
-    const evaluated=await this.evaluateInRepo(r,actor,event.id,input.decision,input.reason,'SCOPED');
-    return {eventId:event.id,workId:evaluated.work?.id??null};
+    return this.finishScopedIntake(r,actor,input);
    });
   return found(value);
  }
  async recordScopedNewCallerIntake(actor:Operator,input:{
   requestId:string;serviceId:string;symptom:string;
   caller:{kind:'NEW';organizationName:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:false};
-  decision:'REQUIRED'|'NOT_APPLICABLE';reason:string;
+  decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
   if(!input.caller.organizationName.trim()||input.caller.distinctPersonConfirmed!==false)
    throw new DomainError('INVALID_INPUT','未登録の所属・問い合わせ者を確認してください。',400);
   if(!this.scopedUpdate?.runSupportIntake)
    throw new DomainError('SCOPED_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
   const value=await this.scopedUpdate.runSupportIntake(actor.tenantId,actor.id,input.serviceId,async r=>{
-   const event=await this.createEventInRepo(r,actor,input,'SCOPED');
-   const evaluated=await this.evaluateInRepo(r,actor,event.id,input.decision,input.reason,'SCOPED');
-   return {eventId:event.id,workId:evaluated.work?.id??null};
+   return this.finishScopedIntake(r,actor,input);
+  });
+  return found(value);
+ }
+
+ /** Receive-only is not NOT_APPLICABLE: leave Requirement Evaluation absent.
+  * An intake retry cannot promote a previously deferred Event to Work. */
+ private async finishScopedIntake(r:SupportRepository,a:Operator,input:{
+  requestId:string;serviceId:string;symptom:string;caller:import('../../domain/src/support.js').SupportCallerInput;
+  decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
+ }){
+  requireCondition(input.decision!=='DEFERRED'||input.reason.trim()==='','INVALID_TRIAGE','受付のみでは対応の判断を記録しません。',400);
+  await r.lockRequest(input.requestId);
+  const previous=await r.byRequest(input.requestId);
+  const event=await this.createEventInRepo(r,a,input,'SCOPED');
+  if(input.decision==='DEFERRED')return {eventId:event.id,workId:(await r.workForEvent(event.id))?.id??null};
+  if(previous)requireCondition(!!await r.evaluation(event.id),'RETRY_CONFLICT','受付済みの問い合わせは対応開始操作から進めてください。');
+  const result=await this.evaluateInRepo(r,a,event.id,input.decision,input.reason,'SCOPED');
+  return {eventId:event.id,workId:result.work?.id??null};
+ }
+ async evaluateScopedReceivedEvent(actor:Operator,serviceId:string,eventId:string,
+  decision:'REQUIRED'|'NOT_APPLICABLE',reason:string){
+  if(!this.scopedUpdate?.runSupportReceivedEvaluation)
+   throw new DomainError('SCOPED_INTAKE_UNAVAILABLE','この操作は利用できません。',503);
+  const value=await this.scopedUpdate.runSupportReceivedEvaluation(actor.tenantId,actor.id,serviceId,eventId,async r=>{
+   const result=await this.evaluateInRepo(r,actor,eventId,decision,reason,'SCOPED');
+   return {eventId,workId:result.work?.id??null};
   });
   return found(value);
  }
