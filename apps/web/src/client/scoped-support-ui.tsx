@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {ProcedurePageReference} from './procedure-page-reference.js';
+import {ScopedSupportLifecycle} from './scoped-support-lifecycle.js';
 import {ScopedSupportIntake} from './scoped-support-intake.js';
 import {api,ApiError} from './api.js';
 import {ScopedRegistryReviewUI} from './scoped-registry-review-ui.js';
@@ -387,6 +388,8 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
                     <button type="submit" disabled={writeBusy||detailBusy||!responseText.trim()||!followUpLocal}>対応を記録</button>
                   </form>
                 </section>}
+                <ScopedSupportLifecycle key={detail.workId} workId={detail.workId}
+                  csrf={csrf} onChanged={refreshWork}/>
                 {detail.canUpdate&&correctionTarget&&<section aria-label="対応内容の訂正" className="scoped-action">
                   <h3>対応内容を訂正</h3><p>状態や次回確認予定は変更せず、訂正履歴を追記します。</p>
                   <form onSubmit={event=>void submitCorrection(event)}>
