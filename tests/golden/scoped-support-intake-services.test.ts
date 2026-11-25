@@ -2,6 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {beforeAll,beforeEach,afterAll,describe,expect,it} from 'vitest';
 import {ids,testDatabase} from '../fixtures/database.js';
 import {PgScopedAccessReader} from '../../apps/web/src/server/persistence/scoped-access-reader.js';
+import {withTenant} from '../../apps/web/src/server/persistence/database.js';
+import {PgJoinRepository} from '../../apps/web/src/server/persistence/join-repository.js';
 
 const actorId='20000000-0000-4000-8000-000000000111';
 const serviceB='60000000-0000-4000-8000-000000000111';
@@ -66,5 +68,36 @@ describe('SONIX P0-A1 scoped service-first selector',()=>{
   expect((await list()).items).toEqual([]);
   const other=await reader.scopedIntakeServices('10000000-0000-4000-8000-000000000099',actorId,20,null);
   expect(other.items).toEqual([]);
+ });
+});
+
+describe('SONIX P0-A2 isolated service recipient directory',()=>{
+ it('needs separate REGISTRY READ; returned Organizations belong to authorized Service only',async()=>{
+  const orgB='30000000-0000-4000-8000-000000000111';
+  await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
+   values($1,$2,'Another service private customer','ACTIVE')`,[orgB,ids.tenant]);
+  await withTenant(db.runtime,ids.tenant,async client=>{
+   const repository=new PgJoinRepository(client,ids.tenant);
+   await repository.ensureOrganizationRecipient(randomUUID(),ids.service,ids.organization);
+   await repository.ensureOrganizationRecipient(randomUUID(),serviceB,orgB);
+  });
+  await grant(ids.service,ids.contract);
+  const missing=await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null);
+  expect(missing.items).toEqual([]);
+  const registryGrant=randomUUID();
+  await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+    scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE','REGISTRY',array['READ'],$6,$7)`,
+   [registryGrant,ids.tenant,actorId,ids.service,ids.contract,
+    '2026-11-01T00:00:00Z',ids.operator]);
+  const visible=await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null);
+  expect(visible.items).toEqual([{id:ids.organization,name:'Example株式会社'}]);
+  expect(JSON.stringify(visible)).not.toContain('private customer');
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,serviceB,20,null)).items).toEqual([]);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',
+   revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='委任終了'
+   where id=$1`,[registryGrant,ids.operator]);
+  expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null)).items).toEqual([]);
  });
 });

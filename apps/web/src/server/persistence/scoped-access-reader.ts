@@ -31,6 +31,12 @@ export interface ScopedSupportWorkSummary {
  registryOrganizationId:string|null;
 }
 
+export interface ScopedIntakeOrganization {id:string;name:string}
+export interface ScopedIntakeOrganizationCursor {name:string;id:string}
+export interface ScopedIntakeOrganizationPage {
+ items:ScopedIntakeOrganization[];
+ nextCursor:ScopedIntakeOrganizationCursor|null;
+}
 export interface ScopedIntakeService {id:string;name:string}
 export interface ScopedIntakeServiceCursor {name:string;id:string}
 export interface ScopedIntakeServicePage {
@@ -381,6 +387,58 @@ export class PgScopedAccessReader {
     [actorId,at,cursor?.name??null,cursor?.id??null,limit+1]);
    const items=rows.slice(0,limit);
    const last=items.at(-1);
+   return {items,nextCursor:rows.length>limit&&last?
+    {name:last.name,id:last.id}:null};
+  },true);
+ }
+
+ /**
+  * Read only registered Organization recipients of one explicitly allowed
+  * Service. REGISTERED is not synonymous with membership/verified eligibility.
+  * SUPPORT CREATE cannot unlock Registry browsing: REGISTRY READ is independent.
+  */
+ async scopedIntakeOrganizations(tenantId:string,actorId:string,serviceId:string,
+  limit:number,cursor:ScopedIntakeOrganizationCursor|null):Promise<ScopedIntakeOrganizationPage>{
+  const empty:ScopedIntakeOrganizationPage={items:[],nextCursor:null};
+  if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>20||
+    (cursor&&(!z.uuid().safeParse(cursor.id).success||!cursor.name||
+      cursor.name.length>200)))return empty;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return empty;
+  return withTenant(this.pool,tenantId,async db=>{
+   const context=await db.query<{id:string}>(`
+    select c.id from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$3::timestamptz
+      and (c.effective_to is null or c.effective_to>$3::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
+   if(context.rows.length!==1)return empty;
+   const contractProfileId=context.rows[0]!.id;
+   for(const [objectKind,operation] of [
+    ['SUPPORT','CREATE'],['REGISTRY','READ'],
+   ] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId,scope:{kind:'SERVICE'},
+      objectKind,operation,
+    },at))return empty;
+   }
+   const {rows}=await db.query<ScopedIntakeOrganization>(`
+     select distinct o.id,o.name
+     from factact.service_recipients r
+     join factact.organizations o on o.tenant_id=r.tenant_id
+       and o.id=r.recipient_organization_id and o.status='ACTIVE'
+     where r.service_id=$1 and r.status='ACTIVE'
+       and r.recipient_type='ORGANIZATION'
+       and ($2::text is null or (o.name,o.id)>($2::text,$3::uuid))
+     order by o.name,o.id limit $4`,
+     [serviceId,cursor?.name??null,cursor?.id??null,limit+1]);
+   const items=rows.slice(0,limit),last=items.at(-1);
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};
   },true);
