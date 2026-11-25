@@ -15,7 +15,7 @@ interface ConfirmationResult {eventId:string;decisionId:string;revision:number;k
  * The submitted organizationId is re-authorized in the DB transaction; this
  * UI never grants Registry, membership or Work access to the Caller. */
 export function ScopedBeneficiaryConfirmation({csrf,serviceId,eventId,onConfirmed}:{
- csrf:string;serviceId:string;eventId:string;onConfirmed?:()=>void;
+ csrf:string;serviceId:string;eventId:string;onConfirmed?:(()=>void)|undefined;
 }){
  const [own,setOwn]=useState<OwnReceipt|null>(null);
  const [organizations,setOrganizations]=useState<Organization[]>([]);
