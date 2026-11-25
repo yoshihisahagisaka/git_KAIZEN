@@ -49,7 +49,7 @@ export function ProcedureBodyEditor({category,body,onChange,disabled=false}:{
   </select>
   <label htmlFor="procedure-body-text">本文（テキスト形式）</label>
   <textarea id="procedure-body-text" value={body} disabled={disabled}
-   rows={18} maxLength={12000} onInput={event=>{console.log('P0C_EDITOR_INPUT_LEN',event.currentTarget.value.length);onChange({category,body:event.currentTarget.value});}}/>
+   rows={18} maxLength={12000} onChange={event=>onChange({category,body:event.currentTarget.value})}/>
   <p>見出しや番号は自由に編集できます。複数の https:// リンクを貼り付けると閲覧時にクリックできます。</p>
   <button type="button" className="secondary" disabled={disabled} onClick={insert}>ひな形を挿入</button>
   {askReplace&&<div role="group" aria-label="ひな形の上書き確認">
