@@ -38,11 +38,15 @@ beforeEach(async()=>{
  await db.admin.query(`insert into factact.services
   (id,tenant_id,organization_id,service_model_code,name,status)
   values($1,$2,$3,'HELPDESK','別サービスB','ACTIVE')`,[serviceB,ids.tenant,orgB]);
+ // Match the existing canonical strict Contract configuration, not a
+ // support-only object that JoinRepository intentionally rejects.
+ const canonicalConfig=(await db.admin.query(
+  'select configuration_json from factact.contract_profiles where id=$1',
+  [ids.contract])).rows[0].configuration_json;
  await db.admin.query(`insert into factact.contract_profiles
   (id,tenant_id,service_id,version,effective_from,status,configuration_json)
   values($1,$2,$3,1,'2026-11-01T00:00:00Z','ACTIVE',$4)`,[
-   contractB,ids.tenant,serviceB,
-   {support:{enabled:true,executeRoles:['ADMIN','OPERATOR']}},
+   contractB,ids.tenant,serviceB,canonicalConfig,
  ]);
  for(const [actor,email] of [
   [actorA,'actor-a@example.invalid'],[actorB,'actor-b@example.invalid'],
