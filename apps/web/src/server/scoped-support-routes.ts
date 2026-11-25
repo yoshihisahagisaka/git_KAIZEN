@@ -23,7 +23,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional(),serviceId:z.uuid().optional()});
@@ -159,6 +159,20 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const data=await writer.recordScopedNewCallerIntake(actor,input);
    res.status(201).json({ok:true,data});
   });
+  if(writer.recordScopedNewCallerInOrganization){
+   const inputSchema=z.strictObject({
+    requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
+    caller:z.strictObject({kind:z.literal('NEW'),organizationId:z.uuid(),
+     displayName:z.string().trim().min(1).max(200),email:z.email().optional(),distinctPersonConfirmed:z.boolean()}),
+    decision:z.enum(['REQUIRED','NOT_APPLICABLE']),reason:z.string().trim().min(1).max(4000),
+   });
+   router.post('/scoped/support-intake/new-caller-in-organization',async(req,res)=>{
+    const input=inputSchema.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const result=await writer.recordScopedNewCallerInOrganization!(actor,input);
+    res.status(201).json({ok:true,data:result});
+   });
+  }
   if(writer.recordScopedExistingCallerIntake){
    const existingInput=z.strictObject({
     requestId:z.uuid(),serviceId:z.uuid(),

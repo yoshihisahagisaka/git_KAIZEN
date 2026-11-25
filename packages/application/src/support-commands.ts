@@ -347,6 +347,21 @@ export class SupportCommands {
    });
   return found(value);
  }
+ async recordScopedNewCallerInOrganization(actor:Operator,input:{
+  requestId:string;serviceId:string;symptom:string;
+  caller:{kind:'NEW';organizationId:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:boolean};
+  decision:'REQUIRED'|'NOT_APPLICABLE';reason:string;
+ }):Promise<{eventId:string;workId:string|null}>{
+  if(!this.scopedUpdate?.runSupportNewCallerInOrganization)
+   throw new DomainError('SCOPED_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
+  const value=await this.scopedUpdate.runSupportNewCallerInOrganization(
+   actor.tenantId,actor.id,input.serviceId,input.caller.organizationId,async r=>{
+    const event=await this.createEventInRepo(r,actor,input,'SCOPED');
+    const evaluated=await this.evaluateInRepo(r,actor,event.id,input.decision,input.reason,'SCOPED');
+    return {eventId:event.id,workId:evaluated.work?.id??null};
+   });
+  return found(value);
+ }
  async recordScopedNewCallerIntake(actor:Operator,input:{
   requestId:string;serviceId:string;symptom:string;
   caller:{kind:'NEW';organizationName:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:false};
@@ -387,8 +402,8 @@ export class SupportCommands {
    requireCondition(!!caller.organizationId!==!!caller.organizationName,'INVALID_INPUT','所属先を選択または新規入力してください。',400);
    let organizationId=caller.organizationId;
    if(!organizationId){requireCondition(caller.organizationName.length<=200,'INVALID_INPUT','所属名を確認してください。',400);await r.lockCallerKey('org:'+caller.organizationName.toLowerCase());if(authority==='INTERNAL'){const names=await r.organizations();requireCondition(!names.some(o=>o.name.normalize('NFKC').toLowerCase()===caller.organizationName.toLowerCase()),'DUPLICATE_ORGANIZATION','同じ名前の所属があります。既存の所属を選択してください。');}organizationId=this.runtime.id();await r.insertCallerOrganization(organizationId,caller.organizationName);}
-   else requireCondition((await r.organizations()).some(o=>o.id===organizationId),'INVALID_AFFILIATION','有効な所属を選択してください。');
-   await r.lockCallerKey('person:'+organizationId+':'+caller.displayName.toLowerCase());const matching=authority==='INTERNAL'?(await r.core.people()).filter(p=>p.organizationId===organizationId&&p.displayName.normalize('NFKC').toLowerCase()===caller.displayName.toLowerCase()):[];
+   else if(authority==='INTERNAL')requireCondition((await r.organizations()).some(o=>o.id===organizationId),'INVALID_AFFILIATION','有効な所属を選択してください。');
+   await r.lockCallerKey('person:'+organizationId+':'+caller.displayName.toLowerCase());const matching=authority==='INTERNAL'?(await r.core.people()).filter(p=>p.organizationId===organizationId&&p.displayName.normalize('NFKC').toLowerCase()===caller.displayName.toLowerCase()):caller.organizationId?(await found(r.callerNamesInOrganization?.bind(r))(organizationId)).filter(p=>p.displayName.normalize('NFKC').toLowerCase()===caller.displayName.toLowerCase()):[];
    requireCondition(!matching.length||caller.distinctPersonConfirmed,'DUPLICATE_PERSON','同じ所属に同名の問い合わせ者がいます。既存登録を確認し、別人の場合だけ新規登録してください。');
    const personId=this.runtime.id();await r.insertCallerPerson(personId,organizationId,caller.displayName,caller.email||null);person=found(await r.core.person(personId));
   }
