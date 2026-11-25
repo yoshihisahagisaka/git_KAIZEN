@@ -229,3 +229,16 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
  width:100%;max-width:100%;box-sizing:border-box; }
 .scoped-intake textarea { min-height:84px; }
 .scoped-intake [role=status] { margin:12px 0; overflow-wrap:anywhere; }
+
+
+/* Explicit beneficiary attribution is separate from the intake submission. */
+.scoped-beneficiary { margin:14px 0; padding:14px 16px; background:#f7fafb;
+ border:1px solid #c4d8dc; border-radius:7px; }
+.scoped-beneficiary h3 { margin:0 0 8px; }
+.scoped-beneficiary form { display:grid; gap:8px; max-width:750px; }
+.scoped-beneficiary form label { margin-top:8px; font-weight:600; }
+.scoped-beneficiary select,.scoped-beneficiary textarea { width:100%; max-width:100%;
+ box-sizing:border-box; }
+.scoped-beneficiary textarea { min-height:78px; }
+.scoped-beneficiary input[type=checkbox] { width:auto; margin-right:8px; }
+.scoped-beneficiary form button { justify-self:start; }

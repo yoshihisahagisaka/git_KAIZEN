@@ -465,3 +465,56 @@ test('SONIX P0-A3: SCOPED operator can explicitly receive a new, unlisted caller
    where recorded_by_operator_id=$1`,[scopedActor]);
  expect(decisions.rows).toEqual([{n:0}]);
 });
+
+
+test('SONIX P0-A4: human selects beneficiary; Work stays unreadable until independent SUPPORT READ',async({page})=>{
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+   scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',$6,$7,$8)`,[
+  randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,
+  ['CREATE','UPDATE'],'2026-11-01T00:00:00.000Z',ids.operator,
+ ]);
+ await login(page);
+ const intake=page.getByRole('region',{name:'未登録の問い合わせ受付'});
+ await intake.getByRole('button',{name:'未登録企業・新規問い合わせ者を受付'}).click();
+ await intake.getByLabel('サービス',{exact:true}).selectOption(ids.service);
+ await intake.getByLabel('新しい所属・企業名').fill('P0-A4顧客候補');
+ await intake.getByLabel('問い合わせ者名').fill('P0-A4受付者');
+ await intake.getByLabel('問い合わせ内容').fill('接続の相談');
+ await intake.getByLabel('判断理由').fill('実際の相談内容から対応必要と判断');
+ await intake.getByRole('button',{name:'受付を記録'}).click();
+ await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
+ const target=intake.getByRole('region',{name:'支援対象企業を確認'});
+ await expect(target).toContainText('P0-A4顧客候補');
+ expect((await db.admin.query(`select count(*)::int n from factact.support_event_beneficiary_decisions
+  where recorded_by_operator_id=$1`,[scopedActor])).rows).toEqual([{n:0}]);
+ await target.getByLabel('実際の支援対象企業').selectOption({index:1});
+ await target.getByLabel('確認した内容・理由').fill('窓口で聞き取った支援先を担当者が再確認');
+ await target.getByRole('checkbox',{
+  name:'上記の企業が今回の支援対象であると確認しました（会員資格の確認ではありません）',
+ }).check();
+ await target.getByRole('button',{name:'支援対象の確認を記録'}).click();
+ await expect(target.getByRole('status')).toContainText('支援対象企業の確認記録を保存しました。');
+ const decisions=(await db.admin.query(`select kind,revision from factact.support_event_beneficiary_decisions
+  where recorded_by_operator_id=$1 order by revision`,[scopedActor])).rows;
+ expect(decisions).toEqual([{kind:'CONFIRMED',revision:1}]);
+ const results=(await db.admin.query(`select reliability from factact.recipient_observations
+  where recorded_by_operator_id=$1`,[scopedActor])).rows;
+ expect(results).toEqual([{reliability:'UNVERIFIED'}]);
+ // The same Actor is still not authorized to see the Work: CREATE+UPDATE
+ // does not imply READ on any customer.
+ await expect(page.getByRole('region',{name:'許可された対応一覧'})).not.toContainText('P0-A4受付者');
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+   scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',array['READ'],$6,$7)`,[
+  randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,
+  '2026-11-01T00:00:00.000Z',ids.operator,
+ ]);
+ await page.getByRole('button',{name:'一覧を更新'}).click();
+ const authorized=page.getByRole('region',{name:'許可された対応一覧'});
+ await expect(authorized).toContainText('P0-A4受付者');
+ await authorized.getByRole('button',{name:/P0-A4受付者/}).click();
+ await expect(page.getByRole('heading',{name:'対応の詳細'})).toBeVisible();
+});

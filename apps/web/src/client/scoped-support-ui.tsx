@@ -337,7 +337,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     <div className="page-content scoped-support-content">
       <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
         <button className="secondary" disabled={busy} onClick={()=>{selectWork(null);setRevision(r=>r+1);}}>一覧を更新</button></div>
-      <ScopedSupportIntake csrf={csrf}/>
+      <ScopedSupportIntake csrf={csrf} onBeneficiaryConfirmed={refreshWork}/>
       <ScopedRegistryReviewUI csrf={csrf}/>
       {error&&<p role="alert">{error}</p>}
       <div className="scoped-support-panels">
