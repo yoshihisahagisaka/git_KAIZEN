@@ -561,3 +561,16 @@ test('SONIX P0-A5: service-first existing company and Person intake reuses Regis
  await expect(intake.getByRole('region',{name:'支援対象企業を確認'}))
   .toContainText('Example株式会社');
 });
+
+
+test('service reception context filters Work list; READ alone still works',async({page})=>{
+ const seen:string[]=[];
+ page.on('request',r=>{const url=new URL(r.url());if(url.pathname==='/api/scoped/support-work')seen.push(url.searchParams.get('serviceId')??'');});
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE','SUPPORT',array['CREATE'],$6,$7)`,
+  [randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,'2026-11-01T00:00:00Z',ids.operator]);
+ await login(page);
+ await expect.poll(()=>seen.includes(ids.service)).toBe(true);
+ await expect(page.locator('.scoped-work-button')).toHaveCount(1);
+});

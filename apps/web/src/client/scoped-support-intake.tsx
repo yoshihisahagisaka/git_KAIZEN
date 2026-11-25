@@ -106,7 +106,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
 /** Reception context is chosen before opening the form. CREATE candidates
  * are not the Work READ directory; existing authorized Work remains available
  * independently. Server-side command authorization is unchanged. */
-export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed}:{csrf:string;onBeneficiaryConfirmed?:()=>void}){
+export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceChange,contextLocked=false}:{csrf:string;onBeneficiaryConfirmed?:()=>void;onServiceChange:(serviceId:string)=>void;contextLocked?:boolean}){
  const [services,setServices]=useState<Service[]>([]);
  const [cursor,setCursor]=useState<string|null>(null);
  const [chosen,setChosen]=useState('');
@@ -126,6 +126,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed}:{csrf:str
  const single=!cursor&&services.length===1;
  const serviceId=single?services[0]!.id:chosen;
  const service=services.find(item=>item.id===serviceId);
+ useEffect(()=>{onServiceChange(serviceId);},[serviceId,onServiceChange]);
  async function more(){
   if(!cursor||moreBusy||open)return;
   setMoreBusy(true);setError('');
@@ -140,19 +141,20 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed}:{csrf:str
   <section aria-label="受付サービスコンテキスト" className="card">
    <h2>受付サービス</h2>
    {loading&&<p role="status">受付可能なサービスを確認しています…</p>}
-   {error&&<><p role="alert">{error}</p><button type="button" className="secondary" disabled={open||moreBusy} onClick={()=>setRefresh(n=>n+1)}>受付サービスを再確認</button></>}
+   {error&&<><p role="alert">{error}</p><button type="button" className="secondary" disabled={open||moreBusy||contextLocked} onClick={()=>setRefresh(n=>n+1)}>受付サービスを再確認</button></>}
    {!loading&&!error&&!services.length&&<p>受付権限のあるサービスはありません。</p>}
    {single&&service&&<p><strong>{service.name}</strong></p>}
    {!single&&services.length>0&&<>
     <label htmlFor="scoped-reception-service">受付サービスを切り替える</label>
-    <select id="scoped-reception-service" value={chosen} disabled={open||moreBusy}
+    <select id="scoped-reception-service" value={chosen} disabled={open||moreBusy||contextLocked}
      onChange={event=>setChosen(event.target.value)}>
      <option value="">サービスを選択してください</option>
      {services.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
     </select>
-    {cursor&&<button type="button" className="secondary" disabled={open||moreBusy} onClick={()=>void more()}>さらにサービスを表示</button>}
+    {cursor&&<button type="button" className="secondary" disabled={open||moreBusy||contextLocked} onClick={()=>void more()}>さらにサービスを表示</button>}
    </>}
    {open&&!single&&<p>サービスを切り替えるには受付画面を閉じてください。</p>}
+   {contextLocked&&!single&&<p>サービスを切り替えるには現在の対応を保存して閉じてください。</p>}
   </section>
   {service&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
    open={open} onOpenChange={setOpen}
