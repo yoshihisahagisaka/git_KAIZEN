@@ -274,9 +274,9 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await grant('SERVICE_RECIPIENT',recipientA);
   const allowed=await get(workA).expect(200);
   expect(allowed.body.data).toMatchObject({workId:workA,serviceId:ids.service,
-   contractProfileId:ids.contract,serviceRecipientId:recipientA});
+   contractProfileId:ids.contract,serviceRecipientId:recipientA,canClose:false,canReopen:false,latestCloseDecisionId:null});
   expect(Object.keys(allowed.body.data).sort()).toEqual([
-   'canUpdate','contractProfileId','followUpAt','lifecycleRevision','nextAction','recordRevision',
+   'canClose','canReopen','canUpdate','contractProfileId','followUpAt','latestCloseDecisionId','lifecycleRevision','nextAction','recordRevision',
    'registryOrganizationId','serviceId','serviceRecipientId','status','title','updatedAt','waiting','workId',
   ]);
   const forbidden=await get(workB).expect(404),missing=await get(randomUUID()).expect(404);
@@ -298,7 +298,7 @@ describe('scoped SUPPORT Work direct-ID HTTP read',()=>{
   await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',
    [readGrant,['READ','UPDATE']]);
   const writable=await get(workA).expect(200);
-  expect(writable.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:true});
+  expect(writable.body.data).toMatchObject({lifecycleRevision:0,recordRevision:0,canUpdate:true,canClose:false,canReopen:false,latestCloseDecisionId:null});
   expect((await getPage().expect(200)).body.data.items[0].canUpdate).toBe(true);
   const text='An external scoped response';
   await postScopedResponse(workA,{requestId:randomUUID(),expectedLifecycleRevision:0,

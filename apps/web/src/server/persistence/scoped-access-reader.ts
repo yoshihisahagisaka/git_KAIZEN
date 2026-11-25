@@ -29,6 +29,7 @@ export interface ScopedSupportWorkSummary {
  waiting:boolean;followUpAt:string|null;updatedAt:string;
  lifecycleRevision:number;recordRevision:number;canUpdate:boolean;
  registryOrganizationId:string|null;
+ canClose?:boolean;canReopen?:boolean;latestCloseDecisionId?:string|null;
 }
 
 /** A just-received inquiry remains non-authoritative until an Operator
@@ -899,7 +900,7 @@ export class PgScopedAccessReader {
    if(!work)return null;
    const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
    const registryOrganizationId=await this.readableRegistryOrganization(db,tenantId,actorId,work,at);
-   return this.projectSupportWork(work,canUpdate,registryOrganizationId);
+   return this.projectLifecyclePermissions(db,tenantId,actorId,work,at,canUpdate,registryOrganizationId);
   },true);
  }
 
@@ -967,7 +968,7 @@ export class PgScopedAccessReader {
    const nextCursor=entries.length===limit&&last
     ?Buffer.from(JSON.stringify({occurredAt:last.occurredAt,id:last.id})).toString('base64url')
     :null;
-   return {work:this.projectSupportWork(work,canUpdate,registryOrganizationId),entries,nextCursor};
+   return {work:await this.projectLifecyclePermissions(db,tenantId,actorId,work,at,canUpdate,registryOrganizationId),entries,nextCursor};
   },true);
  }
 
@@ -1134,6 +1135,19 @@ export class PgScopedAccessReader {
    objectKind:'REGISTRY',operation:'READ',
   },at);
   return allowed?rows[0].organization_id:null;
+ }
+
+ private async projectLifecyclePermissions(db:PoolClient,tenantId:string,actorId:string,
+  work:StoredSupportWorkSummary,at:string,canUpdate:boolean,registryOrganizationId:string|null):Promise<ScopedSupportWorkSummary>{
+  const summary=this.projectSupportWork(work,canUpdate,registryOrganizationId);
+  const target:ResolvedAccessTarget={tenantId,serviceId:work.service_id,contractProfileId:work.contract_profile_id,
+   scope:{kind:'WORK',serviceRecipientId:work.confirmed_recipient_id!,workId:work.work_id},objectKind:'SUPPORT',operation:'APPROVE'};
+  const approve=await this.authorizedInTransaction(db,actorId,target,at);
+  const update=approve&&(canUpdate||await this.authorizedInTransaction(db,actorId,{...target,operation:'UPDATE'},at));
+  const close=work.status==='COMPLETED'&&update
+   ?await new PgSupportRepository(db,tenantId).closeDecision(work.work_id):null;
+  return {...summary,canClose:work.status!=='COMPLETED'&&update,
+   canReopen:work.status==='COMPLETED'&&update,latestCloseDecisionId:close?.id??null};
  }
 
  private projectSupportWork(work:StoredSupportWorkSummary,canUpdate=false,

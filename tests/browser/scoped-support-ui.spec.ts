@@ -660,3 +660,26 @@ test('SONIX pending reception survives reload and starts same Event',async({page
  expect((await db.admin.query('select count(*)::int n from factact.work where support_event_id=$1',[eventId])).rows).toEqual([{n:1}]);
  expect((await db.admin.query('select count(*)::int n from factact.support_events where created_by_operator_id=$1',[scopedActor])).rows).toEqual([{n:1}]);
 });
+
+
+test('scoped approved operator can close and reopen the same Work from the detail',async({page})=>{
+ await db.admin.query('update factact.scoped_actor_grants set operations=$2 where id=$1',[grantId,['READ','UPDATE','APPROVE']]);
+ await login(page);
+ await page.locator('.scoped-work-button').click();
+ const detail=page.getByRole('region',{name:'選択した対応の詳細'});
+ await detail.getByLabel('対応内容',{exact:true}).fill('案内後に正常動作を確認しました');
+ await detail.getByRole('button',{name:'対応を完了',exact:true}).click();
+ const close=detail.getByRole('region',{name:'対応完了の確認'});
+ await close.getByLabel('終了理由').fill('対応責任が終了した');
+ await close.getByLabel('残る対応責任が終了したことを確認しました').check();
+ await close.getByRole('button',{name:'完了を記録'}).click();
+ await expect(detail.getByRole('button',{name:'対応を再開',exact:true})).toBeVisible();
+ await detail.getByRole('button',{name:'対応を再開',exact:true}).click();
+ const reopen=detail.getByRole('region',{name:'対応再開の確認'});
+ await reopen.getByLabel('再開理由').fill('再問い合わせ');
+ await reopen.getByLabel('再開後の次回確認予定').fill('2026-11-10T10:00');
+ await reopen.getByRole('button',{name:'再開を記録'}).click();
+ await expect(detail.getByRole('button',{name:'対応を完了',exact:true})).toBeVisible();
+ expect((await db.admin.query('select status from factact.work where id=$1',[workA])).rows).toEqual([{status:'IN_PROGRESS'}]);
+ expect((await db.admin.query('select count(*)::int n from factact.support_work_close_decisions where work_id=$1',[workA])).rows).toEqual([{n:1}]);
+});
