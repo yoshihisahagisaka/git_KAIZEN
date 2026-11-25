@@ -585,3 +585,42 @@ test('READ-only service context does not show new reception',async({page})=>{
  await expect(page.getByRole('button',{name:'問い合わせを受付'})).toHaveCount(0);
  await expect(page.locator('.scoped-work-button')).toHaveCount(1);
 });
+
+
+test('SONIX P0-A6: new Person in existing company uses common reception',async({page})=>{
+ for(const [kind,operations] of [
+  ['SUPPORT',['CREATE']],['REGISTRY',['READ']],
+ ] as const){
+  await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,
+    object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'SERVICE',$6,$7,$8,$9)`,[
+   randomUUID(),ids.tenant,scopedActor,ids.service,ids.contract,kind,operations,
+   '2026-11-01T00:00:00.000Z',ids.operator,
+  ]);
+ }
+ const before=(await db.admin.query('select count(*)::int n from factact.people')).rows[0].n;
+ await login(page);
+ const intake=page.getByRole('region',{name:'問い合わせ受付'});
+ await expect(page.getByRole('region',{name:'受付サービスコンテキスト'})).toBeVisible();
+ await intake.getByRole('button',{name:'問い合わせを受付'}).click();
+ await expect(intake.getByLabel('サービス',{exact:true})).toHaveCount(0);
+ await intake.getByLabel('問い合わせ者の登録状況').selectOption('EXISTING');
+ const existing=intake.getByRole('region',{name:'登録済み問い合わせ者の受付'});
+ await existing.getByLabel('企業名で検索').fill('Example');
+ await existing.getByRole('button',{name:'企業を探す'}).click();
+ await existing.getByLabel('所属・企業').selectOption(ids.organization);
+ await expect(existing.getByLabel('問い合わせ者')).toContainText('田中 一郎');
+ await existing.getByLabel('問い合わせ者',{exact:true}).selectOption('NEW');
+ await existing.getByLabel('新しい問い合わせ者のお名前').fill('P0-A6新規担当者');
+ await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
+ await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
+ await existing.getByRole('button',{name:'新しい問い合わせ者を登録して受付'}).click();
+ await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
+ const events=(await db.admin.query(`select caller_input_snapshot from factact.support_events
+  where created_by_operator_id=$1`,[scopedActor])).rows;
+ expect(events).toHaveLength(1);
+ expect(events[0].caller_input_snapshot).toMatchObject({kind:'NEW',organizationId:ids.organization,displayName:'P0-A6新規担当者'});
+ expect((await db.admin.query('select count(*)::int n from factact.people')).rows[0].n).toBe(before+1);
+ expect((await db.admin.query('select count(*)::int n from factact.people where organization_id=$1 and display_name=$2',[ids.organization,'P0-A6新規担当者'])).rows).toEqual([{n:1}]);
+});
