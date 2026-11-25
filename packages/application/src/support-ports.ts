@@ -86,6 +86,8 @@ export interface ScopedSupportUpdateBoundary {
  /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
   * the caller's source affiliation or a separately authorized Registry
   * recipient, and revalidates before COMMIT. Never auto-confirms by Caller. */
+ runSupportReceivedEvaluation?<T>(tenantId:string,actorId:string,serviceId:string,eventId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
  runSupportIntakeBeneficiary?<T>(tenantId:string,actorId:string,serviceId:string,
   eventId:string,organizationId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;

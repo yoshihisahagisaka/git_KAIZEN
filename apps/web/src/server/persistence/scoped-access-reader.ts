@@ -581,6 +581,29 @@ export class PgScopedAccessReader {
 
  /** All beneficiary changes are human-triggered, serialized with the Actor
   * grant lock and Event row lock used by the existing SupportCommands. */
+ async runSupportReceivedEvaluation<T>(tenantId:string,actorId:string,serviceId:string,eventId:string,
+  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,serviceId,eventId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',[tenantId,actorId]);
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
+   const own=await this.ownIntake(db,tenantId,actorId,serviceId,eventId,at);
+   if(!own)return null;
+   const target:ResolvedAccessTarget={tenantId,serviceId,contractProfileId:own.contractProfileId,
+    scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'UPDATE'};
+   if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
+   const result=await mutation(new PgSupportRepository(db,tenantId));
+   const current=this.clock.now();
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,current)||
+      !await this.ownIntake(db,tenantId,actorId,serviceId,eventId,current)||
+      !await this.authorizedInTransaction(db,actorId,target,current))
+    throw Error('SCOPED_RECEIVED_EVALUATION_AUTHORITY_CHANGED');
+   return result;
+  });
+ }
+
  async runSupportIntakeBeneficiary<T>(tenantId:string,actorId:string,serviceId:string,
   eventId:string,organizationId:string,
   mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
