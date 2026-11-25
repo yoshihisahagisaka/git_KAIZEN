@@ -107,3 +107,72 @@ describe('scoped intake POST is human-triggered, auth/CSRF checked and narrowly 
   expect((await db.admin.query('select count(*)::int n from factact.support_events')).rows[0].n).toBe(0);
  });
 });
+
+
+const getBeneficiary=(eventId:string,serviceId=ids.service)=>
+ request(app).get('/api/scoped/support-intake/events/'+eventId+'/beneficiary?serviceId='+serviceId)
+ .set('Cookie',cookie);
+const postBeneficiary=(eventId:string,body:object,csrf='csrf')=>
+ request(app).post('/api/scoped/support-intake/events/'+eventId+'/beneficiary')
+  .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
+async function operationGrant(operation:'UPDATE'|'READ',objectKind:'SUPPORT'|'REGISTRY'='SUPPORT'){
+ const id=randomUUID();
+ await db.admin.query(`insert into factact.scoped_actor_grants
+  (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
+   scope_kind,object_kind,operations,effective_from,issued_by_operator_id)
+  values($1,$2,$3,$4,$5,'SERVICE',$6,$7,$8,$9)`,[
+  id,ids.tenant,tenantActor,ids.service,ids.contract,objectKind,[operation],
+  '2026-11-01T00:00:00Z',ids.operator,
+ ]);
+ return id;
+}
+describe('P0-A4 strict human beneficiary HTTP gate',()=>{
+ it('returns own receipt only and permits explicit beneficiary decision with independent UPDATE',async()=>{
+  await grant();
+  const received=(await post(intake()).expect(201)).body.data as {eventId:string;workId:string};
+  const own=(await getBeneficiary(received.eventId).expect(200)).body.data as {
+   callerOrganizationId:string;beneficiaryRevision:number;
+   beneficiaryKind:string|null;canConfirm:boolean;
+  };
+  expect(own).toMatchObject({beneficiaryRevision:0,beneficiaryKind:null,canConfirm:false});
+  expect(own.callerOrganizationId).toBeTruthy();
+  const command={requestId:randomUUID(),serviceId:ids.service,expectedRevision:0,
+   kind:'CONFIRMED',organizationId:own.callerOrganizationId,
+   humanConfirmed:true,reason:'問い合わせ内容を確認し支援対象の企業を判断'};
+  await postBeneficiary(received.eventId,command).expect(404);
+  await operationGrant('UPDATE');
+  expect((await getBeneficiary(received.eventId).expect(200)).body.data.canConfirm).toBe(true);
+  const result=(await postBeneficiary(received.eventId,command).expect(200)).body.data;
+  expect(result).toMatchObject({eventId:received.eventId,kind:'CONFIRMED',revision:1});
+  expect((await postBeneficiary(received.eventId,command).expect(200)).body.data).toEqual(result);
+  const current=(await getBeneficiary(received.eventId).expect(200)).body.data;
+  expect(current.beneficiaryRevision).toBe(1);
+  // A beneficiary decision does not grant Work READ.
+  await request(app).get('/api/scoped/support-work/'+received.workId)
+   .set('Cookie',cookie).expect(404);
+  await operationGrant('READ');
+  await request(app).get('/api/scoped/support-work/'+received.workId)
+   .set('Cookie',cookie).expect(200);
+ });
+ it('rejects forged IDs, false attestation, hidden target and CSRF bypass',async()=>{
+  await grant();await operationGrant('UPDATE');
+  const received=(await post(intake()).expect(201)).body.data as {eventId:string};
+  const own=(await getBeneficiary(received.eventId).expect(200)).body.data as {
+   callerOrganizationId:string;
+  };
+  const command={requestId:randomUUID(),serviceId:ids.service,expectedRevision:0,
+   kind:'CONFIRMED',organizationId:own.callerOrganizationId,
+   humanConfirmed:true,reason:'確認理由'};
+  await request(app).get('/api/scoped/support-intake/events/'+randomUUID()+
+   '/beneficiary?serviceId='+ids.service).set('Cookie',cookie).expect(404);
+  await postBeneficiary(received.eventId,{...command,humanConfirmed:false}).expect(400);
+  await postBeneficiary(received.eventId,{...command,tenantId:ids.tenant}).expect(400);
+  await postBeneficiary(received.eventId,{...command,organizationId:ids.organization}).expect(404);
+  await postBeneficiary(received.eventId,{...command,serviceId:randomUUID()}).expect(404);
+  await postBeneficiary(received.eventId,command,'invalid-csrf').expect(403);
+  await request(app).post('/api/scoped/support-intake/events/'+received.eventId+
+   '/beneficiary').send(command).expect(401);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+ });
+});

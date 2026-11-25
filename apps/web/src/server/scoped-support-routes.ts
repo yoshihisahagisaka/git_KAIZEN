@@ -3,13 +3,15 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
   limit:number,cursor:ScopedIntakeOrganizationCursor|null):Promise<ScopedIntakeOrganizationPage>;
+ scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
+  eventId:string):Promise<ScopedIntakeReceipt|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
  supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
@@ -18,7 +20,8 @@ export interface ScopedSupportReader {
 
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
- writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>){
+ writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -83,6 +86,16 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
     Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
   });
  }
+ // Own newly received Caller context, not an all-Tenant SUPPORT read.
+ if(reader.scopedIntakeReceipt){
+  router.get('/scoped/support-intake/events/:eventId/beneficiary',async(req,res)=>{
+   const eventId=z.uuid().parse(req.params.eventId);
+   const {serviceId}=z.strictObject({serviceId:z.uuid()}).parse(req.query);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const receipt=await reader.scopedIntakeReceipt!(actor.tenantId,actor.id,serviceId,eventId);
+   res.json({ok:true,data:found(receipt)});
+  });
+ }
  const historyCursorInput=z.strictObject({occurredAt:z.string().datetime({offset:true}),id:z.uuid()});
  router.get('/scoped/support-work/:id/history',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);
@@ -126,6 +139,25 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const data=await writer.recordScopedNewCallerIntake(actor,input);
    res.status(201).json({ok:true,data});
   });
+  if(writer.recordScopedIntakeBeneficiary){
+   const confirmedInput=z.strictObject({
+    requestId:z.uuid(),serviceId:z.uuid(),
+    expectedRevision:z.number().int().nonnegative(),
+    kind:z.literal('CONFIRMED'),organizationId:z.uuid(),
+    reason:z.string().trim().min(1).max(1000),
+    humanConfirmed:z.literal(true),
+   });
+   router.post('/scoped/support-intake/events/:eventId/beneficiary',async(req,res)=>{
+    const eventId=z.uuid().parse(req.params.eventId),input=confirmedInput.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const result=await writer.recordScopedIntakeBeneficiary!(actor,input.serviceId,eventId,{
+     requestId:input.requestId,expectedRevision:input.expectedRevision,kind:'CONFIRMED',
+     organizationId:input.organizationId,reason:input.reason,
+    });
+    res.json({ok:true,data:{decisionId:result.id,revision:result.revision,
+     kind:result.kind,eventId}});
+   });
+  }
   // One explicit response command only: no Close/approve/reopen, Caller or
   // client-selected Actor/Recipient/Service, and no broad SUPPORT write path.
   const responseInput=z.strictObject({

@@ -9,10 +9,29 @@ type SupportResponseInput={requestId:string;expectedLifecycleRevision:number;exp
  close?:{outcome:SupportCloseDecision['outcome'];closeReason:string;confirmsOutstandingResponsibilityEnded:true}|undefined};
 type ScopedResponseCorrectionInput={requestId:string;expectedRecordRevision:number;
  supersedesRecordId:string;responseText:string;correctionReason:string};
+type SupportBeneficiaryInput={requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string};
 export class SupportCommands {
- recordBeneficiary(actor:Operator,eventId:string,input:{requestId:string;expectedRevision:number;kind:'CONFIRMED'|'CLEARED';organizationId:string|null;reason:string}){return this.run(actor,async(r,a)=>{
+ recordBeneficiary(actor:Operator,eventId:string,input:SupportBeneficiaryInput){
+  return this.run(actor,(r,a)=>this.recordBeneficiaryInRepo(r,a,eventId,input,'INTERNAL'));
+ }
+ /** A separate, explicit HUMAN decision over the current support beneficiary.
+  * For SCOPED, both live SERVICE SUPPORT CREATE/UPDATE and either own newly
+  * received affiliation or authorized Registry recipient are checked in DB. */
+ async recordScopedIntakeBeneficiary(actor:Operator,serviceId:string,eventId:string,
+  input:SupportBeneficiaryInput){
+  if(!this.scopedUpdate?.runSupportIntakeBeneficiary)
+   throw new DomainError('SCOPED_BENEFICIARY_UNAVAILABLE','この確認機能は利用できません。',503);
+  if(input.kind!=='CONFIRMED'||!input.organizationId)
+   throw new DomainError('INVALID_INPUT','支援対象の企業を明示的に選択してください。',400);
+  const result=await this.scopedUpdate.runSupportIntakeBeneficiary(
+   actor.tenantId,actor.id,serviceId,eventId,input.organizationId,
+   repo=>this.recordBeneficiaryInRepo(repo,actor,eventId,input,'SCOPED'));
+  return found(result);
+ }
+ private async recordBeneficiaryInRepo(r:SupportRepository,a:Operator,eventId:string,
+  input:SupportBeneficiaryInput,authority:'INTERNAL'|'SCOPED'){
   // Lock the parent: revisions for the same inquiry serialize in the same transaction.
-  const event=found(await r.event(eventId,true));await this.context(r,a,event);
+  const event=found(await r.event(eventId,true));await this.context(r,a,event,authority);
   const history=await r.beneficiaryDecisions(eventId),old=history.find(x=>x.requestId===input.requestId);
   const reason=input.reason.trim();
   if(old){const originalOrg=old.serviceRecipientId?await r.core.recipientOrganization(old.serviceRecipientId):null;
@@ -25,7 +44,7 @@ export class SupportCommands {
   await r.insertBeneficiaryDecision(decision);
   await this.audit(r,a,event.id,'SUPPORT_BENEFICIARY_'+input.kind,{decisionId:decision.id,serviceRecipientId:recipientId,reason,revision:decision.revision});
   return decision;
- });}
+ }
  recordSupportResponse(actor:Operator,workId:string,input:SupportResponseInput){
   return this.run(actor,(r,a)=>this.applySupportResponse(r,a,workId,input,'INTERNAL'));
  }
