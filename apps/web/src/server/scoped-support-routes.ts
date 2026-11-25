@@ -3,9 +3,11 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
+  cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
  supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
@@ -33,6 +35,29 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const actor=(res.locals.session as {operator:Operator}).operator;
   res.json({ok:true,data:await reader.supportWorkPage(actor.tenantId,actor.id,query.limit,cursor)});
  });
+ // An authorization-filtered service selector; this does NOT enumerate
+ // customer Organizations/People or grant Registry read permissions.
+ if(reader.scopedIntakeServices){
+  const serviceQuery=z.strictObject({
+   limit:z.coerce.number().int().min(1).max(20).default(20),
+   cursor:z.string().max(400).optional(),
+  });
+  const serviceCursor=z.strictObject({name:z.string().min(1).max(200),id:z.uuid()});
+  router.get('/scoped/support-intake/services',async(req,res)=>{
+   const query=serviceQuery.parse(req.query);
+   let cursor:ScopedIntakeServiceCursor|null=null;
+   if(query.cursor){
+    try {
+     const data=JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown;
+     cursor=serviceCursor.parse(data);
+    }catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+   }
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const data=await reader.scopedIntakeServices!(actor.tenantId,actor.id,query.limit,cursor);
+   res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
+    Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
+  });
+ }
  const historyCursorInput=z.strictObject({occurredAt:z.string().datetime({offset:true}),id:z.uuid()});
  router.get('/scoped/support-work/:id/history',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);
