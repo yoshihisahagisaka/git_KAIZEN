@@ -211,3 +211,35 @@ describe('P0-A5 existing Caller HTTP request uses independent REGISTRY READ',()=
    .toEqual([{n:0}]);
  });
 });
+
+
+describe('P0-A6 registered Organization new Person intake API',()=>{
+ it('requires scoped Registry CREATE and enforces CSRF/strict request fields',async()=>{
+  await grant();
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async client=>
+   new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(
+    randomUUID(),ids.service,ids.organization));
+  await operationGrant('READ','REGISTRY');
+  const arg={
+   requestId:randomUUID(),serviceId:ids.service,symptom:'新しい担当者の受付',
+   caller:{kind:'NEW',organizationId:ids.organization,
+    displayName:'新任担当者',distinctPersonConfirmed:false},
+   decision:'REQUIRED',reason:'明示的な受付判断',
+  };
+  const call=(body:object,csrf='csrf')=>request(app).post('/api/scoped/support-intake/new-person')
+   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
+  await call(arg).expect(404);
+  await operationGrant('CREATE','REGISTRY');
+  await call({...arg,actorId:tenantActor}).expect(400);
+  await call({...arg,caller:{...arg.caller,organizationName:'偽装'}}).expect(400);
+  await call(arg,'bad-csrf').expect(403);
+  const accepted=(await call(arg).expect(201)).body.data as {eventId:string;workId:string};
+  expect((await call(arg).expect(201)).body.data).toEqual(accepted);
+  expect((await db.admin.query('select count(*)::int n from factact.people where display_name=$1',
+   [arg.caller.displayName])).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+ });
+});
