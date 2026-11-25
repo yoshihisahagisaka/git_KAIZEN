@@ -6,7 +6,7 @@ interface OrgPage {items:Org[];nextCursor:string|null}
 interface Person {personId:string;displayName:string;lifecycleStatus:string}
 interface PeoplePage {items:Person[];nextCursor:string|null}
 interface Receipt {eventId:string;workId:string|null}
-type Decision='REQUIRED'|'NOT_APPLICABLE';
+type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 
 /** Existing Caller lookup is separate from membership/beneficiary decisions.
  * Only authorized service recipients and Registry-visible Person IDs arrive
@@ -88,7 +88,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
   const payload={
    serviceId,caller:personId==='NEW'?{kind:'NEW',organizationId:orgId,displayName:newName.trim(),
     ...(newEmail.trim()?{email:newEmail.trim()}:{}),distinctPersonConfirmed:distinct}:{kind:'EXISTING',personId},symptom:symptom.trim(),
-   decision,reason:reason.trim()||(decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':''),
+   decision,reason:decision==='NOT_APPLICABLE'?reason.trim():decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':'',
   };
   const key=JSON.stringify(payload);
   if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};
@@ -151,6 +151,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
     <select id="scoped-existing-decision" value={decision} disabled={busy}
      onChange={event=>changed(()=>setDecision(event.target.value as Decision))}>
      <option value="REQUIRED">対応が必要</option>
+     <option value="DEFERRED">受付のみ（判断保留）</option>
      <option value="NOT_APPLICABLE">現時点で対応不要</option>
     </select>
     {decision==='NOT_APPLICABLE'&&<>
@@ -159,7 +160,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
       onChange={event=>changed(()=>setReason(event.target.value))}/>
     </>}
     <button type="submit" disabled={busy||loading||peopleLoading||peopleFailed||!orgId||!personId||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||(personId==='NEW'&&!newName.trim())}>
-     {decision==='REQUIRED'?'受付して対応を開始':'対応不要として受付'}
+     {decision==='REQUIRED'?'受付して対応を開始':decision==='DEFERRED'?'受付のみ':'対応不要として受付'}
     </button>
    </form>
   </>}

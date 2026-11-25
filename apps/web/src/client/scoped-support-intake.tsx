@@ -6,7 +6,9 @@ import {ScopedExistingCallerForm} from './scoped-existing-caller-form.js';
 interface Service {id:string;name:string;canReceive:boolean}
 interface ServicePage {items:Service[];nextCursor:string|null}
 interface Receipt {eventId:string;workId:string|null}
-type Decision='REQUIRED'|'NOT_APPLICABLE';
+type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
+interface PendingReceipt {eventId:string;createdAt:string;callerName:string;organizationName:string;symptom:string;canStart:boolean}
+interface PendingPage {items:PendingReceipt[];nextCursor:string|null}
 
 function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void}){
  const [mode,setMode]=useState<'NEW'|'EXISTING'>('NEW');
@@ -16,6 +18,39 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
  const [reason,setReason]=useState('');
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [receipt,setReceipt]=useState<Receipt|null>(null);
+ const [held,setHeld]=useState<PendingReceipt[]>([]),[heldCursor,setHeldCursor]=useState<string|null>(null);
+ const [heldRevision,setHeldRevision]=useState(0),[heldLoading,setHeldLoading]=useState(false);
+ const [heldError,setHeldError]=useState('');
+ const [resumedSymptom,setResumedSymptom]=useState('');
+ useEffect(()=>{
+  let live=true;setHeldLoading(true);setHeldError('');setHeld([]);setHeldCursor(null);
+  api<PendingPage>('/api/scoped/support-intake/pending?serviceId='+encodeURIComponent(serviceId))
+   .then(page=>{if(live){setHeld(page.items);setHeldCursor(page.nextCursor);}})
+   .catch(()=>{if(live)setHeldError('保留中の受付を取得できませんでした。');})
+   .finally(()=>{if(live)setHeldLoading(false);});
+  return ()=>{live=false;};
+ },[serviceId,heldRevision]);
+ async function moreHeld(){
+  if(!heldCursor||heldLoading||busy||open)return;
+  setHeldLoading(true);setHeldError('');
+  try{
+   const page=await api<PendingPage>('/api/scoped/support-intake/pending?serviceId='+encodeURIComponent(serviceId)+'&cursor='+encodeURIComponent(heldCursor));
+   setHeld(old=>[...old,...page.items.filter(item=>!old.some(x=>x.eventId===item.eventId))]);setHeldCursor(page.nextCursor);
+  }catch{setHeldError('保留一覧を取得できませんでした。');}
+  finally{setHeldLoading(false);}
+ }
+ async function startHeld(item:PendingReceipt){
+  if(pending.current||busy||open||!item.canStart)return;
+  pending.current=true;setBusy(true);setHeldError('');
+  onOpenChange(true);
+  try{
+   const data=await api<Receipt>('/api/scoped/support-intake/events/'+item.eventId+'/evaluate',csrf,
+    {serviceId,decision:'REQUIRED',reason:''});
+   setReceipt(data);setResumedSymptom(item.symptom);setHeldRevision(n=>n+1);
+   onBeneficiaryConfirmed?.();
+  }catch{onOpenChange(false);setHeldError('対応を開始できませんでした。現在の権限と受付状況をご確認ください。');}
+  finally{pending.current=false;setBusy(false);}
+ }
  const retry=useRef<{key:string;requestId:string}|null>(null);
  const pending=useRef(false);
  const changed=(change:()=>void)=>{
@@ -31,17 +66,17 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
    caller:{kind:'NEW',organizationName:organizationName.trim(),
     displayName:displayName.trim(),...(email.trim()?{email:email.trim()}:{}),
     distinctPersonConfirmed:false},
-   decision,reason:reason.trim()||(decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':''),
+   decision,reason:decision==='NOT_APPLICABLE'?reason.trim():decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':'',
   };
   if(!payload.symptom||!payload.caller.organizationName||!payload.caller.displayName||
-   !payload.reason)return;
+   (decision==='NOT_APPLICABLE'&&!payload.reason))return;
   const key=JSON.stringify(payload);
   if(retry.current?.key!==key)retry.current={key,requestId:crypto.randomUUID()};
   pending.current=true;setBusy(true);setError('');setReceipt(null);
   try{
    const data=await api<Receipt>('/api/scoped/support-intake/new-caller',csrf,
     {...payload,requestId:retry.current.requestId});
-   setReceipt(data);retry.current=null;
+   setReceipt(data);retry.current=null;setHeldRevision(n=>n+1);
   }catch{setError('受付できませんでした。権限や内容を確認してください。通信が不安定な場合は同じ内容で再送してください。');}
   finally{pending.current=false;setBusy(false);}
  }
@@ -49,6 +84,19 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
   <button type="button" className="secondary" disabled={busy||!serviceId} onClick={()=>{if(!open||window.confirm("受付画面を閉じますか？未保存の入力がある場合は失われることがあります。"))onOpenChange(!open);}}>
    {open?'受付画面を閉じる':'問い合わせを受付'}
   </button>
+  {!open&&<section aria-label="保留中の受付">
+   <h3>保留中の受付</h3>
+   <button type="button" className="secondary" disabled={busy||heldLoading} onClick={()=>setHeldRevision(n=>n+1)}>保留一覧を更新</button>
+   {heldError&&<p role="alert">{heldError}</p>}
+   {heldLoading&&<p>保留中の受付を確認しています…</p>}
+   {!heldLoading&&!heldError&&!held.length&&<p>保留中の受付はありません。</p>}
+   <ul>{held.map(item=><li key={item.eventId}>
+    <span>{item.organizationName} / {item.callerName} — {new Date(item.createdAt).toLocaleString('ja-JP')}</span>
+    <p>{item.symptom}</p>
+    <button type="button" disabled={busy||heldLoading||!item.canStart} onClick={()=>void startHeld(item)}>対応を開始</button>
+   </li>)}</ul>
+   {heldCursor&&<button type="button" className="secondary" disabled={busy||heldLoading} onClick={()=>void moreHeld()}>さらに表示</button>}
+  </section>}
   {open&&<div>
    <h2>問い合わせ受付</h2>
    <p>登録済み・未登録の問い合わせ者を受付します。会員資格や支援対象の確認は別操作です。</p>
@@ -76,6 +124,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
     <select id="scoped-intake-decision" value={decision} disabled={busy}
      onChange={event=>changed(()=>setDecision(event.target.value as Decision))}>
      <option value="REQUIRED">対応が必要</option>
+     <option value="DEFERRED">受付のみ（判断保留）</option>
      <option value="NOT_APPLICABLE">現時点で対応不要</option>
     </select>
     {decision==='NOT_APPLICABLE'&&<>
@@ -84,20 +133,22 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
       onChange={event=>changed(()=>setReason(event.target.value))}/>
     </>}
     <button type="submit" disabled={busy||!serviceId||!organizationName.trim()||
-     !displayName.trim()||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||!!receipt}>{decision==='REQUIRED'?'受付して対応を開始':'対応不要として受付'}</button>
+     !displayName.trim()||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||!!receipt}>{decision==='REQUIRED'?'受付して対応を開始':decision==='DEFERRED'?'受付のみ':'対応不要として受付'}</button>
    </form>}
    {mode==='EXISTING'&&!receipt&&
     <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
-     onReceived={data=>{setReceipt(data);setError('');}}/>}
+     onReceived={data=>{setReceipt(data);setError('');setHeldRevision(n=>n+1);}}/>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
      <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
      {receipt.workId&&<p>Workが作成されました。支援対象の確認・権限付き表示は別の操作です。</p>}
+     {resumedSymptom&&<p>問い合わせ内容：{resumedSymptom}</p>}
+     {!receipt.workId&&<p>判断を保留した受付は、受付画面を閉じると保留一覧から確認できます。</p>}
     </div>
     <ScopedBeneficiaryConfirmation csrf={csrf} serviceId={serviceId}
      eventId={receipt.eventId} onConfirmed={onBeneficiaryConfirmed}/>
     <button type="button" className="secondary" onClick={()=>{
-     setReceipt(null);setOrganizationName('');setDisplayName('');
+     setReceipt(null);setResumedSymptom('');setOrganizationName('');setDisplayName('');
      setEmail('');setSymptom('');setDecision('REQUIRED');setReason('');
     }}>次の問い合わせ</button>
    </>}

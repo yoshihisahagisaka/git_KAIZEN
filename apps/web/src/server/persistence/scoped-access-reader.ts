@@ -34,6 +34,8 @@ export interface ScopedSupportWorkSummary {
 /** A just-received inquiry remains non-authoritative until an Operator
  * explicitly attributes its beneficiary. Being a beneficiary is NOT
  * membership verification, identity verification, or an access Grant. */
+export interface ScopedPendingReceipt {eventId:string;createdAt:string;callerName:string;organizationName:string;symptom:string;canStart:boolean}
+export interface ScopedPendingReceiptPage {items:ScopedPendingReceipt[];nextCursor:string|null}
 export interface ScopedIntakeReceipt {
  eventId:string;serviceId:string;workId:string|null;
  callerOrganizationId:string;callerOrganizationName:string;
@@ -510,6 +512,46 @@ export class PgScopedAccessReader {
  /** The own receipt is distinct from a tenant-wide SUPPORT detail.
   * The caller's recorded affiliation is shown only to its receiving
   * Actor. The selected beneficiary is not populated automatically. */
+ async scopedPendingReceipts(tenantId:string,actorId:string,serviceId:string,limit:number,
+  cursor:{createdAt:string;eventId:string}|null):Promise<ScopedPendingReceiptPage>{
+  const empty={items:[],nextCursor:null};
+  if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success)||
+    !Number.isInteger(limit)||limit<1||limit>20||
+    (cursor&&(!z.uuid().safeParse(cursor.eventId).success||!Number.isFinite(Date.parse(cursor.createdAt)))))return empty;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return empty;
+  return withTenant(this.pool,tenantId,async db=>{
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return empty;
+   const {rows}=await db.query<{event_id:string;created_at:Date;caller_name:string;organization_name:string;symptom:string;contract_profile_id:string}>(`
+    select e.id event_id,e.created_at,e.contract_profile_id,p.display_name caller_name,o.name organization_name,obs.content_text symptom
+    from factact.support_events e
+    join factact.contract_profiles c on c.tenant_id=e.tenant_id and c.id=e.contract_profile_id
+      and c.service_id=e.service_id and c.status='ACTIVE' and c.effective_from<=$4::timestamptz
+      and (c.effective_to is null or c.effective_to>$4::timestamptz)
+    join factact.service_recipients sr on sr.tenant_id=e.tenant_id and sr.id=e.service_recipient_id
+      and sr.service_id=e.service_id and sr.recipient_type='PERSON'
+    join factact.people p on p.tenant_id=sr.tenant_id and p.id=sr.recipient_id
+    join factact.organizations o on o.tenant_id=p.tenant_id and o.id=p.organization_id and o.status='ACTIVE'
+    join factact.recipient_observations obs on obs.tenant_id=e.tenant_id and obs.support_event_id=e.id
+    where e.tenant_id=$1 and e.created_by_operator_id=$2 and e.service_id=$3
+      and e.caller_input_snapshot->>'kind' in ('NEW','EXISTING')
+      and not exists(select 1 from factact.requirement_evaluations ev
+        where ev.tenant_id=e.tenant_id and ev.support_event_id=e.id)
+      and ($5::timestamptz is null or (e.created_at,e.id)<($5::timestamptz,$6::uuid))
+    order by e.created_at desc,e.id desc limit $7`,
+    [tenantId,actorId,serviceId,at,cursor?.createdAt??null,cursor?.eventId??null,limit+1]);
+   const items:ScopedPendingReceipt[]=[];
+   for(const row of rows.slice(0,limit)){
+    const canStart=await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId:row.contract_profile_id,scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'UPDATE'
+    },at);
+    items.push({eventId:row.event_id,createdAt:row.created_at.toISOString(),callerName:row.caller_name,organizationName:row.organization_name,symptom:row.symptom,canStart});
+   }
+   const last=items.at(-1);
+   return {items,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({createdAt:last.createdAt,eventId:last.eventId})).toString('base64url'):null};
+  },true);
+ }
+
  async scopedIntakeReceipt(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>{
   if(![tenantId,actorId,serviceId,eventId].every(id=>z.uuid().safeParse(id).success))return null;
