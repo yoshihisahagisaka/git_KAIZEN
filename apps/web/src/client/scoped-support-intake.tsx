@@ -1,12 +1,13 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {api} from './api.js';
+import {ScopedBeneficiaryConfirmation} from './scoped-beneficiary-confirmation.js';
 
 interface Service {id:string;name:string}
 interface ServicePage {items:Service[];nextCursor:string|null}
 interface Receipt {eventId:string;workId:string|null}
 type Decision='REQUIRED'|'NOT_APPLICABLE';
 
-export function ScopedSupportIntake({csrf}:{csrf:string}){
+export function ScopedSupportIntake({csrf,onBeneficiaryConfirmed}:{csrf:string;onBeneficiaryConfirmed?:()=>void}){
  const [open,setOpen]=useState(false),[services,setServices]=useState<Service[]>([]);
  const [cursor,setCursor]=useState<string|null>(null),[serviceId,setServiceId]=useState('');
  const [organizationName,setOrganizationName]=useState(''),[displayName,setDisplayName]=useState('');
@@ -110,14 +111,18 @@ export function ScopedSupportIntake({csrf}:{csrf:string}){
     <button type="submit" disabled={busy||!serviceId||!organizationName.trim()||
      !displayName.trim()||!symptom.trim()||!reason.trim()||!!receipt}>受付を記録</button>
    </form>}
-   {receipt&&<div role="status" className="scoped-write-notice">
-    <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
-    {receipt.workId&&<p>Workが作成されました。支援対象の確認・権限付き表示は別の操作です。</p>}
+   {receipt&&<>
+    <div role="status" className="scoped-write-notice">
+     <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
+     {receipt.workId&&<p>Workが作成されました。支援対象の確認・権限付き表示は別の操作です。</p>}
+    </div>
+    <ScopedBeneficiaryConfirmation csrf={csrf} serviceId={serviceId}
+     eventId={receipt.eventId} onConfirmed={onBeneficiaryConfirmed}/>
     <button type="button" className="secondary" onClick={()=>{
      setReceipt(null);setOrganizationName('');setDisplayName('');
      setEmail('');setSymptom('');setDecision('REQUIRED');setReason('');
     }}>次の新規受付</button>
-   </div>}
+   </>}
   </div>}
  </section>;
 }
