@@ -347,6 +347,46 @@ export class PgScopedAccessReader {
   * Service visible. No Organization, Person or Work data are projected here.
   * REGISTRY reads remain a separate independent gate in subsequent slices.
   */
+ /** The only SCOPED intake write entry. Existing SUPPORT Commands produce the
+  * Event, Observation, Human Evaluation, optional Work and Audit. Rejected
+  * actors never receive a Repository nor observe customer rows. */
+ async runSupportIntake<T>(tenantId:string,actorId:string,serviceId:string,
+  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   // Grant issue/revocation and Actor deactivation share this lock.
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
+    [tenantId,actorId]);
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
+   const result=await mutation(new PgSupportRepository(db,tenantId));
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now()))
+    throw Error('SCOPED_INTAKE_AUTHORITY_CHANGED');
+   return result;
+  });
+ }
+
+ private async scopedCanCreateService(db:PoolClient,tenantId:string,actorId:string,
+  serviceId:string,at:string):Promise<boolean>{
+  const {rows}=await db.query<{contract_id:string}>(`
+   select c.id as contract_id from factact.services s
+   join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+   join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+   join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$3::timestamptz
+      and (c.effective_to is null or c.effective_to>$3::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+   where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
+  if(rows.length!==1)return false;
+  return this.authorizedInTransaction(db,actorId,{
+   tenantId,serviceId,contractProfileId:rows[0]!.contract_id,
+   scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'CREATE',
+  },at);
+ }
+
  async scopedIntakeServices(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>{
   if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
