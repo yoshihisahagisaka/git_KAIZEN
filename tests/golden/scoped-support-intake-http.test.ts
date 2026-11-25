@@ -115,7 +115,7 @@ const getBeneficiary=(eventId:string,serviceId=ids.service)=>
 const postBeneficiary=(eventId:string,body:object,csrf='csrf')=>
  request(app).post('/api/scoped/support-intake/events/'+eventId+'/beneficiary')
   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
-async function operationGrant(operation:'UPDATE'|'READ',objectKind:'SUPPORT'|'REGISTRY'='SUPPORT'){
+async function operationGrant(operation:'UPDATE'|'READ'|'CREATE',objectKind:'SUPPORT'|'REGISTRY'='SUPPORT'){
  const id=randomUUID();
  await db.admin.query(`insert into factact.scoped_actor_grants
   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,
