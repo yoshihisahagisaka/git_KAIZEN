@@ -328,6 +328,25 @@ export class SupportCommands {
  /** A scoped Actor may receive a completely new/unlisted caller only after a
   * current Service-level SUPPORT CREATE grant is verified under an actor lock.
   * The same generic SUPPORT Event -> Evaluation -> Work rules are reused. */
+ /** A registered Caller may be reused without a second Person record. Its
+  * Service Recipient/Registry scope must first be verified in the same DB
+  * transaction. Existing Caller identity is not a beneficiary/eligibility fact. */
+ async recordScopedExistingCallerIntake(actor:Operator,input:{
+  requestId:string;serviceId:string;symptom:string;
+  caller:{kind:'EXISTING';personId:string};
+  decision:'REQUIRED'|'NOT_APPLICABLE';reason:string;
+ }):Promise<{eventId:string;workId:string|null}>{
+  if(!this.scopedUpdate?.runSupportExistingCallerIntake)
+   throw new DomainError('SCOPED_EXISTING_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
+  const value=await this.scopedUpdate.runSupportExistingCallerIntake(
+   actor.tenantId,actor.id,input.serviceId,input.caller.personId,async r=>{
+    const event=await this.createEventInRepo(r,actor,input,'SCOPED');
+    const evaluated=await this.evaluateInRepo(
+     r,actor,event.id,input.decision,input.reason,'SCOPED');
+    return {eventId:event.id,workId:evaluated.work?.id??null};
+   });
+  return found(value);
+ }
  async recordScopedNewCallerIntake(actor:Operator,input:{
   requestId:string;serviceId:string;symptom:string;
   caller:{kind:'NEW';organizationName:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:false};

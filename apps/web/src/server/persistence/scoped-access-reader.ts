@@ -396,8 +396,67 @@ export class PgScopedAccessReader {
   },at);
  }
 
+ /** Reuse the common SUPPORT command for an EXISTING Person, but only
+  * after resolving one active recipient company under the selected Service
+  * and independent recipient-scoped REGISTRY READ. Caller status is not proof
+  * of entitlement or a verified Fact; beneficiary remains a Human decision. */
+ async runSupportExistingCallerIntake<T>(tenantId:string,actorId:string,
+  serviceId:string,personId:string,
+  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,serviceId,personId].every(id=>z.uuid().safeParse(id).success))
+   return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
+    [tenantId,actorId]);
+   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))
+    return null;
+   const {rows}=await db.query<{service_recipient_id:string;contract_profile_id:string}>(`
+    select recipient.id as service_recipient_id,c.id as contract_profile_id
+    from factact.people p
+    join factact.organizations org on org.tenant_id=p.tenant_id
+      and org.id=p.organization_id and org.status='ACTIVE'
+    join factact.service_recipients recipient on recipient.tenant_id=org.tenant_id
+      and recipient.service_id=$2 and recipient.recipient_organization_id=org.id
+      and recipient.recipient_type='ORGANIZATION' and recipient.status='ACTIVE'
+    join factact.contract_profiles c on c.tenant_id=recipient.tenant_id
+      and c.service_id=recipient.service_id and c.status='ACTIVE'
+      and c.effective_from<=$4::timestamptz
+      and (c.effective_to is null or c.effective_to>$4::timestamptz)
+    where p.tenant_id=$1 and p.id=$3`,[tenantId,serviceId,personId,at]);
+   if(rows.length!==1)return null;
+   const target:ResolvedAccessTarget={
+    tenantId,serviceId,contractProfileId:rows[0]!.contract_profile_id,
+    scope:{kind:'SERVICE_RECIPIENT',
+     serviceRecipientId:rows[0]!.service_recipient_id},
+    objectKind:'REGISTRY',operation:'READ',
+   };
+   if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
+   const result=await mutation(new PgSupportRepository(db,tenantId));
+   // Restricted factact_runtime can SELECT but must not acquire blanket
+   // UPDATE privileges just to lock Registry rows. Re-read the exact Person
+   // -> Organization -> Recipient relation before commit (READ COMMITTED).
+   const relation=await db.query(`
+    select 1 from factact.people p
+    join factact.organizations org on org.tenant_id=p.tenant_id
+      and org.id=p.organization_id and org.status='ACTIVE'
+    join factact.service_recipients recipient on recipient.tenant_id=org.tenant_id
+      and recipient.id=$4 and recipient.service_id=$3
+      and recipient.recipient_organization_id=org.id
+      and recipient.recipient_type='ORGANIZATION' and recipient.status='ACTIVE'
+    where p.tenant_id=$1 and p.id=$2`,
+    [tenantId,personId,serviceId,rows[0]!.service_recipient_id]);
+   if(relation.rowCount!==1||
+      !await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now())||
+      !await this.authorizedInTransaction(db,actorId,target,this.clock.now()))
+    throw Error('SCOPED_EXISTING_CALLER_AUTHORITY_CHANGED');
+   return result;
+  });
+ }
+
  /** The own receipt is distinct from a tenant-wide SUPPORT detail.
-  * The caller's *newly entered* affiliation is shown only to its receiving
+  * The caller's recorded affiliation is shown only to its receiving
   * Actor. The selected beneficiary is not populated automatically. */
  async scopedIntakeReceipt(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>{
@@ -406,7 +465,7 @@ export class PgScopedAccessReader {
   if(!Number.isFinite(Date.parse(at)))return null;
   return withTenant(this.pool,tenantId,async db=>{
    if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
-   const receipt=await this.ownNewIntake(db,tenantId,actorId,serviceId,eventId,at);
+   const receipt=await this.ownIntake(db,tenantId,actorId,serviceId,eventId,at);
    if(!receipt)return null;
    const canConfirm=await this.authorizedInTransaction(db,actorId,{
     tenantId,serviceId,contractProfileId:receipt.contractProfileId,
@@ -420,7 +479,7 @@ export class PgScopedAccessReader {
   },true);
  }
 
- private async ownNewIntake(db:PoolClient,tenantId:string,actorId:string,
+ private async ownIntake(db:PoolClient,tenantId:string,actorId:string,
   serviceId:string,eventId:string,at:string):Promise<{
    eventId:string;contractProfileId:string;callerOrganizationId:string;
    callerOrganizationName:string;beneficiaryRevision:number;
@@ -457,8 +516,7 @@ export class PgScopedAccessReader {
    ) latest on true
    where e.tenant_id=$1 and e.created_by_operator_id=$2
      and e.service_id=$3 and e.id=$4
-     and e.caller_input_snapshot->>'kind'='NEW'
-     and coalesce(e.caller_input_snapshot->>'organizationName','')<>''`,
+     and e.caller_input_snapshot->>'kind' in ('NEW','EXISTING')`,
    [tenantId,actorId,serviceId,eventId,at]);
   const row=rows[0];
   if(!row)return null;
@@ -482,7 +540,7 @@ export class PgScopedAccessReader {
    await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
     [tenantId,actorId]);
    if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
-   const own=await this.ownNewIntake(db,tenantId,actorId,serviceId,eventId,at);
+   const own=await this.ownIntake(db,tenantId,actorId,serviceId,eventId,at);
    if(!own)return null;
    const mayUpdate=await this.authorizedInTransaction(db,actorId,{
     tenantId,serviceId,contractProfileId:own.contractProfileId,

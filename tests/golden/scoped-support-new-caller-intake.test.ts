@@ -225,3 +225,55 @@ describe('P0-A4 explicit beneficiary attribution after SCOPED intake',()=>{
    .rejects.toMatchObject({code:'STALE_REVISION'});
  });
 });
+
+
+describe('P0-A5 authorized registered Caller intake reusing SUPPORT',()=>{
+ it('reuses one existing Person with a separately scoped REGISTRY READ and no auto beneficiary',async()=>{
+  await grant();
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async client=>
+   new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(
+    randomUUID(),ids.service,ids.organization));
+  const request={requestId:randomUUID(),serviceId:ids.service,symptom:'登録済みの問い合わせ者からの質問',
+   caller:{kind:'EXISTING' as const,personId:ids.person},
+   decision:'REQUIRED' as const,reason:'業務対応が必要と確認'};
+  await expect(commands.recordScopedExistingCallerIntake(scoped,request))
+   .rejects.toMatchObject({status:404});
+  await otherGrant('REGISTRY',['READ']);
+  const received=await commands.recordScopedExistingCallerIntake(scoped,request);
+  const retry=await commands.recordScopedExistingCallerIntake(scoped,request);
+  expect(retry).toEqual(received);
+  expect(received.workId).toBeTruthy();
+  const reader=new PgScopedAccessReader(db.runtime,{now:()=>at});
+  expect(await reader.scopedIntakeReceipt(ids.tenant,scopedId,ids.service,received.eventId))
+   .toMatchObject({eventId:received.eventId,callerOrganizationId:ids.organization,
+    beneficiaryRevision:0,canConfirm:false});
+  expect((await db.admin.query("select count(*)::int n from factact.people")).rows).toEqual([{n:1}]);
+  expect((await db.admin.query("select count(*)::int n from factact.organizations")).rows).toEqual([{n:1}]);
+  expect((await db.admin.query("select count(*)::int n from factact.support_event_beneficiary_decisions")).rows)
+   .toEqual([{n:0}]);
+  await otherGrant('SUPPORT',['UPDATE']);
+  const decision=await confirm(received.eventId,ids.organization);
+  expect(decision.kind).toBe('CONFIRMED');
+  expect(await reader.supportWorkSummary(ids.tenant,scopedId,received.workId!)).toBeNull();
+  await otherGrant('SUPPORT',['READ']);
+  expect((await reader.supportWorkSummary(ids.tenant,scopedId,received.workId!))?.workId)
+   .toBe(received.workId);
+ });
+ it('cannot reference a Person outside a registered Service Recipient even with broad Registry READ',async()=>{
+  await grant();await otherGrant('REGISTRY',['READ']);
+  const otherOrg=randomUUID(),otherPerson=randomUUID();
+  await db.admin.query(`insert into factact.organizations(id,tenant_id,name,status)
+   values($1,$2,'非受託の企業','ACTIVE')`,[otherOrg,ids.tenant]);
+  await db.admin.query(`insert into factact.people(id,tenant_id,organization_id,
+   display_name,lifecycle_status) values($1,$2,$3,'別の問い合わせ者','ACTIVE')`,
+   [otherPerson,ids.tenant,otherOrg]);
+  await expect(commands.recordScopedExistingCallerIntake(scoped,{
+   requestId:randomUUID(),serviceId:ids.service,symptom:'顧客が違う',
+   caller:{kind:'EXISTING',personId:otherPerson},decision:'REQUIRED',reason:'要確認',
+  })).rejects.toMatchObject({status:404});
+  expect((await db.admin.query("select count(*)::int n from factact.support_events")).rows)
+   .toEqual([{n:0}]);
+ });
+});

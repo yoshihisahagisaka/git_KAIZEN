@@ -21,7 +21,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -139,6 +139,21 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const data=await writer.recordScopedNewCallerIntake(actor,input);
    res.status(201).json({ok:true,data});
   });
+  if(writer.recordScopedExistingCallerIntake){
+   const existingInput=z.strictObject({
+    requestId:z.uuid(),serviceId:z.uuid(),
+    symptom:z.string().trim().min(1).max(4000),
+    caller:z.strictObject({kind:z.literal('EXISTING'),personId:z.uuid()}),
+    decision:z.enum(['REQUIRED','NOT_APPLICABLE']),
+    reason:z.string().trim().min(1).max(4000),
+   });
+   router.post('/scoped/support-intake/existing-caller',async(req,res)=>{
+    const input=existingInput.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const result=await writer.recordScopedExistingCallerIntake!(actor,input);
+    res.status(201).json({ok:true,data:result});
+   });
+  }
   if(writer.recordScopedIntakeBeneficiary){
    const confirmedInput=z.strictObject({
     requestId:z.uuid(),serviceId:z.uuid(),
