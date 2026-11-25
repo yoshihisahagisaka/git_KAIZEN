@@ -424,8 +424,7 @@ export class PgScopedAccessReader {
       and c.service_id=recipient.service_id and c.status='ACTIVE'
       and c.effective_from<=$4::timestamptz
       and (c.effective_to is null or c.effective_to>$4::timestamptz)
-    where p.tenant_id=$1 and p.id=$3
-    for share of p,recipient`,[tenantId,serviceId,personId,at]);
+    where p.tenant_id=$1 and p.id=$3`,[tenantId,serviceId,personId,at]);
    if(rows.length!==1)return null;
    const target:ResolvedAccessTarget={
     tenantId,serviceId,contractProfileId:rows[0]!.contract_profile_id,
@@ -435,7 +434,21 @@ export class PgScopedAccessReader {
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
    const result=await mutation(new PgSupportRepository(db,tenantId));
-   if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now())||
+   // Restricted factact_runtime can SELECT but must not acquire blanket
+   // UPDATE privileges just to lock Registry rows. Re-read the exact Person
+   // -> Organization -> Recipient relation before commit (READ COMMITTED).
+   const relation=await db.query(`
+    select 1 from factact.people p
+    join factact.organizations org on org.tenant_id=p.tenant_id
+      and org.id=p.organization_id and org.status='ACTIVE'
+    join factact.service_recipients recipient on recipient.tenant_id=org.tenant_id
+      and recipient.id=$4 and recipient.service_id=$3
+      and recipient.recipient_organization_id=org.id
+      and recipient.recipient_type='ORGANIZATION' and recipient.status='ACTIVE'
+    where p.tenant_id=$1 and p.id=$2`,
+    [tenantId,personId,serviceId,rows[0]!.service_recipient_id]);
+   if(relation.rowCount!==1||
+      !await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now())||
       !await this.authorizedInTransaction(db,actorId,target,this.clock.now()))
     throw Error('SCOPED_EXISTING_CALLER_AUTHORITY_CHANGED');
    return result;
