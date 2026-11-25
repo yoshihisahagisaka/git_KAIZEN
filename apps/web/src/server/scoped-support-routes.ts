@@ -24,7 +24,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'|'evaluateScopedReceivedEvent'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'|'evaluateScopedReceivedEvent'|'closeScopedSupportWork'|'reopenScopedSupportWork'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional(),serviceId:z.uuid().optional()});
@@ -246,6 +246,30 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const actor=(res.locals.session as {operator:Operator}).operator;
    res.json({ok:true,data:await writer.recordScopedSupportResponse(actor,workId,input)});
   });
+  // Separate explicit lifecycle operations, never widen the ordinary response route.
+  if(writer.closeScopedSupportWork){
+   const schema=z.strictObject({requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),
+    expectedRecordRevision:z.number().int().nonnegative(),responseText:z.string().trim().min(1).max(4000),
+    outcome:z.enum(['RESOLVED','NOT_ELIGIBLE','WITHDRAWN','OTHER_RESPONSIBILITY_ENDED']),
+    closeReason:z.string().trim().min(1).max(1000),confirmsOutstandingResponsibilityEnded:z.literal(true)});
+   router.post('/scoped/support-work/:id/close',async(req,res)=>{
+    const workId=z.uuid().parse(req.params.id),input=schema.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const {outcome,closeReason,confirmsOutstandingResponsibilityEnded,...response}=input;
+    res.json({ok:true,data:await writer.closeScopedSupportWork!(actor,workId,{...response,
+     disposition:'COMPLETED',followUpAt:null,close:{outcome,closeReason,confirmsOutstandingResponsibilityEnded}})});
+   });
+  }
+  if(writer.reopenScopedSupportWork){
+   const schema=z.strictObject({requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),
+    expectedCloseDecisionId:z.uuid().nullable(),reason:z.string().trim().min(1).max(1000),
+    disposition:z.enum(['CUSTOMER_WAIT','INVESTIGATING','MONITORING']),followUpAt:z.string().datetime({offset:true})});
+   router.post('/scoped/support-work/:id/reopen',async(req,res)=>{
+    const workId=z.uuid().parse(req.params.id),input=schema.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    res.json({ok:true,data:await writer.reopenScopedSupportWork!(actor,workId,input)});
+   });
+  }
   // Text-only append-only correction of the actor's own non-closing response.
   // The Work's disposition, Follow-up and lifecycle are deliberately immutable here.
   const correctionInput=z.strictObject({

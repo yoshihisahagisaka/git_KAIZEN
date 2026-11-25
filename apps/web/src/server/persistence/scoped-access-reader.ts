@@ -261,7 +261,7 @@ export class PgScopedAccessReader {
   * are resolved from the DB in the mutation/Audit transaction. Unauthorized
   * Work is never passed to the callback. */
  async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
-  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>):Promise<T|null>{
+  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>,mode:'RESPONSE'|'CLOSE'|'REOPEN'='RESPONSE'):Promise<T|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
@@ -274,6 +274,9 @@ export class PgScopedAccessReader {
     [tenantId,actorId]);
    const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
    if(!work)return null;
+   // Explicit approval is independent of ordinary UPDATE. Revalidate both
+   // against the same confirmed beneficiary under the existing actor lock.
+   if(mode!=='RESPONSE'&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'APPROVE'))return null;
    const repository=new PgSupportRepository(db,tenantId);
    const assertWork=(id:string)=>{
     if(id!==workId)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
@@ -317,16 +320,24 @@ export class PgScopedAccessReader {
     },
     insertLifecycleEvent:row=>{
      assertRecord(row);
-     if(row.kind!=='RESPONSE_RECORDED')throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
+     if(row.kind!==(mode==='REOPEN'?'REOPENED':'RESPONSE_RECORDED'))throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
      return repository.insertLifecycleEvent(row);
     },
     insertFollowUp:row=>{
      assertRecord(row);
-     if(row.kind!=='SET')throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
+     if(row.kind!==(mode==='CLOSE'?'CLEARED':'SET'))throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
      return repository.insertFollowUp(row);
     },
-    insertCloseDecision:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
-    verificationItems:async()=>{throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');},
+    insertCloseDecision:async row=>{
+     if(mode!=='CLOSE')throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');
+     assertWork(row.workId);
+     if(row.tenantId!==tenantId||row.decidedByOperatorId!==actorId)throw Error('SCOPED_UPDATE_ACTOR_MISMATCH');
+     await repository.insertCloseDecision(row);
+    },
+    verificationItems:async id=>{
+     if(mode!=='CLOSE')throw Error('SCOPED_CLOSE_NOT_AUTHORIZED');
+     assertWork(id);return repository.verificationItems(id);
+    },
     progress,
     audit:row=>{
      if(row.tenantId!==tenantId||row.aggregateType!=='SUPPORT_EVENT'||
@@ -342,7 +353,8 @@ export class PgScopedAccessReader {
    const result=await mutation(context);
    // Still re-check time-bound eligibility before commit. The actor-keyed
    // transaction lock closes the Grant/Actor status change-to-COMMIT race.
-   if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE'))
+   if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE')||
+      (mode!=='RESPONSE'&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'APPROVE')))
     throw Error('SCOPED_UPDATE_AUTHORITY_CHANGED');
    return result;
   });
@@ -960,7 +972,7 @@ export class PgScopedAccessReader {
  }
 
  private async authorizedSupportWork(db:PoolClient,tenantId:string,actorId:string,
-  workId:string,at:string,operation:'READ'|'UPDATE'='READ',lockWork=false):Promise<StoredSupportWorkSummary|null>{
+  workId:string,at:string,operation:'READ'|'UPDATE'|'APPROVE'='READ',lockWork=false):Promise<StoredSupportWorkSummary|null>{
    if(lockWork){
     // Beneficiary decisions lock the parent Event FOR UPDATE. Pin it FOR SHARE
     // before locking Work to prevent a concurrent reassignment during mutation.

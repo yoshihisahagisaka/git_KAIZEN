@@ -58,6 +58,16 @@ export class SupportCommands {
    ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'));
   return found(result);
  }
+ /** Separate explicit completion operation: UPDATE alone cannot close.
+  * Formal transfer remains a separate responsibility-transfer gate. */
+ async closeScopedSupportWork(actor:Operator,workId:string,input:SupportResponseInput):Promise<SupportRecord>{
+  requireCondition(input.disposition==='COMPLETED'&&!!input.close&&input.close.outcome!=='FORMALLY_TRANSFERRED',
+   'INVALID_INPUT','終了内容と残る責任の終了を確認してください。',400);
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'),'CLOSE');
+  return found(result);
+ }
  /** A correction is an append-only attestation, never a second response Action,
   * Follow-up change, disposition change, Work transition or Close command. */
  async correctScopedSupportResponse(actor:Operator,workId:string,
@@ -178,8 +188,17 @@ export class SupportCommands {
  });}
  setFollowUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;followUpAt:string;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.followUp(actor,workId,{...input,kind:'SET'});}
  clearFollowUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.followUp(actor,workId,{...input,kind:'CLEARED',followUpAt:null});}
- reopenSupportWork(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedCloseDecisionId:string|null;reason:string;disposition:Exclude<ResponseDisposition,'COMPLETED'>;followUpAt:string}){return this.run(actor,async(r,a)=>{
-  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));
+ reopenSupportWork(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedCloseDecisionId:string|null;reason:string;disposition:Exclude<ResponseDisposition,'COMPLETED'>;followUpAt:string}){
+  return this.run(actor,(r,a)=>this.reopenInRepo(r,a,workId,input,'INTERNAL'));
+ }
+ async reopenScopedSupportWork(actor:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedCloseDecisionId:string|null;reason:string;disposition:Exclude<ResponseDisposition,'COMPLETED'>;followUpAt:string}){
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,
+   ({response})=>this.reopenInRepo(response,actor,workId,input,'SCOPED'),'REOPEN');
+  return found(result);
+ }
+ private async reopenInRepo(r:SupportResponseRepository,a:Operator,workId:string,input:{requestId:string;expectedLifecycleRevision:number;expectedCloseDecisionId:string|null;reason:string;disposition:Exclude<ResponseDisposition,'COMPLETED'>;followUpAt:string},authority:'INTERNAL'|'SCOPED'){
+  const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)),authority);
   const events=await r.lifecycleEvents(workId),followUps=await r.followUps(workId),records=await r.records(workId),closes=await r.closeDecisions(workId),old=events.find(x=>x.requestId===input.requestId),collision=records.some(x=>x.requestId===input.requestId)||followUps.some(x=>x.requestId===input.requestId)||closes.some(x=>x.requestId===input.requestId);
   const normalized={expectedLifecycleRevision:input.expectedLifecycleRevision,expectedCloseDecisionId:input.expectedCloseDecisionId,reason:input.reason.trim(),disposition:input.disposition,followUpAt:input.followUpAt};
   if(old||collision){this.retry(old?.kind==='REOPENED'&&old.recordedByOperatorId===a.id,(old?.commandPayload.input??{}) as Record<string,unknown>,normalized);return old!;}
@@ -192,7 +211,8 @@ export class SupportCommands {
   const follow:SupportFollowUp={id:this.runtime.id(),tenantId:a.tenantId,workId,requestId:input.requestId,revision:(followUps.at(-1)?.revision??0)+1,kind:'SET',followUpAt:input.followUpAt,sourceType:'HUMAN_DECISION',basisText:'担当者が対応再開時に指定',reason:normalized.reason,supersedesFollowUpId:followUps.at(-1)?.id??null,commandPayload:normalized,recordedByOperatorId:a.id,recordedAt:at};
   w.status='IN_PROGRESS';w.outcome=null;w.closedAt=null;w.lifecycleVersion=2;w.waiting=input.disposition==='CUSTOMER_WAIT';w.waitingParty=null;w.waitingReason=null;w.nextAction=nextAction;w.nextActionOpen=true;w.followUpAt=input.followUpAt;w.updatedAt=at;w.lifecycleRevision=event.revision;
   await r.insertLifecycleEvent(event);await r.insertFollowUp(follow);await r.progress(w);await this.audit(r,a,w.supportEventId,'SUPPORT_REOPENED',{workId,eventId:event.id,previousCloseDecisionId:latestClose?.id??null});return event;
- });}
+
+ }
  private followUp(actor:Operator,workId:string,input:{requestId:string;expectedRevision:number;kind:SupportFollowUp['kind'];followUpAt:string|null;sourceType:SupportFollowUp['sourceType'];basisText:string;reason:string}){return this.run(actor,async(r,a)=>{
   const w=found(await r.work(workId,true));await this.context(r,a,found(await r.event(w.supportEventId)));const history=await r.followUps(workId),old=history.find(x=>x.requestId===input.requestId),payload={expectedRevision:input.expectedRevision,kind:input.kind,followUpAt:input.followUpAt,sourceType:input.sourceType,basisText:input.basisText,reason:input.reason};if(old){this.retry(old.recordedByOperatorId===a.id,old.commandPayload,payload);return old;}
   requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','Follow-upを変更できない対応です。');requireCondition(w.lifecycleRevision===input.expectedRevision,'STALE_REVISION','対応の状態が更新されています。');requireCondition(input.reason.trim()&&input.basisText.trim()&&['HUMAN_DECISION','CONTRACT','RULE','CUSTOMER_COMMITMENT','OTHER'].includes(input.sourceType)&&(!input.followUpAt||!Number.isNaN(Date.parse(input.followUpAt))),'INVALID_INPUT','Follow-upの根拠と理由を入力してください。',400);
