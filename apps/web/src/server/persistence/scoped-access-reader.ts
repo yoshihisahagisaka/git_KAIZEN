@@ -750,16 +750,14 @@ export class PgScopedAccessReader {
     where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
    if(context.rows.length!==1)return empty;
    const contractProfileId=context.rows[0]!.id;
-   for(const [objectKind,operation] of [
-    ['SUPPORT','CREATE'],['REGISTRY','READ'],
-   ] as const){
-    if(!await this.authorizedInTransaction(db,actorId,{
+   if(!await this.authorizedInTransaction(db,actorId,{
       tenantId,serviceId,contractProfileId,scope:{kind:'SERVICE'},
-      objectKind,operation,
-    },at))return empty;
-   }
-   const {rows}=await db.query<ScopedIntakeOrganization>(`
-     select distinct o.id,o.name
+      objectKind:'SUPPORT',operation:'CREATE',
+   },at))return empty;
+   // Apply recipient-specific Registry GRANTS BEFORE LIMIT so neither the
+   // candidate list nor pagination reveal an unauthorized Organization.
+   const {rows}=await db.query<ScopedIntakeOrganization&{recipient_id:string}>(`
+     select r.id as recipient_id,o.id,o.name
      from factact.service_recipients r
      join factact.organizations o on o.tenant_id=r.tenant_id
        and o.id=r.recipient_organization_id and o.status='ACTIVE'
@@ -767,9 +765,29 @@ export class PgScopedAccessReader {
        and r.recipient_type='ORGANIZATION'
        and ($2::text is null or (o.name,o.id)>($2::text,$3::uuid))
        and ($4::text='' or strpos(lower(normalize(o.name,NFKC)),$4)>0)
+       and exists (
+        select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=r.tenant_id and g.actor_operator_id=$6
+          and g.service_id=r.service_id and g.contract_profile_id=$7
+          and g.object_kind='REGISTRY' and 'READ'=any(g.operations)
+          and g.status='ACTIVE' and g.effective_from<=$8::timestamptz
+          and (g.effective_until is null or g.effective_until>$8::timestamptz)
+          and (g.scope_kind='SERVICE'
+            or (g.scope_kind='SERVICE_RECIPIENT'
+              and g.service_recipient_id=r.id))
+       )
      order by o.name,o.id limit $5`,
-     [serviceId,cursor?.name??null,cursor?.id??null,query,limit+1]);
-   const items=rows.slice(0,limit),last=items.at(-1);
+     [serviceId,cursor?.name??null,cursor?.id??null,query,limit+1,
+      actorId,contractProfileId,at]);
+   const items:ScopedIntakeOrganization[]=[];
+   for(const row of rows.slice(0,limit)){
+    if(await this.authorizedInTransaction(db,actorId,{
+     tenantId,serviceId,contractProfileId,
+     scope:{kind:'SERVICE_RECIPIENT',serviceRecipientId:row.recipient_id},
+     objectKind:'REGISTRY',operation:'READ',
+    },at))items.push({id:row.id,name:row.name});
+   }
+   const last=items.at(-1);
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};
   },true);
