@@ -418,14 +418,14 @@ export class PgScopedAccessReader {
     join factact.organizations org on org.tenant_id=p.tenant_id
       and org.id=p.organization_id and org.status='ACTIVE'
     join factact.service_recipients recipient on recipient.tenant_id=org.tenant_id
-      and recipient.service_id=$3 and recipient.recipient_organization_id=org.id
+      and recipient.service_id=$2 and recipient.recipient_organization_id=org.id
       and recipient.recipient_type='ORGANIZATION' and recipient.status='ACTIVE'
     join factact.contract_profiles c on c.tenant_id=recipient.tenant_id
       and c.service_id=recipient.service_id and c.status='ACTIVE'
-      and c.effective_from<=$5::timestamptz
-      and (c.effective_to is null or c.effective_to>$5::timestamptz)
-    where p.tenant_id=$1 and p.id=$4
-    for share of p,recipient`,[tenantId,actorId,serviceId,personId,at]);
+      and c.effective_from<=$4::timestamptz
+      and (c.effective_to is null or c.effective_to>$4::timestamptz)
+    where p.tenant_id=$1 and p.id=$3
+    for share of p,recipient`,[tenantId,serviceId,personId,at]);
    if(rows.length!==1)return null;
    const target:ResolvedAccessTarget={
     tenantId,serviceId,contractProfileId:rows[0]!.contract_profile_id,
