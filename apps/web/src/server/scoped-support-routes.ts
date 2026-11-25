@@ -18,7 +18,7 @@ export interface ScopedSupportReader {
 
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
- writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'>){
+ writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional()});
@@ -107,6 +107,25 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   res.json({ok:true,data:work});
  });
  if(writer){
+  // This intentionally accepts a new/unlisted company and a new Caller only:
+  // no tenant-wide Org/Person lookup and no implicit beneficiary confirmation.
+  // Caller input is not a verified identity, membership or authorization Grant.
+  const newCaller=z.strictObject({
+   kind:z.literal('NEW'),organizationName:z.string().trim().min(1).max(200),
+   displayName:z.string().trim().min(1).max(200),email:z.email().optional(),
+   distinctPersonConfirmed:z.literal(false),
+  });
+  const intakeInput=z.strictObject({
+   requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
+   caller:newCaller,decision:z.enum(['REQUIRED','NOT_APPLICABLE']),
+   reason:z.string().trim().min(1).max(4000),
+  });
+  router.post('/scoped/support-intake/new-caller',async(req,res)=>{
+   const input=intakeInput.parse(req.body);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const data=await writer.recordScopedNewCallerIntake(actor,input);
+   res.status(201).json({ok:true,data});
+  });
   // One explicit response command only: no Close/approve/reopen, Caller or
   // client-selected Actor/Recipient/Service, and no broad SUPPORT write path.
   const responseInput=z.strictObject({
