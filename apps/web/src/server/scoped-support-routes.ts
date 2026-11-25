@@ -3,11 +3,13 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
+ scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
+  limit:number,cursor:ScopedIntakeOrganizationCursor|null):Promise<ScopedIntakeOrganizationPage>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
  supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
@@ -54,6 +56,29 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    }
    const actor=(res.locals.session as {operator:Operator}).operator;
    const data=await reader.scopedIntakeServices!(actor.tenantId,actor.id,query.limit,cursor);
+   res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
+    Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
+  });
+ }
+ // Explicit REGISTRY READ is required in addition to SERVICE-level
+ // SUPPORT CREATE; no other organization in this Tenant is discoverable.
+ if(reader.scopedIntakeOrganizations){
+  const orgQuery=z.strictObject({
+   limit:z.coerce.number().int().min(1).max(20).default(20),
+   cursor:z.string().max(400).optional(),
+  });
+  const orgCursor=z.strictObject({name:z.string().min(1).max(200),id:z.uuid()});
+  router.get('/scoped/support-intake/services/:serviceId/organizations',async(req,res)=>{
+   const serviceId=z.uuid().parse(req.params.serviceId);
+   const query=orgQuery.parse(req.query);
+   let cursor:ScopedIntakeOrganizationCursor|null=null;
+   if(query.cursor){
+    try {
+     cursor=orgCursor.parse(JSON.parse(Buffer.from(query.cursor,'base64url').toString('utf8')) as unknown);
+    }catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}
+   }
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const data=await reader.scopedIntakeOrganizations!(actor.tenantId,actor.id,serviceId,query.limit,cursor);
    res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
     Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
   });
