@@ -261,6 +261,63 @@ export class PgScopedAccessReader {
   * scoped SUPPORT application commands. Beneficiary, effective Grant and Actor
   * are resolved from the DB in the mutation/Audit transaction. Unauthorized
   * Work is never passed to the callback. */
+ async runSupportOwnerTransfer<T>(tenantId:string,actorId:string,workId:string,newOwnerId:string,
+  mutation:(context:ScopedSupportWorkUpdateContext & {transferOwner(previousOwnerId:string,revision:number,at:string):Promise<void>})=>Promise<T>):Promise<T|null>{
+  if(![tenantId,actorId,workId,newOwnerId].every(id=>z.uuid().safeParse(id).success))return null;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return null;
+  return withTenant(this.pool,tenantId,async db=>{
+   // Deterministic two-actor lock order prevents opposite-direction handoffs
+   // from racing Grant revocation or each other.
+   for(const id of [...new Set([actorId,newOwnerId])].sort())
+    await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',[tenantId,id]);
+   const w=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
+   if(!w)return null;
+   const allowed=async(time:string)=>
+    !!await this.authorizedSupportWork(db,tenantId,actorId,workId,time,'UPDATE')&&
+    !!await this.authorizedSupportWork(db,tenantId,actorId,workId,time,'APPROVE')&&
+    !!await this.authorizedSupportWork(db,tenantId,newOwnerId,workId,time,'READ')&&
+    !!await this.authorizedSupportWork(db,tenantId,newOwnerId,workId,time,'UPDATE');
+   if(!await allowed(at))return null;
+   const repo=new PgSupportRepository(db,tenantId);
+   const deny=async():Promise<never>=>{throw Error('SCOPED_TRANSFER_PORT_DENIED');};
+   const assertWork=(id:string)=>{if(id!==workId)throw Error('SCOPED_TRANSFER_TARGET_MISMATCH');};
+   const audit:ScopedSupportWorkUpdateContext['audit']=async(eventType,metadata)=>repo.audit({
+    id:randomUUID(),tenantId,aggregateType:'SUPPORT_EVENT',aggregateId:w.support_event_id,
+    eventType,actorOperatorId:actorId,occurredAt:this.clock.now(),metadataJson:metadata});
+   const response:SupportResponseRepository={
+    core:{service:id=>{if(id!==w.service_id)throw Error('SCOPED_TRANSFER_TARGET_MISMATCH');return repo.core.service(id);},
+     contract:id=>{if(id!==w.contract_profile_id)throw Error('SCOPED_TRANSFER_TARGET_MISMATCH');return repo.core.contract(id);}},
+    work:id=>{assertWork(id);return repo.work(id,true);},
+    event:id=>{if(id!==w.support_event_id)throw Error('SCOPED_TRANSFER_TARGET_MISMATCH');return repo.event(id);},
+    lifecycleEvents:id=>{assertWork(id);return repo.lifecycleEvents(id);},
+    records:deny,followUps:deny,closeDecisions:deny,insertRecord:deny,insertFollowUp:deny,insertCloseDecision:deny,verificationItems:deny,progress:deny,
+    insertLifecycleEvent:row=>{
+     assertWork(row.workId);
+     if(row.kind!=='OWNER_TRANSFERRED'||row.tenantId!==tenantId||row.recordedByOperatorId!==actorId||
+       row.commandPayload.newOwnerId!==newOwnerId)throw Error('SCOPED_TRANSFER_PORT_DENIED');
+     return repo.insertLifecycleEvent(row);
+    },
+    audit:row=>{
+     if(row.aggregateId!==w.support_event_id||row.actorOperatorId!==actorId||row.tenantId!==tenantId||
+      row.aggregateType!=='SUPPORT_EVENT'||row.eventType!=='SUPPORT_OWNER_TRANSFERRED')throw Error('SCOPED_TRANSFER_PORT_DENIED');
+     return audit(row.eventType,row.metadataJson);
+    }
+   };
+   const result=await mutation({work:()=>repo.work(workId,true),progress:deny,audit:deny,response,
+    transferOwner:async(previousOwnerId,revision,time)=>{
+     const updated=await db.query(`update factact.work set work_owner_operator_id=$2,
+       next_action_owner_operator_id=case when next_action_owner_operator_id=$3 then $2 else next_action_owner_operator_id end,
+       lifecycle_revision=$4,updated_at=$5
+       where id=$1 and tenant_id=$6 and work_owner_operator_id=$3 and lifecycle_revision=$4-1
+       and lane='SUPPORT' and status<>'COMPLETED'`,[workId,newOwnerId,previousOwnerId,revision,time,tenantId]);
+     if(updated.rowCount!==1)throw Error('SCOPED_TRANSFER_STALE');
+    }});
+   if(!await allowed(this.clock.now()))throw Error('SCOPED_TRANSFER_AUTHORITY_CHANGED');
+   return result;
+  });
+ }
+
  async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
   mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>,mode:'RESPONSE'|'CLOSE'|'REOPEN'='RESPONSE'):Promise<T|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
@@ -948,7 +1005,7 @@ export class PgScopedAccessReader {
       false::boolean,false::boolean
      from factact.support_work_lifecycle_events e
      where e.tenant_id=$2 and e.work_id=$1
-      and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED')
+      and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED','OWNER_TRANSFERRED')
     )
     select id,revision,kind,occurred_at,response_text,disposition,
      supersedes_record_id,correction_reason,own_record,has_correction from entries

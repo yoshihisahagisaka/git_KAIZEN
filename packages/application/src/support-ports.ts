@@ -68,6 +68,8 @@ export interface ScopedSupportWorkUpdateContext {
  response:SupportResponseRepository;
 }
 export interface ScopedSupportUpdateBoundary {
+ runSupportOwnerTransfer?<T>(tenantId:string,actorId:string,workId:string,newOwnerId:string,
+  mutation:(context:ScopedSupportWorkUpdateContext & {transferOwner(previousOwnerId:string,revision:number,at:string):Promise<void>})=>Promise<T>):Promise<T|null>;
  runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
   mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>,mode?:'RESPONSE'|'CLOSE'|'REOPEN'):Promise<T|null>;
  /** Separate single-Service CREATE boundary for an explicitly submitted intake.

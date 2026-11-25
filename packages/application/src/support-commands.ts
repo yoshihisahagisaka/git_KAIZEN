@@ -68,6 +68,30 @@ export class SupportCommands {
    ({response})=>this.applySupportResponse(response,actor,workId,input,'SCOPED'),'CLOSE');
   return found(result);
  }
+ /** Explicit reassignment is not escalation or completion. No Grant is issued. */
+ async transferScopedSupportOwner(actor:Operator,workId:string,input:{
+  requestId:string;expectedLifecycleRevision:number;expectedOwnerId:string;newOwnerId:string;reason:string;
+ }){
+  if(!this.scopedUpdate?.runSupportOwnerTransfer)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportOwnerTransfer(actor.tenantId,actor.id,workId,input.newOwnerId,async ctx=>{
+   const r=ctx.response,w=found(await r.work(workId,true));
+   await this.context(r,actor,found(await r.event(w.supportEventId)),'SCOPED');
+   const payload={expectedLifecycleRevision:input.expectedLifecycleRevision,previousOwnerId:input.expectedOwnerId,newOwnerId:input.newOwnerId,reason:input.reason.trim()};
+   const old=(await r.lifecycleEvents(workId)).find(x=>x.requestId===input.requestId);
+   if(old){this.retry(old.kind==='OWNER_TRANSFERRED'&&old.recordedByOperatorId===actor.id,old.commandPayload,payload);return old;}
+   requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了済みの対応は引き継げません。');
+   requireCondition(w.lifecycleRevision===input.expectedLifecycleRevision&&w.workOwnerOperatorId===input.expectedOwnerId,'STALE_REVISION','担当者または対応状態が更新されています。');
+   requireCondition(input.newOwnerId!==input.expectedOwnerId&&payload.reason.length>=1&&payload.reason.length<=1000,'INVALID_INPUT','新担当者と引継ぎ理由を確認してください。',400);
+   const at=this.runtime.now(),event:SupportLifecycleEvent={id:this.runtime.id(),tenantId:actor.tenantId,workId,requestId:input.requestId,
+    revision:w.lifecycleRevision+1,kind:'OWNER_TRANSFERRED',nextAction:w.nextAction,waitingParty:'',waitingReason:'',
+    commandPayload:payload,recordedByOperatorId:actor.id,recordedAt:at};
+   await ctx.transferOwner(input.expectedOwnerId,event.revision,at);
+   await r.insertLifecycleEvent(event);
+   await this.audit(r,actor,w.supportEventId,'SUPPORT_OWNER_TRANSFERRED',{workId,eventId:event.id,...payload});
+   return event;
+  });
+  return found(result);
+ }
  /** A correction is an append-only attestation, never a second response Action,
   * Follow-up change, disposition change, Work transition or Close command. */
  async correctScopedSupportResponse(actor:Operator,workId:string,
