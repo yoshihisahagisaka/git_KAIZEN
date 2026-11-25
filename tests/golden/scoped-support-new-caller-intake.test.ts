@@ -277,3 +277,26 @@ describe('P0-A5 authorized registered Caller intake reusing SUPPORT',()=>{
    .toEqual([{n:0}]);
  });
 });
+
+
+describe('P0-A6 new Caller under an authorized existing Organization',()=>{
+ it('reuses the Organization, requires Registry READ and preserves idempotency and unverified reception',async()=>{
+  await grant();
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async client=>
+   new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(randomUUID(),ids.service,ids.organization));
+  const payload={requestId:randomUUID(),serviceId:ids.service,symptom:'初回相談',
+   caller:{kind:'NEW' as const,organizationId:ids.organization,displayName:'新しい担当者',distinctPersonConfirmed:false},
+   decision:'REQUIRED' as const,reason:'対応が必要'};
+  await expect(commands.recordScopedNewCallerInOrganization(scoped,payload)).rejects.toMatchObject({status:404});
+  await otherGrant('REGISTRY',['READ']);
+  const result=await commands.recordScopedNewCallerInOrganization(scoped,payload);
+  expect(await commands.recordScopedNewCallerInOrganization(scoped,payload)).toEqual(result);
+  expect((await db.admin.query('select count(*)::int n from factact.organizations')).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.people where organization_id=$1 and display_name=$2',[ids.organization,payload.caller.displayName])).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows).toEqual([{n:0}]);
+  await expect(commands.recordScopedNewCallerInOrganization(scoped,{...payload,requestId:randomUUID()})).rejects.toMatchObject({code:'DUPLICATE_PERSON'});
+  await expect(commands.recordScopedNewCallerInOrganization(scoped,{...payload,requestId:randomUUID(),caller:{...payload.caller,organizationId:randomUUID()}})).rejects.toMatchObject({status:404});
+ });
+});

@@ -5,6 +5,7 @@ export interface SupportRepository {
  beneficiaryDecisions(eventId:string):Promise<SupportBeneficiaryDecision[]>;
  insertBeneficiaryDecision(decision:SupportBeneficiaryDecision):Promise<void>;
  organizations():Promise<{id:string;name:string;status:string}[]>;
+ callerNamesInOrganization?(organizationId:string):Promise<{displayName:string}[]>;
  insertCallerOrganization(id:string,name:string):Promise<void>;
  insertCallerPerson(id:string,organizationId:string,name:string,email:string|null):Promise<void>;
  lockCallerKey(key:string):Promise<void>;
@@ -77,6 +78,8 @@ export interface ScopedSupportUpdateBoundary {
  /** Registered Caller identity is *not* service eligibility. Resolve an
   * already registered Person under a current, explicitly authorized
   * Organization ServiceRecipient before invoking the common Event path. */
+ runSupportNewCallerInOrganization?<T>(tenantId:string,actorId:string,serviceId:string,organizationId:string,
+  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
  runSupportExistingCallerIntake?<T>(tenantId:string,actorId:string,
   serviceId:string,personId:string,
   mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
