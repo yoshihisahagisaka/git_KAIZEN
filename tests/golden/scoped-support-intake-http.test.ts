@@ -176,3 +176,38 @@ describe('P0-A4 strict human beneficiary HTTP gate',()=>{
    .toEqual([{n:0}]);
  });
 });
+
+
+describe('P0-A5 existing Caller HTTP request uses independent REGISTRY READ',()=>{
+ it('accepts an authorized registered Person without new Person/Org and keeps beneficiary unconfirmed',async()=>{
+  await grant();
+  const {withTenant}=await import('../../apps/web/src/server/persistence/database.js');
+  const {PgJoinRepository}=await import('../../apps/web/src/server/persistence/join-repository.js');
+  await withTenant(db.runtime,ids.tenant,async client=>
+   new PgJoinRepository(client,ids.tenant).ensureOrganizationRecipient(
+    randomUUID(),ids.service,ids.organization));
+  const existing={
+   requestId:randomUUID(),serviceId:ids.service,symptom:'既存担当者からの受付',
+   caller:{kind:'EXISTING',personId:ids.person},
+   decision:'REQUIRED',reason:'対応が必要と判断',
+  };
+  const endpoint='/api/scoped/support-intake/existing-caller';
+  const receive=(body:object)=>request(app).post(endpoint)
+   .set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+  await receive(existing).expect(404);
+  await operationGrant('READ','REGISTRY');
+  await receive({...existing,tenantId:ids.tenant}).expect(400);
+  await receive({...existing,caller:{...existing.caller,organizationId:ids.organization}})
+   .expect(400);
+  const result=(await receive(existing).expect(201)).body.data;
+  expect(result.eventId).toBeTruthy();expect(result.workId).toBeTruthy();
+  expect((await receive(existing).expect(201)).body.data).toEqual(result);
+  const receipt=(await getBeneficiary(result.eventId).expect(200)).body.data;
+  expect(receipt).toMatchObject({callerOrganizationId:ids.organization,
+   beneficiaryRevision:0,canConfirm:false});
+  expect((await db.admin.query('select count(*)::int n from factact.people')).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.organizations')).rows).toEqual([{n:1}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_event_beneficiary_decisions')).rows)
+   .toEqual([{n:0}]);
+ });
+});
