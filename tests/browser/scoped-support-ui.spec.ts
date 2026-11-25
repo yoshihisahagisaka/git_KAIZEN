@@ -546,7 +546,7 @@ test('SONIX P0-A5: service-first existing company and Person intake reuses Regis
  await existing.getByLabel('問い合わせ者',{exact:true}).selectOption(ids.person);
  await existing.getByLabel('問い合わせ内容').fill('登録済み担当者からの相談');
  await existing.getByLabel('判断理由').fill('受付時の内容から対応必要と判断');
- await existing.getByRole('button',{name:'登録済み問い合わせを受付'}).click();
+ await existing.getByRole('button',{name:'問い合わせを受付',exact:true}).click();
  await expect(intake.getByRole('status')).toContainText('受付記録を作成しました。');
  const events=(await db.admin.query(`select caller_input_snapshot from factact.support_events
   where created_by_operator_id=$1`,[scopedActor])).rows;
