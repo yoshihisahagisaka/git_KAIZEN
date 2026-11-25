@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {api} from './api.js';
+import {api,ApiError} from './api.js';
 
 interface Org {id:string;name:string}
 interface OrgPage {items:Org[];nextCursor:string|null}
@@ -19,6 +19,9 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  const [orgId,setOrgId]=useState('');
  const [people,setPeople]=useState<Person[]>([]),[peopleCursor,setPeopleCursor]=useState<string|null>(null);
  const [personId,setPersonId]=useState('');
+ const [personMode,setPersonMode]=useState<'EXISTING'|'NEW'>('EXISTING');
+ const [newPersonName,setNewPersonName]=useState(''),[newEmail,setNewEmail]=useState('');
+ const [distinctPersonConfirmed,setDistinctPersonConfirmed]=useState(false);
  const [symptom,setSymptom]=useState(''),[reason,setReason]=useState('');
  const [decision,setDecision]=useState<Decision>('REQUIRED');
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -26,7 +29,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  const sending=useRef(false);
  const retry=useRef<{key:string;id:string}|null>(null);
  useEffect(()=>{
-  if(!serviceId){setOrgs([]);setOrgCursor(null);setOrgId('');return;}
+  if(!serviceId){setOrgs([]);setOrgCursor(null);setOrgId('');setPersonId('');return;}
   let alive=true;setLoading(true);setError('');setOrgId('');setPersonId('');
   setOrgs([]);setOrgCursor(null);
   const params=new URLSearchParams({limit:'20',q:search});
@@ -78,24 +81,33 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  }
  async function submit(event:FormEvent<HTMLFormElement>){
   event.preventDefault();
-  if(sending.current||busy||!serviceId||!orgId||!personId||!symptom.trim()||!reason.trim())
+  if(sending.current||busy||!serviceId||!orgId||
+    (personMode==='EXISTING'&&!personId)||
+    (personMode==='NEW'&&!newPersonName.trim())||!symptom.trim()||!reason.trim())
    return;
-  const payload={
-   serviceId,caller:{kind:'EXISTING',personId},symptom:symptom.trim(),
-   decision,reason:reason.trim(),
-  };
+  const caller=personMode==='EXISTING'
+   ? {kind:'EXISTING',personId}
+   : {kind:'NEW',organizationId:orgId,displayName:newPersonName.trim(),
+      ...(newEmail.trim()?{email:newEmail.trim()}:{}),distinctPersonConfirmed};
+  const payload={serviceId,caller,symptom:symptom.trim(),decision,reason:reason.trim()};
   const key=JSON.stringify(payload);
   if(retry.current?.key!==key)retry.current={key,id:crypto.randomUUID()};
   sending.current=true;setBusy(true);setError('');
   try{
-   const receipt=await api<Receipt>('/api/scoped/support-intake/existing-caller',csrf,
-    {...payload,requestId:retry.current.id});
+   const endpoint=personMode==='EXISTING'
+    ?'/api/scoped/support-intake/existing-caller'
+    :'/api/scoped/support-intake/new-person';
+   const receipt=await api<Receipt>(endpoint,csrf,{...payload,requestId:retry.current.id});
    retry.current=null;onReceived(receipt);
-  }catch{setError('登録済み問い合わせ者の受付ができませんでした。選択対象と権限を確認してください。');}
+  }catch(error){
+   setError(error instanceof ApiError&&error.code==='DUPLICATE_PERSON'
+    ?'同じ企業に同名の方が登録されています。既存登録を確認し、別人の場合だけチェックしてください。'
+    :'受付できませんでした。選択対象と作成・閲覧権限を確認してください。');
+  }
   finally{sending.current=false;setBusy(false);}
  }
  return <section className="scoped-existing-caller" aria-label="登録済み問い合わせ者の受付">
-  <h3>登録済みの問い合わせ者を選択</h3>
+  <h3>登録済み企業の問い合わせ者を選択・追加</h3>
   <p>登録情報の閲覧には別途Registry権限が必要です。
    登録済みというだけで会員資格や支援対象を確定しません。</p>
   {error&&<p role="alert">{error}</p>}
@@ -117,15 +129,39 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
     </select>
     {orgCursor&&<button className="secondary" type="button" disabled={busy}
      onClick={()=>void moreOrgs()}>さらに企業候補を表示</button>}
-    <label htmlFor="scoped-existing-person">問い合わせ者</label>
-    <select id="scoped-existing-person" value={personId} disabled={busy||!orgId}
-     onChange={event=>changed(()=>setPersonId(event.target.value))}>
-     <option value="">問い合わせ者を選択してください</option>
-     {people.map(x=><option key={x.personId} value={x.personId}>
-      {x.displayName}</option>)}
+    <label htmlFor="scoped-existing-person-mode">問い合わせ者の状態</label>
+    <select id="scoped-existing-person-mode" value={personMode} disabled={busy||!orgId}
+     onChange={event=>changed(()=>{
+      setPersonMode(event.target.value as typeof personMode);
+      setPersonId('');setNewPersonName('');setNewEmail('');setDistinctPersonConfirmed(false);
+     })}>
+     <option value="EXISTING">登録済みの問い合わせ者</option>
+     <option value="NEW">登録済み企業の新しい問い合わせ者</option>
     </select>
-    {peopleCursor&&<button className="secondary" type="button" disabled={busy}
-     onClick={()=>void morePeople()}>さらに問い合わせ者候補を表示</button>}
+    {personMode==='EXISTING'&&<>
+     <label htmlFor="scoped-existing-person">問い合わせ者</label>
+     <select id="scoped-existing-person" value={personId} disabled={busy||!orgId}
+      onChange={event=>changed(()=>setPersonId(event.target.value))}>
+      <option value="">問い合わせ者を選択してください</option>
+      {people.map(x=><option key={x.personId} value={x.personId}>
+       {x.displayName}</option>)}
+     </select>
+     {peopleCursor&&<button className="secondary" type="button" disabled={busy}
+      onClick={()=>void morePeople()}>さらに問い合わせ者候補を表示</button>}
+    </>}
+    {personMode==='NEW'&&<>
+     <label htmlFor="scoped-new-person-name">新しい問い合わせ者名</label>
+     <input id="scoped-new-person-name" value={newPersonName} disabled={busy||!orgId}
+      maxLength={200} onChange={event=>changed(()=>setNewPersonName(event.target.value))}/>
+     <label htmlFor="scoped-new-person-email">メールアドレス（任意）</label>
+     <input id="scoped-new-person-email" value={newEmail} disabled={busy||!orgId}
+      onChange={event=>changed(()=>setNewEmail(event.target.value))}/>
+     <label><input type="checkbox" checked={distinctPersonConfirmed} disabled={busy||!orgId}
+      onChange={event=>changed(()=>setDistinctPersonConfirmed(event.target.checked))}/>
+      同名登録者を確認し、別人であることを確認しました（該当するときのみ）
+     </label>
+     <p>登録する情報は受付時の申告です。会員資格・本人確認やRegistryの検証済みFACTにはなりません。</p>
+    </>}
     <label htmlFor="scoped-existing-symptom">問い合わせ内容</label>
     <textarea id="scoped-existing-symptom" maxLength={4000} disabled={busy}
      value={symptom} onChange={event=>changed(()=>setSymptom(event.target.value))}/>
@@ -138,8 +174,9 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
     <label htmlFor="scoped-existing-reason">判断理由</label>
     <textarea id="scoped-existing-reason" maxLength={4000} value={reason} disabled={busy}
      onChange={event=>changed(()=>setReason(event.target.value))}/>
-    <button type="submit" disabled={busy||!orgId||!personId||!symptom.trim()||!reason.trim()}>
-     登録済み問い合わせを受付
+    <button type="submit" disabled={busy||!orgId||(personMode==='EXISTING'&&!personId)||
+      (personMode==='NEW'&&!newPersonName.trim())||!symptom.trim()||!reason.trim()}>
+     問い合わせを受付
     </button>
    </form>
   </>}
