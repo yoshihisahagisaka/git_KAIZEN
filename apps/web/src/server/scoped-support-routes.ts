@@ -3,9 +3,10 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportLifecycleContext,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ scopedSupportLifecycleContext?(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportLifecycleContext|null>;
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  scopedIntakeOrganizations?(tenantId:string,actorId:string,serviceId:string,
@@ -114,6 +115,14 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const history=found(await reader.supportWorkHistory(actor.tenantId,actor.id,workId,query.limit,cursor));
   res.json({ok:true,data:history});
  });
+ if(reader.scopedSupportLifecycleContext){
+  router.get('/scoped/support-work/:id/lifecycle-context',async(req,res)=>{
+   const workId=z.uuid().parse(req.params.id);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const context=await reader.scopedSupportLifecycleContext!(actor.tenantId,actor.id,workId);
+   res.json({ok:true,data:found(context)});
+  });
+ }
  router.get('/scoped/support-work/:id',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);
   const actor=(res.locals.session as {operator:Operator}).operator;
