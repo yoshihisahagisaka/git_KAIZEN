@@ -97,12 +97,12 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
   </article>}
  </section>;
 }
-export function RequestEntryPoint({csrf,initialId,children}:{csrf:string;initialId:string|null;children:React.ReactNode}){
+export function RequestEntryPoint({csrf,initialId,children,portalOnly=false}:{csrf:string;initialId:string|null;children:React.ReactNode;portalOnly?:boolean}){
  const [contexts,setContexts]=useState<Context[]|null>(null);
  const [error,setError]=useState('');
- const [open,setOpen]=useState(!!initialId);
+ const [open,setOpen]=useState(!!initialId||portalOnly);
  useEffect(()=>{let active=true;api<Context[]>('/api/request-contexts').then(x=>{if(active)setContexts(x);}).catch(e=>{if(active){setContexts([]);setError(message(e));}});return()=>{active=false;};},[]);
- if(initialId&&contexts===null)return <p role="status">依頼を確認しています…</p>;
- if(initialId&&contexts?.length===0)return <p role="alert">{error||'依頼を参照できません。'}</p>;
- return <>{contexts&&contexts.length>0&&open?<ServiceRequestUI csrf={csrf} contexts={contexts} initialId={initialId} onExit={()=>{if(initialId)window.location.assign('/');else setOpen(false);}}/>:<>{contexts&&contexts.length>0&&<div className="request-launch"><button onClick={()=>setOpen(true)}>対応依頼</button></div>}{children}</>}</>;
+ if((initialId||portalOnly)&&contexts===null)return <p role="status">依頼を確認しています…</p>;
+ if((initialId||portalOnly)&&contexts?.length===0)return <p role="alert">{error||'依頼を参照できません。'}</p>;
+ return <>{contexts&&contexts.length>0&&open?<ServiceRequestUI csrf={csrf} contexts={contexts} initialId={initialId} {...(!portalOnly?{onExit:()=>{if(initialId)window.location.assign('/');else setOpen(false);}}:{})}/>:<>{contexts&&contexts.length>0&&<div className="request-launch"><button onClick={()=>setOpen(true)}>対応依頼</button></div>}{children}</>}</>;
 }

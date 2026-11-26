@@ -29,6 +29,7 @@ beforeEach(async()=>{
  await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'partner@example.invalid','Partner','ACTIVE')",[partner,ids.tenant]);
  await db.admin.query("insert into factact.service_request_channels(tenant_id,service_id,contract_profile_id,provider_party_id,partner_party_id,enabled) values($1,$2,$3,$4,$5,true)",[ids.tenant,ids.service,ids.contract,ids.organization,org]);
  await db.admin.query("insert into factact.service_request_participants(tenant_id,service_id,contract_profile_id,actor_operator_id,party_role,can_create,can_read,can_respond,enabled) values($1,$2,$3,$4,'PROVIDER',true,true,true,true),($1,$2,$3,$5,'PARTNER',true,true,true,true)",[ids.tenant,ids.service,ids.contract,ids.operator,partner]);
+ await db.admin.query('update factact.operators set request_portal_only=true where id=$1',[partner]);
  await session(ids.operator,'provider');await session(partner,'partner');
 },60_000);
 afterAll(async()=>{await db?.close();},60_000);
@@ -50,8 +51,12 @@ describe('service request HTTP boundary',()=>{
   await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(200);
   expect((await get('/api/requests/'+body.id).expect(200)).body.data).toMatchObject({status:'COMPLETED',revision:1});
   expect((await get('/api/requests').query({...context,side:'SENT'}).expect(200)).body.data.items).toHaveLength(1);
+  await get('/api/support-work','partner').expect(403);
+  await get('/API/support-work','partner').expect(403);
+  await get('/api/admin/procedure-pages','partner').expect(403);
   await db.admin.query("update factact.service_request_participants set enabled=false where party_role='PARTNER'");
   await get('/api/requests/'+body.id,'partner').expect(404);
+  await get('/api/support-work','partner').expect(403);
   await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(404);
  });
 });

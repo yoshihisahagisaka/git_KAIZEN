@@ -6,6 +6,9 @@ import { authenticateSession, resolveActiveOperator } from '../../../../../packa
 import type { IdentityProvider } from './oidc.js';
 import { generateCodeVerifier, generateOpaqueValue, tokenHash } from './pkce.js';
 
+function requestReturn(value:unknown):string{
+ return typeof value==='string'&&/^\/requests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)?value:'/';
+}
 const contextSwitchSchema = z.object({ tenantId: z.uuid() }).strict();
 
 export function createAuthRouter(config: Config, store: IdentityStore, provider: IdentityProvider): Router {
@@ -13,21 +16,27 @@ export function createAuthRouter(config: Config, store: IdentityStore, provider:
   const production = config.nodeEnv === 'production';
   const sessionCookie = production ? '__Host-factact_session' : 'factact_session';
   const flowCookie = production ? '__Host-factact_login' : 'factact_login';
+  const returnCookie=production?'__Host-factact_return':'factact_return';
   // ADAPT: PPAP src/lib/cookies.ts; lifetimes also enforced in PostgreSQL.
   const cookie: CookieOptions = { httpOnly: true, secure: production || config.origin.startsWith('https:'), sameSite: 'lax', path: '/' };
   router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
-  router.get('/auth/login', async (_req, res) => {
+  router.get('/auth/login', async (req, res) => {
     const flow = generateOpaqueValue();
     const login = { state: generateOpaqueValue(), nonce: generateOpaqueValue(), verifier: generateCodeVerifier() };
     const destination = provider.authorizationUrl(login);
     await store.beginLogin(tokenHash(flow), login);
     res.cookie(flowCookie, flow, { ...cookie, maxAge: 10 * 60 * 1000 });
+    res.cookie(returnCookie,JSON.stringify({flow,path:requestReturn(req.query.returnTo)}),{...cookie,maxAge:10*60*1000});
     res.redirect(destination);
   });
   router.get('/auth/callback', async (req, res) => {
     const flow: unknown = req.cookies?.[flowCookie];
     res.clearCookie(flowCookie, cookie);
+    const rawReturn:unknown=req.cookies?.[returnCookie];
+    res.clearCookie(returnCookie,cookie);
+    let returnTo='/';
+    try{if(typeof rawReturn==='string'){const parsed=JSON.parse(rawReturn);if(parsed.flow===flow)returnTo=requestReturn(parsed.path);}}catch{/* invalid optional return path */}
     if (typeof flow !== 'string') { res.status(400).send('ログインをやり直してください。'); return; }
     const login = await store.consumeLogin(tokenHash(flow));
     if (!login) { res.status(400).send('ログインの有効期限が切れています。'); return; }
@@ -46,7 +55,7 @@ export function createAuthRouter(config: Config, store: IdentityStore, provider:
     const token = generateOpaqueValue();
     await store.createVerifiedSession(tokenHash(token), { tenantId: operator.tenantId, operatorId: operator.id }, generateOpaqueValue(), identity);
     res.cookie(sessionCookie, token, { ...cookie, maxAge: 8 * 60 * 60 * 1000 });
-    res.redirect('/');
+    res.redirect(returnTo);
   });
   router.get('/api/session', async (req, res) => {
     const token: unknown = req.cookies?.[sessionCookie];
