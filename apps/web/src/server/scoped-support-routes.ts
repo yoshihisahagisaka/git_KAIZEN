@@ -19,7 +19,7 @@ export interface ScopedSupportReader {
   eventId:string):Promise<ScopedIntakeReceipt|null>;
  scopedOwnerCandidates?(tenantId:string,actorId:string,workId:string,limit:number,cursor:string|null):Promise<ScopedOwnerCandidates|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
- supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string):Promise<ScopedSupportWorkPage>;
+ supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string,organizationId?:string):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
   cursor:ScopedSupportHistoryCursor|null):Promise<ScopedSupportWorkHistory|null>;
 }
@@ -119,6 +119,14 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    res.json({ok:true,data:await reader.scopedMemberCandidates!(actor.tenantId,actor.id,serviceId,q.company,q.phone)});
   });
  }
+ // Recent customer history reuses the same authorized Work projection.
+ router.get('/scoped/support-intake/services/:serviceId/organizations/:organizationId/recent',async(req,res)=>{
+  const serviceId=z.uuid().parse(req.params.serviceId),organizationId=z.uuid().parse(req.params.organizationId);
+  z.strictObject({}).parse(req.query);
+  const actor=(res.locals.session as {operator:Operator}).operator;
+  const page=await reader.supportWorkPage(actor.tenantId,actor.id,5,null,serviceId,organizationId);
+  res.json({ok:true,data:{items:page.items}});
+ });
  // Own newly received Caller context, not an all-Tenant SUPPORT read.
  if(reader.scopedPendingReceipts){
   const schema=z.strictObject({serviceId:z.uuid(),limit:z.coerce.number().int().min(1).max(20).default(20),cursor:z.string().max(400).optional()});

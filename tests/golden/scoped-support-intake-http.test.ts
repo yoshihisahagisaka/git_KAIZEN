@@ -153,6 +153,18 @@ describe('P0-A4 strict human beneficiary HTTP gate',()=>{
   await operationGrant('READ');
   await request(app).get('/api/scoped/support-work/'+received.workId)
    .set('Cookie',cookie).expect(200);
+  const recent='/api/scoped/support-intake/services/'+ids.service+'/organizations/'+own.callerOrganizationId+'/recent';
+  expect((await request(app).get(recent).set('Cookie',cookie).expect(200)).body.data.items).toEqual([]);
+  const registry=await operationGrant('READ','REGISTRY');
+  const history=(await request(app).get(recent).set('Cookie',cookie).expect(200)).body.data.items;
+  expect(history).toHaveLength(1);
+  expect(history[0]).toMatchObject({workId:received.workId,registryOrganizationId:own.callerOrganizationId});
+  const other='/api/scoped/support-intake/services/'+ids.service+'/organizations/'+ids.organization+'/recent';
+  expect((await request(app).get(other).set('Cookie',cookie).expect(200)).body.data.items).toEqual([]);
+  await request(app).get(recent).expect(401);
+  await request(app).get(recent+'?tenantId='+ids.tenant).set('Cookie',cookie).expect(400);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='停止' where id=$1`,[registry,ids.operator]);
+  expect((await request(app).get(recent).set('Cookie',cookie).expect(200)).body.data.items).toEqual([]);
  });
  it('rejects forged IDs, false attestation, hidden target and CSRF bypass',async()=>{
   await grant();await operationGrant('UPDATE');
