@@ -91,6 +91,14 @@ describe('SONIX P0-A2 isolated service recipient directory',()=>{
    values($1,$2,$3,$4,$5,'SERVICE','REGISTRY',array['READ'],$6,$7)`,
    [registryGrant,ids.tenant,actorId,ids.service,ids.contract,
     '2026-11-01T00:00:00Z',ids.operator]);
+  await db.admin.query(`insert into factact.contact_points(id,tenant_id,organization_id,display_phone,normalized_phone,source,observed_at,verification_state)
+   values($1,$2,$3,'03-1234-5678','0312345678','synthetic',now(),'UNVERIFIED'),($4,$2,$5,'03-1234-5678','0312345678','synthetic',now(),'UNVERIFIED')`,
+   [randomUUID(),ids.tenant,ids.organization,randomUUID(),orgB]);
+  const match=await reader.scopedMemberCandidates(ids.tenant,actorId,ids.service,'Ｅｘａｍｐｌｅ','０３－１２３４－５６７８');
+  expect(match).toEqual({items:[{organizationId:ids.organization,name:'Example株式会社',nameEvidence:'EXACT',phoneMatch:true}],tooMany:false});
+  expect((await reader.scopedMemberCandidates(ids.tenant,actorId,ids.service,'','0312345678')).items).toHaveLength(1);
+  expect((await reader.scopedMemberCandidates(ids.tenant,actorId,ids.service,'unknown','0312345679')).items).toEqual([]);
+  expect((await reader.scopedMemberCandidates(ids.tenant,actorId,serviceB,'','0312345678')).items).toEqual([]);
   const visible=await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null);
   expect(visible.items).toEqual([{id:ids.organization,name:'Example株式会社'}]);
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null,'ＥＸＡＭＰＬＥ')).items)
@@ -105,6 +113,7 @@ describe('SONIX P0-A2 isolated service recipient directory',()=>{
    revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='委任終了'
    where id=$1`,[registryGrant,ids.operator]);
   expect((await reader.scopedIntakeOrganizations(ids.tenant,actorId,ids.service,20,null)).items).toEqual([]);
+  expect((await reader.scopedMemberCandidates(ids.tenant,actorId,ids.service,'Example','0312345678')).items).toEqual([]);
  });
 });
 

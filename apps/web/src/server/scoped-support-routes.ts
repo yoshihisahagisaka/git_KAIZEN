@@ -1,3 +1,4 @@
+import type {MemberCandidate} from '../../../../packages/domain/src/contact-match.js';
 import {Router} from 'express';
 import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
@@ -6,6 +7,7 @@ import {DomainError,found} from '../../../../packages/domain/src/join.js';
 import type {ScopedOwnerCandidates,ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ scopedMemberCandidates?(tenantId:string,actorId:string,serviceId:string,company:string,phone:string):Promise<{items:MemberCandidate[];tooMany:boolean}>;
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
  scopedSupportServiceContexts?(tenantId:string,actorId:string,limit:number,
@@ -106,6 +108,15 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const data=await reader.scopedIntakeOrganizations!(actor.tenantId,actor.id,serviceId,query.limit,cursor,query.q);
    res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?
     Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
+  });
+ }
+ // POST keeps customer search terms out of URL/access logs; read-only operation.
+ if(reader.scopedMemberCandidates){
+  const schema=z.strictObject({company:z.string().max(200).default(''),phone:z.string().max(80).default('')});
+  router.post('/scoped/support-intake/services/:serviceId/member-candidates',async(req,res)=>{
+   const serviceId=z.uuid().parse(req.params.serviceId),q=schema.parse(req.body);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:await reader.scopedMemberCandidates!(actor.tenantId,actor.id,serviceId,q.company,q.phone)});
   });
  }
  // Own newly received Caller context, not an all-Tenant SUPPORT read.

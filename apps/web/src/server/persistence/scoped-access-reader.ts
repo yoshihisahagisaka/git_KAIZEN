@@ -1,3 +1,4 @@
+import {normalizePhone,rankMemberCandidates,type MemberCandidate} from '../../../../../packages/domain/src/contact-match.js';
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
 import {withTenant} from './database.js';
@@ -940,6 +941,55 @@ export class PgScopedAccessReader {
   * Service. REGISTERED is not synonymous with membership/verified eligibility.
   * SUPPORT CREATE cannot unlock Registry browsing: REGISTRY READ is independent.
   */
+ async scopedMemberCandidates(tenantId:string,actorId:string,serviceId:string,company:string,phone:string):Promise<{items:MemberCandidate[];tooMany:boolean}>{
+  const empty={items:[],tooMany:false};
+  if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success)||company.length>200||phone.length>80||(!company.trim()&&!normalizePhone(phone)))return empty;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return empty;
+  return withTenant(this.pool,tenantId,async db=>{
+   const context=await db.query<{id:string}>(`
+    select c.id from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$3::timestamptz
+      and (c.effective_to is null or c.effective_to>$3::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
+   if(context.rows.length!==1)return empty;
+   const contractProfileId=context.rows[0]!.id;
+   for(const [objectKind,operation] of [
+    ['SUPPORT','CREATE'],['REGISTRY','READ'],
+   ] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId,scope:{kind:'SERVICE'},
+      objectKind,operation,
+    },at))return empty;
+   }
+   const normalized=normalizePhone(phone);
+   const {rows}=await db.query<{id:string;name:string;phone_match:boolean}>(`
+     select distinct o.id,o.name,exists(
+       select 1 from factact.contact_points cp
+       where cp.tenant_id=o.tenant_id and cp.normalized_phone=$2
+       and (cp.organization_id=o.id or exists(
+        select 1 from factact.people p where p.tenant_id=o.tenant_id
+        and p.id=cp.person_id and p.organization_id=o.id and p.status='ACTIVE'
+       ))
+     ) as phone_match
+     from factact.service_recipients r
+     join factact.organizations o on o.tenant_id=r.tenant_id
+       and o.id=r.recipient_organization_id and o.status='ACTIVE'
+     where r.service_id=$1 and r.status='ACTIVE' and r.recipient_type='ORGANIZATION'
+     order by o.name,o.id limit 5001`,[serviceId,normalized]);
+   // Do not silently omit possible candidates beyond the bounded initial directory.
+   if(rows.length>5000)return {items:[],tooMany:true};
+   const ranked=rankMemberCandidates({company,phone},rows.map(row=>({organizationId:row.id,name:row.name,phones:row.phone_match&&normalized?[normalized]:[]})),21);
+   return {items:ranked.slice(0,20),tooMany:ranked.length>20};
+  },true);
+ }
+
  async scopedIntakeOrganizations(tenantId:string,actorId:string,serviceId:string,
   limit:number,cursor:ScopedIntakeOrganizationCursor|null,q:string=''):Promise<ScopedIntakeOrganizationPage>{
   const empty:ScopedIntakeOrganizationPage={items:[],nextCursor:null};
