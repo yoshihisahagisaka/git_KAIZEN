@@ -360,7 +360,7 @@ export class PgScopedAccessReader {
  }
 
  async runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
-  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>,mode:'RESPONSE'|'CLOSE'|'REOPEN'='RESPONSE'):Promise<T|null>{
+  mutation:(work:ScopedSupportWorkUpdateContext)=>Promise<T>,mode:'RESPONSE'|'CLOSE'|'REOPEN'|'ESCALATION'='RESPONSE'):Promise<T|null>{
   if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
@@ -375,7 +375,7 @@ export class PgScopedAccessReader {
    if(!work)return null;
    // Explicit approval is independent of ordinary UPDATE. Revalidate both
    // against the same confirmed beneficiary under the existing actor lock.
-   if(mode!=='RESPONSE'&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'APPROVE'))return null;
+   if((mode==='CLOSE'||mode==='REOPEN')&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'APPROVE'))return null;
    const repository=new PgSupportRepository(db,tenantId);
    const assertWork=(id:string)=>{
     if(id!==workId)throw Error('SCOPED_UPDATE_TARGET_MISMATCH');
@@ -413,18 +413,18 @@ export class PgScopedAccessReader {
     closeDecisions:id=>{assertWork(id);return repository.closeDecisions(workId);},
     insertRecord:row=>{
      assertRecord(row);
-     if(row.kind!=='RESPONSE'&&row.kind!=='RESPONSE_CORRECTION')
+     if(mode==='ESCALATION'||(row.kind!=='RESPONSE'&&row.kind!=='RESPONSE_CORRECTION'))
       throw Error('SCOPED_UPDATE_RECORD_KIND_MISMATCH');
      return repository.insertRecord(row);
     },
     insertLifecycleEvent:row=>{
      assertRecord(row);
-     if(row.kind!==(mode==='REOPEN'?'REOPENED':'RESPONSE_RECORDED'))throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
+     if(mode==='ESCALATION'?!['ESCALATION_REQUESTED','ESCALATION_RESULT_RECORDED'].includes(row.kind):row.kind!==(mode==='REOPEN'?'REOPENED':'RESPONSE_RECORDED'))throw Error('SCOPED_UPDATE_LIFECYCLE_KIND_MISMATCH');
      return repository.insertLifecycleEvent(row);
     },
     insertFollowUp:row=>{
      assertRecord(row);
-     if(row.kind!==(mode==='CLOSE'?'CLEARED':'SET'))throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
+     if(mode==='ESCALATION'||row.kind!==(mode==='CLOSE'?'CLEARED':'SET'))throw Error('SCOPED_UPDATE_FOLLOW_UP_KIND_MISMATCH');
      return repository.insertFollowUp(row);
     },
     insertCloseDecision:async row=>{
@@ -453,7 +453,7 @@ export class PgScopedAccessReader {
    // Still re-check time-bound eligibility before commit. The actor-keyed
    // transaction lock closes the Grant/Actor status change-to-COMMIT race.
    if(!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'UPDATE')||
-      (mode!=='RESPONSE'&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'APPROVE')))
+      ((mode==='CLOSE'||mode==='REOPEN')&&!await this.authorizedSupportWork(db,tenantId,actorId,workId,this.clock.now(),'APPROVE')))
     throw Error('SCOPED_UPDATE_AUTHORITY_CHANGED');
    return result;
   });
@@ -1042,11 +1042,11 @@ export class PgScopedAccessReader {
       and jsonb_typeof(r.notes->'responseText')='string'
       and jsonb_typeof(r.notes->'supersedesRecordId')='string'
      union all
-     select e.id,e.revision,e.kind,e.recorded_at,null::text,null::text,null::text,null::text,
+     select e.id,e.revision,e.kind,e.recorded_at,case when e.kind='ESCALATION_REQUESTED' then concat('依頼先：',e.command_payload->'input'->>'target',' / 依頼内容：',e.command_payload->'input'->>'requested',' / 理由：',e.command_payload->'input'->>'reason') when e.kind='ESCALATION_RESULT_RECORDED' then e.command_payload->'input'->>'reason' else null::text end,null::text,null::text,null::text,
       false::boolean,false::boolean
      from factact.support_work_lifecycle_events e
      where e.tenant_id=$2 and e.work_id=$1
-      and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED','OWNER_TRANSFERRED')
+      and e.kind in ('CONTINUATION_RECORDED','WAITING_SET','RESUMED','NEXT_ACTION_CLEARED','REOPENED','OWNER_TRANSFERRED','ESCALATION_REQUESTED','ESCALATION_RESULT_RECORDED')
     )
     select id,revision,kind,occurred_at,response_text,disposition,
      supersedes_record_id,correction_reason,own_record,has_correction from entries

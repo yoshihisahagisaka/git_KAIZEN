@@ -25,7 +25,7 @@ export interface ScopedSupportReader {
 /** Never exposes the broad internal SUPPORT query or treats caller affiliation as a grant. */
 export function scopedSupportRoutes(reader:ScopedSupportReader,
  writer?:Pick<SupportCommands,'recordScopedSupportResponse'|'correctScopedSupportResponse'|'recordScopedNewCallerIntake'>&
-  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'|'evaluateScopedReceivedEvent'|'closeScopedSupportWork'|'reopenScopedSupportWork'|'transferScopedSupportOwner'>>){
+  Partial<Pick<SupportCommands,'recordScopedIntakeBeneficiary'|'recordScopedExistingCallerIntake'|'recordScopedNewCallerInOrganization'|'evaluateScopedReceivedEvent'|'closeScopedSupportWork'|'reopenScopedSupportWork'|'transferScopedSupportOwner'|'recordScopedEscalation'>>){
  const router=Router();
  const listInput=z.strictObject({limit:z.coerce.number().int().min(1).max(50).default(20),
   cursor:z.string().max(300).optional(),serviceId:z.uuid().optional()});
@@ -286,6 +286,19 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
     const workId=z.uuid().parse(req.params.id),input=schema.parse(req.body);
     const actor=(res.locals.session as {operator:Operator}).operator;
     res.json({ok:true,data:await writer.transferScopedSupportOwner!(actor,workId,input)});
+   });
+  }
+  if(writer.recordScopedEscalation){
+   const base={requestId:z.uuid(),expectedLifecycleRevision:z.number().int().nonnegative(),reason:z.string().trim().min(1).max(4000)};
+   const schema=z.discriminatedUnion('kind',[
+    z.strictObject({...base,kind:z.literal('REQUEST'),target:z.string().trim().min(1).max(200),requested:z.string().trim().min(1).max(1000)}),
+    z.strictObject({...base,kind:z.literal('RESULT'),escalationEventId:z.uuid()}),
+   ]);
+   router.post('/scoped/support-work/:id/escalations',async(req,res)=>{
+    const workId=z.uuid().parse(req.params.id),input=schema.parse(req.body);
+    const actor=(res.locals.session as {operator:Operator}).operator;
+    const result=await writer.recordScopedEscalation!(actor,workId,input);
+    res.json({ok:true,data:{id:result.id,kind:result.kind,revision:result.revision}});
    });
   }
   // Text-only append-only correction of the actor's own non-closing response.

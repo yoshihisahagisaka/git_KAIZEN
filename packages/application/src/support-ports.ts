@@ -71,7 +71,7 @@ export interface ScopedSupportUpdateBoundary {
  runSupportOwnerTransfer?<T>(tenantId:string,actorId:string,workId:string,newOwnerId:string,
   mutation:(context:ScopedSupportWorkUpdateContext & {transferOwner(previousOwnerId:string,revision:number,at:string):Promise<void>})=>Promise<T>):Promise<T|null>;
  runSupportWorkUpdate<T>(tenantId:string,actorId:string,workId:string,
-  mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>,mode?:'RESPONSE'|'CLOSE'|'REOPEN'):Promise<T|null>;
+  mutation:(context:ScopedSupportWorkUpdateContext)=>Promise<T>,mode?:'RESPONSE'|'CLOSE'|'REOPEN'|'ESCALATION'):Promise<T|null>;
  /** Separate single-Service CREATE boundary for an explicitly submitted intake.
   * The caller never provides any Tenant/Actor/Contract authorization input.
   * No callback runs until live Grant and Contract checks succeed. */
