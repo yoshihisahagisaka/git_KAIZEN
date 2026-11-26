@@ -263,7 +263,10 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
   const writeInFlight=useRef(false);
   const responseRequestId=useRef<string|null>(null);
   const correctionRequestId=useRef<string|null>(null);
+  const [receptionWork,setReceptionWork]=useState<string|null>(null);
+  const [receptionReturn,setReceptionReturn]=useState(0);
   function selectWork(id:string|null) {
+    if(receptionWork&&id!==receptionWork){setReceptionWork(null);setReceptionReturn(n=>n+1);}
     selectedRequestId.current=id;setSelectedId(id);
     setResponseText('');setDisposition('INVESTIGATING');setFollowUpLocal('');
     setCorrectionTarget(null);setCorrectionText('');setCorrectionReason('');
@@ -425,7 +428,12 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
       <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
         <button className="secondary" disabled={busy||writeBusy} onClick={()=>{if(!responseText.trim()&&!lifecycleMode||window.confirm('未保存の入力を破棄しますか？')){selectWork(null);setRevision(r=>r+1);}}}>一覧を更新</button></div>
       <ScopedReceptionWorkspace csrf={csrf} onBeneficiaryConfirmed={refreshWork}
-       onServiceChange={changeService} contextLocked={contextLocked}/>
+       onServiceChange={changeService} contextLocked={contextLocked}
+       activeWork={receptionWork} returnRevision={receptionReturn} onSelectWork={id=>{
+        if(writeBusy||writeInFlight.current)return false;
+        if((responseText.trim()||followUpLocal||correctionTarget||lifecycleMode)&&!window.confirm('未保存の入力を破棄しますか？'))return false;
+        selectWork(id);setReceptionWork(id);return true;
+       }}/>
       <ScopedRegistryReviewUI csrf={csrf}/>
       {error&&<p role="alert">{error}</p>}
       <div className="scoped-support-panels">
@@ -443,7 +451,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
         </section>
         <section aria-label="選択した対応の詳細">
           {!selectedId?<><h2>対応の詳細</h2><p>一覧から確認したい対応を選んでください。</p></>:
-            <><div className="scoped-support-heading"><h2>対応の詳細</h2><button className="secondary" disabled={writeBusy} onClick={()=>{if(!responseText.trim()&&!lifecycleMode||window.confirm('未保存の入力を破棄しますか？'))selectWork(null);}}>閉じる</button></div>
+            <><div className="scoped-support-heading"><h2>対応の詳細</h2><button className="secondary" disabled={writeBusy} onClick={()=>{if((!responseText.trim()&&!followUpLocal&&!correctionTarget&&!lifecycleMode)||window.confirm('未保存の入力を破棄しますか？'))selectWork(null);}}>{receptionWork?'問い合わせ履歴に戻る':'閉じる'}</button></div>
               {detailError&&<p role="alert">{detailError}</p>}
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>

@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {api} from './api.js';
 import {ScopedBeneficiaryConfirmation} from './scoped-beneficiary-confirmation.js';
+import {MemberReceptionLookup} from './member-reception-lookup.js';
 import {ScopedExistingCallerForm} from './scoped-existing-caller-form.js';
 
 interface Service {id:string;name:string;canReceive:boolean}
@@ -10,9 +11,9 @@ type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 interface PendingReceipt {eventId:string;createdAt:string;callerName:string;organizationName:string;symptom:string;canStart:boolean}
 interface PendingPage {items:PendingReceipt[];nextCursor:string|null}
 
-function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void}){
- const [mode,setMode]=useState<'NEW'|'EXISTING'>('NEW');
- const [organizationName,setOrganizationName]=useState(''),[displayName,setDisplayName]=useState('');
+function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed,initialOrganization,initialCompany}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void;initialOrganization?:{id:string;name:string};initialCompany?:string}){
+ const [mode,setMode]=useState<'NEW'|'EXISTING'>(initialOrganization?'EXISTING':'NEW');
+ const [organizationName,setOrganizationName]=useState(initialCompany??''),[displayName,setDisplayName]=useState('');
  const [email,setEmail]=useState(''),[symptom,setSymptom]=useState('');
  const [decision,setDecision]=useState<Decision>('REQUIRED');
  const [reason,setReason]=useState('');
@@ -136,7 +137,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
      !displayName.trim()||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||!!receipt}>{decision==='REQUIRED'?'受付して対応を開始':decision==='DEFERRED'?'受付のみ':'対応不要として受付'}</button>
    </form>}
    {mode==='EXISTING'&&!receipt&&
-    <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
+    <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId} {...(initialOrganization?{initialOrganization}:{})}
      onReceived={data=>{setReceipt(data);setError('');setHeldRevision(n=>n+1);}}/>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
@@ -159,11 +160,13 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
 /** Reception context is chosen before opening the form. CREATE candidates
  * are not the Work READ directory; existing authorized Work remains available
  * independently. Server-side command authorization is unchanged. */
-export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceChange,contextLocked=false}:{csrf:string;onBeneficiaryConfirmed?:()=>void;onServiceChange:(serviceId:string)=>void;contextLocked?:boolean}){
+export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceChange,contextLocked=false,activeWork=null,returnRevision=0,onSelectWork}:{csrf:string;onBeneficiaryConfirmed?:()=>void;onServiceChange:(serviceId:string)=>void;contextLocked?:boolean;activeWork?:string|null;returnRevision?:number;onSelectWork?:(id:string)=>boolean}){
  const [services,setServices]=useState<Service[]>([]);
  const [cursor,setCursor]=useState<string|null>(null);
  const [chosen,setChosen]=useState('');
  const [open,setOpen]=useState(false);
+ const [initial,setInitial]=useState<{organization?:{id:string;name:string};company?:string}|null>(null);
+ const [formVersion,setFormVersion]=useState(0);
  const [loading,setLoading]=useState(true),[error,setError]=useState('');
  const [moreBusy,setMoreBusy]=useState(false);
  const [refresh,setRefresh]=useState(0);
@@ -210,8 +213,10 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
    {contextLocked&&!single&&<p>サービスを切り替えるには現在の対応を保存して閉じてください。</p>}
   </section>
   {service&&!service.canReceive&&<p>このサービスでは対応の閲覧が可能ですが、新規受付権限はありません。</p>}
-  {service?.canReceive&&<ScopedSupportIntake key={service.id} csrf={csrf} serviceId={service.id}
-   open={open} onOpenChange={setOpen}
+  {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
+  {service?.canReceive&&<ScopedSupportIntake key={service.id+':'+formVersion} csrf={csrf} serviceId={service.id}
+   open={open} onOpenChange={value=>{setOpen(value);if(!value){setInitial(null);setFormVersion(n=>n+1);}}}
+   {...(initial?.organization?{initialOrganization:initial.organization}:{})} {...(initial?.company!==undefined?{initialCompany:initial.company}:{})}
    {...(onBeneficiaryConfirmed?{onBeneficiaryConfirmed}:{})}/>}
  </>;
 }
