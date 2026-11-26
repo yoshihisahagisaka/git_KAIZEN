@@ -11,7 +11,7 @@ beforeEach(async()=>{await db.reset();},60_000);
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('Registry migration preflight / fail-closed disablement',()=>{
-  it('reports exact owner, ADMIN-only maintenance and 45 FORCE RLS tables using SELECT only',async()=>{
+  it('reports exact owner, ADMIN-only maintenance and 46 FORCE RLS tables using SELECT only',async()=>{
     const before=await db.admin.query(`select count(*)::integer as n from factact.audit_events`);
     const result=await readRegistryPreflight(db.admin);
     expect(result).toMatchObject({phase:'RETURN_INSTALLED',go:true,

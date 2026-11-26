@@ -46,7 +46,7 @@ describe('G3 A2 Registry Executor atomic Finalization',()=>{
       count(*) filter(where relforcerowsecurity)::integer as forced
       from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='factact' and c.relkind='r'`)).rows)
-      .toEqual([{total:45,enabled:45,forced:45}]);
+      .toEqual([{total:46,enabled:46,forced:46}]);
 
     await expect(db.runtime.query(`update factact.people set display_name='forbidden'
       where id=$1`,[ids.person])).rejects.toMatchObject({code:'42501'});
