@@ -975,7 +975,7 @@ export class PgScopedAccessReader {
        where cp.tenant_id=o.tenant_id and cp.normalized_phone=$2
        and (cp.organization_id=o.id or exists(
         select 1 from factact.people p where p.tenant_id=o.tenant_id
-        and p.id=cp.person_id and p.organization_id=o.id and p.status='ACTIVE'
+        and p.id=cp.person_id and p.organization_id=o.id and p.lifecycle_status='ACTIVE'
        ))
      ) as phone_match
      from factact.service_recipients r
