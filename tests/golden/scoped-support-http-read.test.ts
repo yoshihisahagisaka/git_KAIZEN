@@ -1143,3 +1143,29 @@ describe('explicit scoped owner transfer',()=>{
   await send({...payload,requestId:randomUUID()}).expect(409);
  });
 });
+
+
+describe('work-local owner candidates',()=>{
+ it('projects only active eligible operators with independent READ and UPDATE',async()=>{
+  const target=randomUUID(),hidden=randomUUID();
+  for(const [id,name] of [[target,'Eligible operator'],[hidden,'Hidden operator']]){
+   await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,$3,$4,'ACTIVE')",[id,ids.tenant,id+'@example.invalid',name]);
+  }
+  const list=(id=workA)=>request(app).get('/api/scoped/support-work/'+id+'/owner-candidates').set('Cookie',sessionCookie);
+  await grant('WORK',recipientA,workA,{operations:['READ','UPDATE']});
+  await list().expect(404);
+  await grant('WORK',recipientA,workA,{operations:['APPROVE']});
+  for(const [id,ops] of [[target,['READ','UPDATE']],[hidden,['READ']]] as const){
+   await db.admin.query(`insert into factact.scoped_actor_grants
+    (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,service_recipient_id,work_id,object_kind,operations,effective_from,issued_by_operator_id)
+    values($1,$2,$3,$4,$5,'WORK',$6,$7,'SUPPORT',$8,$9,$10)`,
+    [randomUUID(),ids.tenant,id,ids.service,ids.contract,recipientA,workA,ops,'2026-11-01T00:00:00Z',ids.operator]);
+  }
+  const data=(await list().expect(200)).body.data;
+  expect(data.currentOwnerId).toBe(ids.operator);
+  expect(data.items).toEqual(expect.arrayContaining([{id:target,name:'Eligible operator'}]));
+  expect(data.items.map((x:{id:string})=>x.id)).not.toContain(hidden);
+  expect(JSON.stringify(data)).not.toContain('@example.invalid');
+  await list(workB).expect(404);
+ });
+});
