@@ -104,6 +104,39 @@ export class PgServiceRequestStore {
    if(!c.can_read||!matches(c,r))throw denied();return s;
   },true);
  }
+ private async notify(db:PoolClient,a:RequestActor,s:RequestService,id:string,revision:number,kind:'CREATED'|'STARTED'|'COMMENTED'|'COMPLETED',target:'PROVIDER'|'PARTNER',at:string){
+  await db.query(`insert into factact.service_request_notifications(id,tenant_id,request_id,revision,recipient_operator_id,kind,created_at)
+   select gen_random_uuid(),p.tenant_id,$4,$5,p.actor_operator_id,$6,$7
+   from factact.service_request_participants p join factact.operators o
+    on o.tenant_id=p.tenant_id and o.id=p.actor_operator_id and o.status='ACTIVE'
+   where p.tenant_id=$1 and p.service_id=$2 and p.contract_profile_id=$3 and p.enabled and p.can_read and p.party_role=$8
+   and p.actor_operator_id<>$9 on conflict(tenant_id,request_id,revision,recipient_operator_id) do nothing`,
+   [a.tenantId,s.serviceId,s.contractProfileId,id,revision,kind,at,target,a.actorId]);
+ }
+ async notifications(a:RequestActor,s:RequestService){
+  this.validate(a,s);
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const c=await this.access(db,a,s);if(!c.can_read)throw denied();
+   const params=[a.actorId,s.serviceId,s.contractProfileId,c.provider_party_id,c.partner_party_id,c.party_role];
+   const filter=`from factact.service_request_notifications n join factact.service_requests r on r.tenant_id=n.tenant_id and r.id=n.request_id
+    where n.recipient_operator_id=$1 and r.service_id=$2 and r.contract_profile_id=$3 and r.provider_party_id=$4 and r.partner_party_id=$5
+     and (($6::text='PROVIDER')=((r.direction='PARTNER_TO_PROVIDER')=(n.revision=0)))`;
+   const count=await db.query<{n:number}>('select count(*)::integer as n '+filter+' and n.acknowledged_at is null',params);
+   const result=await db.query<{id:string;request_id:string;kind:string;created_at:Date;acknowledged_at:Date|null}>('select n.id,n.request_id,n.kind,n.created_at,n.acknowledged_at '+filter+' order by n.created_at desc,n.id desc limit 50',params);
+   return {unread:count.rows[0]?.n??0,items:result.rows.map(n=>({id:n.id,requestId:n.request_id,kind:n.kind,createdAt:n.created_at.toISOString(),read:n.acknowledged_at!==null}))};
+  },true);
+ }
+ async acknowledge(a:RequestActor,s:RequestService,id:string,throughRevision:number){
+  this.validate(a,s);if(!uuid(id)||!Number.isInteger(throughRevision)||throughRevision<0)throw bad();
+  return withTenant(this.pool,a.tenantId,async db=>{
+   await this.lock(db,a,s);const c=await this.access(db,a,s);if(!c.can_read)throw denied();
+   const r=await this.load(db,s,id);if(!matches(c,r))throw denied();
+   await db.query(`update factact.service_request_notifications set acknowledged_at=greatest(clock_timestamp(),created_at)
+    where request_id=$1 and recipient_operator_id=$2 and revision<=$3 and acknowledged_at is null
+     and (revision=0)=$4`,[id,a.actorId,throughRevision,!sender(c,r)]);
+   return {id};
+  });
+ }
  async create(a:RequestActor,s:RequestService,input:RequestCreate){
   this.validate(a,s);if(!uuid(input.id))throw bad();
   return withTenant(this.pool,a.tenantId,async db=>{
@@ -121,6 +154,7 @@ export class PgServiceRequestStore {
    await db.query(`insert into factact.service_requests(id,tenant_id,service_id,contract_profile_id,provider_party_id,partner_party_id,direction,request_type,content,customer_name,contact_name,desired_at,parent_work_id,created_by_operator_id,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,null,$13,$14)`,
     [e.id,e.tenantId,e.serviceId,e.contractProfileId,c.provider_party_id,c.partner_party_id,e.direction,e.type,e.content,e.customerName,e.contactName,e.desiredAt,e.createdBy,e.createdAt]);
+   await this.notify(db,a,s,e.id,0,'CREATED',forward?'PARTNER':'PROVIDER',e.createdAt);
    return {id:e.id};
   });
  }
@@ -143,8 +177,10 @@ export class PgServiceRequestStore {
    const r=await this.load(db,s,id);if(!matches(c,r)||sender(c,r))throw denied();
    const e=entry(r),history=await this.history(db,id);
    const h=appendRequestUpdate(e,history,{...input,id:randomUUID()},a.actorId,new Date().toISOString());
-   if(!history.some(x=>x.id===h.id))await db.query(`insert into factact.service_request_updates(id,tenant_id,request_id,command_id,revision,previous_status,status,comment,actor_operator_id,recorded_at)
+   if(!history.some(x=>x.id===h.id)){await db.query(`insert into factact.service_request_updates(id,tenant_id,request_id,command_id,revision,previous_status,status,comment,actor_operator_id,recorded_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[h.id,a.tenantId,id,h.commandId,h.revision,h.previousStatus,h.status,h.comment,h.actorId,h.recordedAt]);
+    await this.notify(db,a,s,id,h.revision,h.status==='COMPLETED'?'COMPLETED':h.previousStatus==='PENDING'?'STARTED':'COMMENTED',c.party_role==='PROVIDER'?'PARTNER':'PROVIDER',h.recordedAt);
+   }
    return {id,revision:h.revision,status:h.status};
   });
  }

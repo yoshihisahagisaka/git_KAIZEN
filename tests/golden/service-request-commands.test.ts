@@ -31,6 +31,23 @@ describe('service request command adapter',()=>{
   await store.create(b,s,reverse);
   expect(await store.detail(a,s,reverse.id)).toMatchObject({side:'RECEIVED',canRespond:true});
  });
+ it('records one notification per recipient/revision, acknowledges independently and hides revoked access',async()=>{
+  const b={tenantId:ids.tenant,actorId:partner},input={id:randomUUID(),type:'INQUIRY' as const,content:'確認'};
+  await store.create(a,s,input);await store.create(a,s,input);
+  expect(await store.notifications(a,s)).toMatchObject({unread:0,items:[]});
+  expect(await store.notifications(b,s)).toMatchObject({unread:1,items:[{requestId:input.id,kind:'CREATED',read:false}]});
+  await store.acknowledge(b,s,input.id,0);
+  expect(await store.notifications(b,s)).toMatchObject({unread:0,items:[{read:true}]});
+  const reply={commandId:randomUUID(),expectedRevision:0,status:'COMPLETED' as const,comment:'完了'};
+  await store.respond(b,s,input.id,reply);await store.respond(b,s,input.id,reply);
+  expect(await store.notifications(a,s)).toMatchObject({unread:1,items:[{kind:'COMPLETED'}]});
+  await store.acknowledge(a,s,input.id,0);
+  expect((await store.notifications(a,s)).unread).toBe(1);
+  await store.acknowledge(a,s,input.id,1);
+  expect((await store.notifications(a,s)).unread).toBe(0);
+  await db.admin.query('update factact.service_request_participants set enabled=false where actor_operator_id=$1',[partner]);
+  await expect(store.notifications(b,s)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+ });
  it('lists only the selected direction and authorized context before pagination',async()=>{
   const b={tenantId:ids.tenant,actorId:partner};
   const first={id:randomUUID(),type:'INQUIRY' as const,content:'one'};
