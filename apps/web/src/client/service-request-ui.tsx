@@ -7,6 +7,7 @@ type Detail=Summary&{contactName:string;desiredAt:string|null;side:'SENT'|'RECEI
 type Notice={id:string;requestId:string;kind:'CREATED'|'STARTED'|'COMMENTED'|'COMPLETED';createdAt:string;read:boolean};
 type Inbox={unread:number;items:Notice[]};
 const noticeLabels={CREATED:'新しい対応依頼',STARTED:'対応開始',COMMENTED:'対応コメント追加',COMPLETED:'対応完了'};
+type TeamsRoster={enabled:boolean;items:{id:string;name:string}[]};
 type List={items:Summary[];nextCursor:string|null};
 const key=(c:Context)=>c.serviceId+':'+c.contractProfileId;
 const message=(e:unknown)=>e instanceof Error?e.message:'処理を完了できませんでした。';
@@ -26,6 +27,10 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  const [noticeError,setNoticeError]=useState(false);
  const [noticeRefresh,setNoticeRefresh]=useState(0);
  const [refresh,setRefresh]=useState(0);
+ const [roster,setRoster]=useState<TeamsRoster|null>(null);
+ const [mentions,setMentions]=useState<string[]>([]);
+ const [rosterError,setRosterError]=useState(false);
+ const [rosterRefresh,setRosterRefresh]=useState(0);
  const [type,setType]=useState<RequestType|''>('');
  const [content,setContent]=useState('');
  const [customer,setCustomer]=useState('');
@@ -37,7 +42,14 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  const pending=useRef(false);
  const listGeneration=useRef(0);
  const base=c?'/api/requests?'+new URLSearchParams({serviceId:c.serviceId,contractProfileId:c.contractProfileId,side}):'';
+ const rosterUrl=c?'/api/request-teams-recipients?'+new URLSearchParams({serviceId:c.serviceId,contractProfileId:c.contractProfileId}):'';
  const inboxUrl=c?'/api/request-notifications?'+new URLSearchParams({serviceId:c.serviceId,contractProfileId:c.contractProfileId}):'';
+ useEffect(()=>{
+  if(mode!=='CREATE'||!rosterUrl)return;
+  let active=true;setRoster(null);setMentions([]);setRosterError(false);
+  api<TeamsRoster>(rosterUrl).then(x=>{if(active)setRoster(x);}).catch(()=>{if(active)setRosterError(true);});
+  return()=>{active=false;};
+ },[mode,rosterUrl,rosterRefresh]);
  useEffect(()=>{
   if(!inboxUrl)return;
   let active=true,running=false;setInbox(null);setNoticeError(false);
@@ -69,12 +81,13 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
   catch(e){if(generation===listGeneration.current)setError(message(e));}finally{pending.current=false;setBusy(false);}
  }
  async function submit(){
-  if(!c||!type||!content.trim()||pending.current)return;
+  if(!c||!type||!content.trim()||pending.current||!roster)return;
   pending.current=true;setBusy(true);setError('');
   try{
    createKey.current??=crypto.randomUUID();
-   const result=await api<{id:string}>('/api/requests',csrf,{serviceId:c.serviceId,contractProfileId:c.contractProfileId,id:createKey.current,type,content,customerName:customer,contactName:contact,desiredAt:desired?new Date(desired).toISOString():null});
-   createKey.current=null;setType('');setContent('');setCustomer('');setContact('');setDesired('');setSide('SENT');open(result.id);
+   const teams=roster.enabled?{mode:mentions.length===0?'NONE':mentions.length===roster.items.length?'ALL':'SELECTED',recipientIds:mentions}:undefined;
+   const result=await api<{id:string}>('/api/requests',csrf,{serviceId:c.serviceId,contractProfileId:c.contractProfileId,id:createKey.current,type,content,customerName:customer,contactName:contact,desiredAt:desired?new Date(desired).toISOString():null,...(teams?{teams}:{})});
+   createKey.current=null;setMentions([]);setType('');setContent('');setCustomer('');setContact('');setDesired('');setSide('SENT');open(result.id);
   }catch(e){setError(message(e));}finally{pending.current=false;setBusy(false);}
  }
  async function respond(){
@@ -109,7 +122,12 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
    <label>対象担当者名（任意）<input maxLength={200} value={contact} onChange={e=>setContact(e.target.value)}/></label>
    <label>依頼内容<textarea required maxLength={4000} value={content} onChange={e=>setContent(e.target.value)}/></label>
    <label>希望日時（任意）<input type="datetime-local" value={desired} onChange={e=>setDesired(e.target.value)}/></label>
-   <button type="submit" disabled={!type||!content.trim()}>依頼を登録</button></fieldset></form>}
+   {!roster&&!rosterError&&<p role="status">通知先を確認しています…</p>}
+   {rosterError&&<p role="alert">通知先を取得できませんでした。<button type="button" className="secondary" onClick={()=>setRosterRefresh(n=>n+1)}>再取得</button></p>}
+   {roster?.enabled&&<fieldset className="teams-roster"><legend>Teams通知先（任意）</legend><div className="request-actions"><button type="button" className="secondary" onClick={()=>setMentions(roster.items.map(x=>x.id))}>全員選択</button><button type="button" className="secondary" onClick={()=>setMentions([])}>全員解除</button></div>
+    <div className="teams-roster-grid">{roster.items.map(x=><label key={x.id}><input type="checkbox" checked={mentions.includes(x.id)} onChange={e=>setMentions(old=>e.target.checked?[...old,x.id]:old.filter(id=>id!==x.id))}/>{x.name}</label>)}</div>
+    <p>{mentions.length===0?'メンションなしでチャネルに通知します。':mentions.length+'名にメンションします。'}</p></fieldset>}
+   <button type="submit" disabled={!roster||!type||!content.trim()}>依頼を登録</button></fieldset></form>}
   {mode==='DETAIL'&&detail&&<article><h2>{requestLabels[detail.type]}</h2><span className="badge">{requestStatusLabels[detail.status]}</span><p>{detail.side==='SENT'?'送信依頼':'受信依頼'}</p><p>{detail.customerName} {detail.contactName}</p><p className="request-text">{detail.content}</p><time>{format(detail.createdAt)}</time>{detail.desiredAt&&<p>希望日時：{format(detail.desiredAt)}</p>}
    <h3>対応履歴</h3>{detail.history.length===0&&<p>回答はまだありません。</p>}<ol className="timeline">{detail.history.map(h=><li key={h.revision}><strong>{requestStatusLabels[h.status]}</strong><time>{format(h.recordedAt)}</time><p className="request-text">{h.comment}</p></li>)}</ol>
    {detail.canRespond&&<form onSubmit={e=>{e.preventDefault();void respond();}}><fieldset disabled={busy}><label>対応状況<select value={status} onChange={e=>setStatus(e.target.value as typeof status)}><option value="IN_PROGRESS">対応中</option><option value="COMPLETED">対応完了</option></select></label><label>対応結果・コメント<textarea required={status==='COMPLETED'} maxLength={4000} value={comment} onChange={e=>setComment(e.target.value)}/></label><button type="submit" disabled={status==='COMPLETED'&&!comment.trim()}>対応内容を保存</button></fieldset></form>}

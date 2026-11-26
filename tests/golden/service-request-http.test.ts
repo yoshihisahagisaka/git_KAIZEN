@@ -34,6 +34,18 @@ beforeEach(async()=>{
 },60_000);
 afterAll(async()=>{await db?.close();},60_000);
 describe('service request HTTP boundary',()=>{
+ it('uses only confirmed roster IDs, does not expose object IDs and records zero mentions',async()=>{
+  const member=randomUUID(),objectId=randomUUID();
+  await db.admin.query('update factact.service_request_channels set teams_enabled=true');
+  await db.admin.query("insert into factact.service_request_teams_recipients(id,tenant_id,service_id,contract_profile_id,object_id,display_name,enabled) values($1,$2,$3,$4,$5,'担当者A',true)",[member,ids.tenant,ids.service,ids.contract,objectId]);
+  expect((await get('/api/request-teams-recipients').query(context).expect(200)).body.data).toEqual({enabled:true,items:[{id:member,name:'担当者A'}]});
+  expect((await get('/api/request-teams-recipients','partner').query(context).expect(200)).body.data).toEqual({enabled:false,items:[]});
+  const body={...context,id:randomUUID(),type:'INQUIRY',content:'確認'};
+  await post('/api/requests').send({...body,teams:{mode:'SELECTED',recipientIds:[objectId]}}).expect(400);
+  await post('/api/requests').send({...body,teams:{mode:'NONE',recipientIds:[]}}).expect(201);
+  expect((await db.admin.query('select selection,recipient_ids from factact.service_request_teams_intents where request_id=$1',[body.id])).rows).toEqual([{selection:'NONE',recipient_ids:[]}]);
+  await post('/api/requests').send({...body,id:randomUUID(),teams:{mode:'ALL',recipientIds:[member]}}).expect(201);
+ });
  it('requires session and CSRF; rejects forged actor/direction; supports bidirectional detail and response',async()=>{
   const body={...context,id:randomUUID(),type:'ONSITE_REQUEST',content:'現地対応'};
   await request(app).get('/api/request-contexts').expect(401);

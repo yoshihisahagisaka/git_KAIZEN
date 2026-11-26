@@ -49,3 +49,7 @@ Use checkboxes only (no Ctrl multi-select or ALL/SELECTED/NONE radio controls). 
 
 ## Mention selection UI — user-confirmed 2026-11-26
 Use checkboxes for enabled configured Teams recipients, initially all unchecked. Provide select-all and clear-all controls; PC two columns, smartphone one column. No Ctrl multi-select or separate mode radio buttons. Zero selections means NONE (ordinary channel card without mention), subset means SELECTED, all explicitly selected means ALL. This supersedes the earlier default ALL decision. Preserve explicit confirmation on request submission, server roster validation and immutable intent; no browser Object IDs, no grant inference. UI implementation pending; no real notification or production change.
+
+
+## Roster integration decision
+Retain registered individual resource-tenant Object IDs; Microsoft 365 SONIX group remains available for future integration, no Graph synchronization or group-ID mention in initial release. ALL is the explicitly checked roster snapshot: browser supplies only internal roster IDs, and server verifies exact current roster before persisting. A concurrent new member must not become an unconfirmed mention. NONE sends channel-only when dispatch is enabled. No live delivery in this slice.

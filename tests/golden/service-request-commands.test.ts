@@ -56,7 +56,7 @@ describe('service request command adapter',()=>{
   const input={id:randomUUID(),type:'INQUIRY' as const,content:'確認'};
   await expect(store.create(a,s,input)).rejects.toMatchObject({code:'TEAMS_SELECTION_REQUIRED'});
   await expect(store.create(a,s,{...input,teams:{mode:'SELECTED',recipientIds:[objectId]}})).rejects.toMatchObject({code:'INVALID_REQUEST'});
-  const confirmed={...input,teams:{mode:'ALL' as const,recipientIds:[]}};
+  const confirmed={...input,teams:{mode:'ALL' as const,recipientIds:[member]}};
   await store.create(a,s,confirmed);await store.create(a,s,confirmed);
   expect((await db.admin.query('select selection,recipient_ids from factact.service_request_teams_intents')).rows).toEqual([{selection:'ALL',recipient_ids:[member]}]);
   await expect(store.create(a,s,{...input,teams:{mode:'NONE',recipientIds:[]}})).rejects.toMatchObject({code:'RETRY_CONFLICT'});
