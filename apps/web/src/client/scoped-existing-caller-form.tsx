@@ -11,8 +11,8 @@ type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 /** Existing Caller lookup is separate from membership/beneficiary decisions.
  * Only authorized service recipients and Registry-visible Person IDs arrive
  * through the existing scoped endpoints. Server rechecks in same write txn. */
-export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
- csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;
+export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrganization}:{
+ csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;initialOrganization?:Org;
 }){
  const [orgQuery,setOrgQuery]=useState(''),[search,setSearch]=useState('');
  const [orgs,setOrgs]=useState<Org[]>([]),[orgCursor,setOrgCursor]=useState<string|null>(null);
@@ -29,6 +29,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
  const sending=useRef(false);
  const retry=useRef<{key:string;id:string}|null>(null);
  useEffect(()=>{
+  if(initialOrganization){setOrgs([initialOrganization]);setOrgCursor(null);setOrgId(initialOrganization.id);return;}
   if(!serviceId){setOrgs([]);setOrgCursor(null);setOrgId('');return;}
   let alive=true;setLoading(true);setError('');setOrgId('');setPersonId('');
   setOrgs([]);setOrgCursor(null);
@@ -38,7 +39,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
    .catch(()=>{if(alive)setError('企業の候補を取得できませんでした。受付権限を確認してください。');})
    .finally(()=>{if(alive)setLoading(false);});
   return ()=>{alive=false;};
- },[serviceId,search]);
+ },[serviceId,search,initialOrganization]);
  useEffect(()=>{
   setNewName('');setNewEmail('');setDistinct(false);setPeopleFailed(false);
   if(!orgId){setPeople([]);setPeopleCursor(null);setPersonId('');setPeopleLoading(false);return;}
@@ -107,17 +108,17 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived}:{
    登録済みというだけで会員資格や支援対象を確定しません。</p>
   {error&&<p role="alert">{error}</p>}
   {!serviceId?<p>先に受付サービスを選択してください。</p>:<>
-   <form onSubmit={event=>{event.preventDefault();setSearch(orgQuery.trim());}}
+   {!initialOrganization&&<form onSubmit={event=>{event.preventDefault();setSearch(orgQuery.trim());}}
     aria-label="受付企業の検索">
     <label htmlFor="scoped-existing-org-q">企業名で検索</label>
     <input id="scoped-existing-org-q" value={orgQuery} maxLength={100} disabled={busy}
      onChange={event=>changed(()=>setOrgQuery(event.target.value))}/>
     <button type="submit" className="secondary" disabled={busy}>企業を探す</button>
-   </form>
+   </form>}
    {loading&&<p>企業の候補を確認しています…</p>}
    <form onSubmit={e=>void submit(e)} aria-label="登録済み問い合わせ受付">
     <label htmlFor="scoped-existing-org">所属・企業</label>
-    <select id="scoped-existing-org" value={orgId} disabled={busy||loading}
+    <select id="scoped-existing-org" value={orgId} disabled={busy||loading||!!initialOrganization}
      onChange={event=>changed(()=>setOrgId(event.target.value))}>
      <option value="">企業を選択してください</option>
      {orgs.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
