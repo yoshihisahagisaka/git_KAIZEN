@@ -1114,3 +1114,32 @@ describe('scoped explicit close and reopen approval gate',()=>{
   expect((await db.admin.query('select count(*)::int n from factact.support_work_close_decisions where work_id=$1',[workA])).rows).toEqual([{n:2}]);
  });
 });
+
+
+describe('explicit scoped owner transfer',()=>{
+ it('requires current approval and recipient READ/UPDATE, preserves Work and records previous owner',async()=>{
+  const target=randomUUID();
+  await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,$3,$4,'ACTIVE')",
+   [target,ids.tenant,'handoff@example.invalid','Handoff operator']);
+  const send=(body:object,id=workA)=>request(app).post('/api/scoped/support-work/'+id+'/owner-transfer')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+  const payload={requestId:randomUUID(),expectedLifecycleRevision:0,expectedOwnerId:ids.operator,newOwnerId:target,reason:'次の担当者に引き継ぐ'};
+  await grant('WORK',recipientA,workA,{operations:['UPDATE']});
+  await send(payload).expect(404);
+  await grant('WORK',recipientA,workA,{operations:['APPROVE']});
+  await send(payload).expect(404);
+  await db.admin.query(`insert into factact.scoped_actor_grants
+   (id,tenant_id,actor_operator_id,service_id,contract_profile_id,scope_kind,service_recipient_id,work_id,object_kind,operations,effective_from,issued_by_operator_id)
+   values($1,$2,$3,$4,$5,'WORK',$6,$7,'SUPPORT',array['READ','UPDATE'],$8,$9)`,
+   [randomUUID(),ids.tenant,target,ids.service,ids.contract,recipientA,workA,'2026-11-01T00:00:00Z',ids.operator]);
+  await send(payload,workB).expect(404);
+  const first=(await send(payload).expect(200)).body.data;
+  expect(first.kind).toBe('OWNER_TRANSFERRED');
+  expect((await send(payload).expect(200)).body.data.id).toBe(first.id);
+  expect((await db.admin.query('select work_owner_operator_id,next_action_owner_operator_id,status,lifecycle_revision from factact.work where id=$1',[workA])).rows)
+   .toEqual([{work_owner_operator_id:target,next_action_owner_operator_id:target,status:'OPEN',lifecycle_revision:1}]);
+  expect((await db.admin.query('select command_payload from factact.support_work_lifecycle_events where work_id=$1',[workA])).rows[0].command_payload)
+   .toMatchObject({previousOwnerId:ids.operator,newOwnerId:target,reason:payload.reason});
+  await send({...payload,requestId:randomUUID()}).expect(409);
+ });
+});
