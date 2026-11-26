@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
 import {ids,testDatabase} from '../fixtures/database.js';
+import {PgRequestTeamsDispatch} from '../../apps/web/src/server/persistence/request-teams-dispatch.js';
 import {PgServiceRequestStore} from '../../apps/web/src/server/persistence/service-request-store.js';
 let db:Awaited<ReturnType<typeof testDatabase>>,store:PgServiceRequestStore,partner:string;
 const a={tenantId:ids.tenant,actorId:ids.operator},s={serviceId:ids.service,contractProfileId:ids.contract};
@@ -61,6 +62,35 @@ describe('service request command adapter',()=>{
   expect((await db.admin.query('select selection,recipient_ids from factact.service_request_teams_intents')).rows).toEqual([{selection:'ALL',recipient_ids:[member]}]);
   await expect(store.create(a,s,{...input,teams:{mode:'NONE',recipientIds:[]}})).rejects.toMatchObject({code:'RETRY_CONFLICT'});
   expect(await store.teamsRecipients({tenantId:ids.tenant,actorId:partner},s)).toEqual({enabled:false,items:[]});
+ });
+ it('claims Teams once before I/O and retries only definite rejection',async()=>{
+  await db.admin.query('update factact.service_request_channels set teams_enabled=true');
+  const id=randomUUID();
+  await store.create(a,s,{id,type:'INQUIRY',content:'秘密の依頼内容',teams:{mode:'NONE',recipientIds:[]}});
+  let calls=0;
+  const send:typeof fetch=async(_url,init)=>{
+   calls++;expect(String(init?.body)).not.toContain('秘密の依頼内容');
+   expect((await db.admin.query("select state from factact.service_request_teams_attempts order by attempt_no desc limit 1")).rows[0]).toEqual({state:'SENDING'});
+   return new Response(null,{status:calls===1?400:202});
+  };
+  const deployment={enabled:true,origin:'https://factact.example.invalid',endpointFor:()=> 'https://synthetic.logic.azure.com/workflow'};
+  const dispatcher=new PgRequestTeamsDispatch(db.runtime,deployment,send);
+  const disabled=new PgRequestTeamsDispatch(db.runtime,{...deployment,enabled:false},send);
+  expect(await disabled.dispatch(a,s,id,randomUUID())).toEqual({state:'DISABLED'});
+  const key=randomUUID();
+  expect(await dispatcher.dispatch(a,s,id,key)).toMatchObject({state:'REJECTED',attempt:1});
+  expect(await dispatcher.dispatch(a,s,id,key)).toMatchObject({state:'REJECTED',attempt:1});
+  expect(await dispatcher.dispatch(a,s,id,randomUUID())).toMatchObject({state:'REJECTED',attempt:1});
+  expect(await dispatcher.dispatch(a,s,id,randomUUID(),true)).toMatchObject({state:'ACCEPTED',attempt:2});
+  expect(await dispatcher.dispatch(a,s,id,randomUUID(),true)).toMatchObject({state:'ACCEPTED',attempt:2});
+  expect(calls).toBe(2);
+  expect(await store.detail(a,s,id)).toMatchObject({status:'PENDING'});
+  const uncertainId=randomUUID();
+  await store.create(a,s,{id:uncertainId,type:'INQUIRY',content:'確認',teams:{mode:'NONE',recipientIds:[]}});
+  const uncertain=new PgRequestTeamsDispatch(db.runtime,deployment,async()=>{throw Error('synthetic timeout');});
+  expect(await uncertain.dispatch(a,s,uncertainId,randomUUID())).toMatchObject({state:'UNKNOWN'});
+  expect(await dispatcher.dispatch(a,s,uncertainId,randomUUID(),true)).toMatchObject({state:'UNKNOWN'});
+  expect(calls).toBe(2);
  });
  it('lists only the selected direction and authorized context before pagination',async()=>{
   const b={tenantId:ids.tenant,actorId:partner};
