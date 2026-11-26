@@ -1169,9 +1169,10 @@ export class PgScopedAccessReader {
   * LIMIT and the same policy kernel rechecks each projected Work. No total
   * tenant count or unauthorized candidate count leaves the transaction.
   */
- async supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string):Promise<ScopedSupportWorkPage>{
+ async supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string,organizationId?:string):Promise<ScopedSupportWorkPage>{
   if(![tenantId,actorId].every(id=>z.uuid().safeParse(id).success)||
      (serviceId!==undefined&&!z.uuid().safeParse(serviceId).success)||
+     (organizationId!==undefined&&(!serviceId||!z.uuid().safeParse(organizationId).success))||
      !Number.isInteger(limit)||limit<1||limit>50||
      (cursor&&(!z.uuid().safeParse(cursor.workId).success||!Number.isFinite(Date.parse(cursor.updatedAt)))))
    return {items:[],nextCursor:null};
@@ -1207,6 +1208,16 @@ export class PgScopedAccessReader {
       on org.id=recipient.recipient_organization_id and org.tenant_id=w.tenant_id and org.status='ACTIVE'
     where w.lane='SUPPORT'
       and ($6::uuid is null or w.service_id=$6::uuid)
+      and ($7::uuid is null or org.id=$7::uuid)
+      and ($7::uuid is null or exists (
+       select 1 from factact.scoped_actor_grants rg
+       where rg.tenant_id=w.tenant_id and rg.actor_operator_id=$1
+        and rg.service_id=w.service_id and rg.contract_profile_id=w.contract_profile_id
+        and rg.object_kind='REGISTRY' and 'READ'=any(rg.operations)
+        and rg.status='ACTIVE' and rg.effective_from<=$2::timestamptz
+        and (rg.effective_until is null or rg.effective_until>$2::timestamptz)
+        and (rg.scope_kind='SERVICE' or (rg.scope_kind='SERVICE_RECIPIENT' and rg.service_recipient_id=recipient.id))
+      ))
       -- Authorization and data projection must deny previously reassigned
       -- Work BEFORE LIMIT, not trim an already paginated tenant-wide result.
       and not exists (
@@ -1228,7 +1239,7 @@ export class PgScopedAccessReader {
           or (g.scope_kind='WORK' and g.service_recipient_id=recipient.id and g.work_id=w.id))
       )
     order by w.updated_at desc,w.id desc limit $5`,
-    [actorId,at,cursor?.updatedAt??null,cursor?.workId??null,limit,serviceId??null]);
+    [actorId,at,cursor?.updatedAt??null,cursor?.workId??null,limit,serviceId??null,organizationId??null]);
    const items:ScopedSupportWorkSummary[]=[];
    for(const work of rows){
     if(work.beneficiary_kind!=='CONFIRMED'||!work.confirmed_recipient_id)continue;
@@ -1239,7 +1250,7 @@ export class PgScopedAccessReader {
     if(await this.authorizedInTransaction(db,actorId,target,at)){
      const canUpdate=await this.canUpdateWork(db,tenantId,actorId,work,at);
      const registryOrganizationId=await this.readableRegistryOrganization(db,tenantId,actorId,work,at);
-     items.push(this.projectSupportWork(work,canUpdate,registryOrganizationId));
+     if(organizationId===undefined||registryOrganizationId===organizationId)items.push(this.projectSupportWork(work,canUpdate,registryOrganizationId));
     }
    }
    // No hasMore/total: pagination metadata cannot reveal hidden candidates.
