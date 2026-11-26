@@ -11,7 +11,7 @@ beforeEach(async()=>{await db.reset();},60_000);
 afterAll(async()=>{await db?.close();},60_000);
 
 describe('Registry migration preflight / fail-closed disablement',()=>{
-  it('reports exact owner, ADMIN-only maintenance and 37 FORCE RLS tables using SELECT only',async()=>{
+  it('reports exact owner, ADMIN-only maintenance and 41 FORCE RLS tables using SELECT only',async()=>{
     const before=await db.admin.query(`select count(*)::integer as n from factact.audit_events`);
     const result=await readRegistryPreflight(db.admin);
     expect(result).toMatchObject({phase:'RETURN_INSTALLED',go:true,
@@ -37,6 +37,20 @@ describe('Registry migration preflight / fail-closed disablement',()=>{
       await client.query('drop policy registry_executor_tenant on factact.people');
       result=await readRegistryPreflight(client);
       expect(result.phase).toBe('INCONSISTENT');expect(result.go).toBe(false);
+    }finally{
+      await client.query('ROLLBACK');client.release();
+    }
+    expect((await readRegistryPreflight(db.admin)).go).toBe(true);
+  });
+
+  it('rejects a new request table without FORCE RLS',async()=>{
+    const client=await db.admin.connect();
+    try{
+      await client.query('BEGIN');
+      await client.query('alter table factact.service_requests no force row level security');
+      const result=await readRegistryPreflight(client);
+      expect(result.go).toBe(false);
+      expect(result.checks.forcedTenantRls).toBe(false);
     }finally{
       await client.query('ROLLBACK');client.release();
     }

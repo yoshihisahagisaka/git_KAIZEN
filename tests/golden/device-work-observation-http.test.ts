@@ -490,6 +490,6 @@ describe('S3c-1B OIDC Session HTTP / PostgreSQL 17',()=>{
     (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='factact' and c.relkind='r' and c.relrowsecurity and c.relforcerowsecurity)
       as forced_rls`);
-  expect(rows[0]).toMatchObject({new_record:true,public_record:false,old_record:false,old_propose:false,forced_rls:37});
+  expect(rows[0]).toMatchObject({new_record:true,public_record:false,old_record:false,old_propose:false,forced_rls:41});
  });
 });
