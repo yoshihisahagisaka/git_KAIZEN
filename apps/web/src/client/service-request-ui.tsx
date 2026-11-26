@@ -3,7 +3,7 @@ import {api} from './api.js';
 import {requestLabels,requestStatusLabels,type RequestType,type RequestStatus} from '../../../../packages/domain/src/service-request.js';
 type Context={serviceId:string;contractProfileId:string;name:string;canCreate:boolean;types:RequestType[]};
 type Summary={id:string;type:RequestType;customerName:string;content:string;createdAt:string;status:RequestStatus;revision:number};
-type Detail=Summary&{contactName:string;desiredAt:string|null;side:'SENT'|'RECEIVED';canRespond:boolean;history:{revision:number;status:RequestStatus;comment:string;recordedAt:string}[]};
+type Detail=Summary&{teams?:{state:string;attempt:number;canDispatch:boolean}|null;contactName:string;desiredAt:string|null;side:'SENT'|'RECEIVED';canRespond:boolean;history:{revision:number;status:RequestStatus;comment:string;recordedAt:string}[]};
 type Notice={id:string;requestId:string;kind:'CREATED'|'STARTED'|'COMMENTED'|'COMPLETED';createdAt:string;read:boolean};
 type Inbox={unread:number;items:Notice[]};
 const noticeLabels={CREATED:'新しい対応依頼',STARTED:'対応開始',COMMENTED:'対応コメント追加',COMPLETED:'対応完了'};
@@ -90,6 +90,12 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
    createKey.current=null;setMentions([]);setType('');setContent('');setCustomer('');setContact('');setDesired('');setSide('SENT');open(result.id);
   }catch(e){setError(message(e));}finally{pending.current=false;setBusy(false);}
  }
+ async function dispatchTeams(){
+  if(!detail?.teams?.canDispatch||pending.current)return;
+  pending.current=true;setBusy(true);setError('');
+  try{await api('/api/requests/'+detail.id+'/teams-dispatch',csrf,{commandId:crypto.randomUUID(),retry:detail.teams.state==='REJECTED'});}
+  catch(e){setError(message(e));}finally{pending.current=false;setBusy(false);setRefresh(n=>n+1);}
+ }
  async function respond(){
   if(!detail?.canRespond||pending.current||(status==='COMPLETED'&&!comment.trim()))return;
   pending.current=true;setBusy(true);setError('');
@@ -129,6 +135,7 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
     <p>{mentions.length===0?'メンションなしでチャネルに通知します。':mentions.length+'名にメンションします。'}</p></fieldset>}
    <button type="submit" disabled={!roster||!type||!content.trim()}>依頼を登録</button></fieldset></form>}
   {mode==='DETAIL'&&detail&&<article><h2>{requestLabels[detail.type]}</h2><span className="badge">{requestStatusLabels[detail.status]}</span><p>{detail.side==='SENT'?'送信依頼':'受信依頼'}</p><p>{detail.customerName} {detail.contactName}</p><p className="request-text">{detail.content}</p><time>{format(detail.createdAt)}</time>{detail.desiredAt&&<p>希望日時：{format(detail.desiredAt)}</p>}
+   {detail.teams&&<section><h3>Teams通知</h3><p>{({PENDING:'未送信',SENDING:'送信処理中・結果確認が必要',ACCEPTED:'Workflow受付済み（投稿未確認）',REJECTED:'送信拒否',UNKNOWN:'送信結果不明・要確認'} as Record<string,string>)[detail.teams.state]??'要確認'}</p>{detail.teams.canDispatch&&['PENDING','REJECTED'].includes(detail.teams.state)&&<button className="secondary" disabled={busy} onClick={()=>void dispatchTeams()}>{detail.teams.state==='REJECTED'?'再送する':'送信する'}</button>}</section>}
    <h3>対応履歴</h3>{detail.history.length===0&&<p>回答はまだありません。</p>}<ol className="timeline">{detail.history.map(h=><li key={h.revision}><strong>{requestStatusLabels[h.status]}</strong><time>{format(h.recordedAt)}</time><p className="request-text">{h.comment}</p></li>)}</ol>
    {detail.canRespond&&<form onSubmit={e=>{e.preventDefault();void respond();}}><fieldset disabled={busy}><label>対応状況<select value={status} onChange={e=>setStatus(e.target.value as typeof status)}><option value="IN_PROGRESS">対応中</option><option value="COMPLETED">対応完了</option></select></label><label>対応結果・コメント<textarea required={status==='COMPLETED'} maxLength={4000} value={comment} onChange={e=>setComment(e.target.value)}/></label><button type="submit" disabled={status==='COMPLETED'&&!comment.trim()}>対応内容を保存</button></fieldset></form>}
   </article>}

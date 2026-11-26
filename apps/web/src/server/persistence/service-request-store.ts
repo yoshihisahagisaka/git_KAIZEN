@@ -196,7 +196,8 @@ export class PgServiceRequestStore {
    const c=await this.access(db,a,s);if(!c.can_read)throw denied();
    const r=await this.load(db,s,id);if(!matches(c,r))throw denied();
    const e=entry(r),history=await this.history(db,id);
-   return {id:e.id,type:e.type,content:e.content,customerName:e.customerName,contactName:e.contactName,desiredAt:e.desiredAt,createdAt:e.createdAt,
+   const teams=c.party_role==='PROVIDER'&&sender(c,r)?(await db.query<{state:string;attempt_no:number}>(`select coalesce(a.state,'PENDING') as state,coalesce(a.attempt_no,0) as attempt_no from factact.service_request_teams_intents i left join lateral(select state,attempt_no from factact.service_request_teams_attempts where intent_id=i.id order by attempt_no desc limit 1) a on true where i.request_id=$1`,[id])).rows[0]:undefined;
+   return {teams:teams?{state:teams.state,attempt:teams.attempt_no,canDispatch:c.can_create&&c.teams_enabled}:null,id:e.id,type:e.type,content:e.content,customerName:e.customerName,contactName:e.contactName,desiredAt:e.desiredAt,createdAt:e.createdAt,
     side:sender(c,r)?'SENT' as const:'RECEIVED' as const,canRespond:c.can_respond&&!sender(c,r)&&projectRequest(e,history).status!=='COMPLETED',
     status:projectRequest(e,history).status,revision:history.length,
     history:history.map(h=>({revision:h.revision,status:h.status,comment:h.comment,recordedAt:h.recordedAt}))};
