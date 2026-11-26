@@ -1,3 +1,4 @@
+import {requestBrand,requestPwaRoutes} from './request-pwa.js';
 import { supportRoutes, type SupportServices } from './support-routes.js';
 import type {PgRequestTeamsDispatch} from './persistence/request-teams-dispatch.js';
 import {serviceRequestRoutes} from './service-request-routes.js';
@@ -42,6 +43,8 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use((_req, res, next) => { res.setHeader('X-Content-Type-Options', 'nosniff'); next(); });
   app.use(cookieParser());
   app.use(express.json({ limit: '16kb' }));
+  const brand=requestBrand(process.env);
+  app.use(requestPwaRoutes(brand));
   app.use(commandBoundary(config, store));
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.use(createAuthRouter(config, store, provider));
@@ -59,6 +62,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
+  app.get('/portal/:slug',(req,res)=>{if(req.params.slug!==brand.slug){res.sendStatus(404);return;}res.set('Cache-Control','no-store').sendFile(resolve('dist/client/index.html'));});
   app.get('/requests/:id', (_req,res) => res.sendFile(resolve('dist/client/index.html')));
   app.get('/', (_req, res) => res.sendFile(resolve('dist/client/index.html')));
   const errors: ErrorRequestHandler = (error: unknown, req, res, _next) => {

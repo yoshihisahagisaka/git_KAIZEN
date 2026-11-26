@@ -7,7 +7,7 @@ import type { IdentityProvider } from './oidc.js';
 import { generateCodeVerifier, generateOpaqueValue, tokenHash } from './pkce.js';
 
 function requestReturn(value:unknown):string{
- return typeof value==='string'&&/^\/requests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)?value:'/';
+ return typeof value==='string'&&(/^\/portal\/[a-z0-9-]{1,48}$/.test(value)||/^\/requests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))?value:'/';
 }
 const contextSwitchSchema = z.object({ tenantId: z.uuid() }).strict();
 
