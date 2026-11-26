@@ -130,9 +130,10 @@ describe('PostgreSQL migration, identity and RLS baseline', () => {
     // Add a test-local compatibility column just for the current Operator loader;
     // all preceding baseline table/permission assertions ran on the original DDL.
     await admin.query("alter table factact.operators add column read_authority_mode text not null default 'INTERNAL_V1'");
+    await admin.query("alter table factact.operators add column request_portal_only boolean not null default false");
     const hash = tokenHash('session');
     await store.createSession(hash, { tenantId: tenantA, operatorId: operatorA }, 'csrf');
-    expect((await authenticateSession(store, hash))?.operator.id).toBe(operatorA);
+    expect((await authenticateSession(store, hash))?.operator).toMatchObject({id:operatorA,requestPortalOnly:false});
     await admin.query("update factact.operators set status='INACTIVE' where id=$1", [operatorA]);
     expect(await authenticateSession(store, hash)).toBeNull();
     await admin.query("update factact.operators set status='ACTIVE' where id=$1", [operatorA]);

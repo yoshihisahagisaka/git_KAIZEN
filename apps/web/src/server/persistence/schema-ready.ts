@@ -11,6 +11,10 @@ export async function assertSchemaReady(pool: Pool): Promise<void> {
   const { rows } = await pool.query<{ name: string }>(
     'select name from unnest($1::text[]) as name where to_regclass(name) is null', [required]);
   if (rows.length) throw new Error('Database migrations are incomplete. Run npm run db:migrate for the local database before starting FACTACT.');
+  const portalColumn=await pool.query(`select 1 from pg_attribute
+    where attrelid='factact.operators'::regclass and attname='request_portal_only'
+      and atttypid='boolean'::regtype and attnotnull and not attisdropped`);
+  if(portalColumn.rowCount!==1)throw new Error('Database migrations are incomplete. Request portal account boundary is missing.');
   const functions=[
     'factact.lock_service_request_context(uuid,uuid,uuid)',
     'factact_private.issue_scoped_actor_grant(text,uuid,uuid,uuid,uuid,text,uuid,uuid,text,text[],timestamp with time zone,timestamp with time zone,text)',
