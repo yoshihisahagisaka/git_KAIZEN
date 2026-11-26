@@ -46,6 +46,12 @@ describe('service request HTTP boundary',()=>{
   expect(d).toMatchObject({side:'RECEIVED',canRespond:true,status:'PENDING'});
   expect(d).not.toHaveProperty('parentWorkId');
   expect(d).not.toHaveProperty('tenantId');
+  const inbox=await get('/api/request-notifications','partner').query(context).expect(200);
+  expect(inbox.body.data).toMatchObject({unread:1,items:[{requestId:body.id,read:false}]});
+  await post('/api/requests/'+body.id+'/acknowledge','partner').set('x-csrf-token','wrong').send({throughRevision:0}).expect(403);
+  await post('/api/requests/'+body.id+'/acknowledge','partner').send({throughRevision:0}).expect(200);
+  expect((await get('/api/request-notifications','partner').query(context).expect(200)).body.data.unread).toBe(0);
+  expect((await get('/api/requests/'+body.id,'partner').expect(200)).body.data.status).toBe('PENDING');
   const response={commandId:randomUUID(),expectedRevision:0,status:'COMPLETED',comment:'対応完了'};
   await post('/api/requests/'+body.id+'/responses').send(response).expect(404);
   await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(200);
@@ -57,6 +63,8 @@ describe('service request HTTP boundary',()=>{
   await db.admin.query("update factact.service_request_participants set enabled=false where party_role='PARTNER'");
   await get('/api/requests/'+body.id,'partner').expect(404);
   await get('/api/support-work','partner').expect(403);
+  await get('/api/request-notifications','partner').query(context).expect(404);
+  await post('/api/requests/'+body.id+'/acknowledge','partner').send({throughRevision:1}).expect(404);
   await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(404);
  });
 });

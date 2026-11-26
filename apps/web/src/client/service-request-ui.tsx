@@ -4,6 +4,9 @@ import {requestLabels,requestStatusLabels,type RequestType,type RequestStatus} f
 type Context={serviceId:string;contractProfileId:string;name:string;canCreate:boolean;types:RequestType[]};
 type Summary={id:string;type:RequestType;customerName:string;content:string;createdAt:string;status:RequestStatus;revision:number};
 type Detail=Summary&{contactName:string;desiredAt:string|null;side:'SENT'|'RECEIVED';canRespond:boolean;history:{revision:number;status:RequestStatus;comment:string;recordedAt:string}[]};
+type Notice={id:string;requestId:string;kind:'CREATED'|'STARTED'|'COMMENTED'|'COMPLETED';createdAt:string;read:boolean};
+type Inbox={unread:number;items:Notice[]};
+const noticeLabels={CREATED:'新しい対応依頼',STARTED:'対応開始',COMMENTED:'対応コメント追加',COMPLETED:'対応完了'};
 type List={items:Summary[];nextCursor:string|null};
 const key=(c:Context)=>c.serviceId+':'+c.contractProfileId;
 const message=(e:unknown)=>e instanceof Error?e.message:'処理を完了できませんでした。';
@@ -11,7 +14,7 @@ const format=(v:string)=>new Date(v).toLocaleString('ja-JP');
 export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;contexts:Context[];initialId:string|null;onExit?:()=>void}){
  const [selected,setSelected]=useState(contexts[0]?key(contexts[0]):'');
  const c=contexts.find(x=>key(x)===selected);
- const [mode,setMode]=useState<'LIST'|'CREATE'|'DETAIL'>(initialId?'DETAIL':'LIST');
+ const [mode,setMode]=useState<'LIST'|'CREATE'|'DETAIL'|'NOTICES'>(initialId?'DETAIL':'LIST');
  const [side,setSide]=useState<'SENT'|'RECEIVED'>('RECEIVED');
  const [detailId,setDetailId]=useState(initialId??'');
  const [detail,setDetail]=useState<Detail|null>(null);
@@ -19,6 +22,9 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  const [cursor,setCursor]=useState<string|null>(null);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
+ const [inbox,setInbox]=useState<Inbox|null>(null);
+ const [noticeError,setNoticeError]=useState(false);
+ const [noticeRefresh,setNoticeRefresh]=useState(0);
  const [refresh,setRefresh]=useState(0);
  const [type,setType]=useState<RequestType|''>('');
  const [content,setContent]=useState('');
@@ -31,6 +37,16 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  const pending=useRef(false);
  const listGeneration=useRef(0);
  const base=c?'/api/requests?'+new URLSearchParams({serviceId:c.serviceId,contractProfileId:c.contractProfileId,side}):'';
+ const inboxUrl=c?'/api/request-notifications?'+new URLSearchParams({serviceId:c.serviceId,contractProfileId:c.contractProfileId}):'';
+ useEffect(()=>{
+  if(!inboxUrl)return;
+  let active=true,running=false;setInbox(null);setNoticeError(false);
+  const poll=async()=>{if(running||!active)return;running=true;try{const data=await api<Inbox>(inboxUrl);if(active){setInbox(data);setNoticeError(false);}}catch{if(active){setInbox(null);setNoticeError(true);}}finally{running=false;}};
+  void poll();const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void poll();},30000);
+  const visible=()=>{if(document.visibilityState==='visible')void poll();};
+  document.addEventListener('visibilitychange',visible);
+  return()=>{active=false;window.clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
+ },[inboxUrl,noticeRefresh]);
  useEffect(()=>{
   if(mode!=='LIST'||!base)return;
   let active=true;const generation=++listGeneration.current;
@@ -41,9 +57,9 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  useEffect(()=>{
   if(mode!=='DETAIL'||!detailId)return;
   let active=true;setDetail(null);setError('');
-  api<Detail>('/api/requests/'+detailId).then(x=>{if(active)setDetail(x);}).catch(e=>{if(active)setError(message(e));});
+  api<Detail>('/api/requests/'+detailId).then(async x=>{if(!active)return;setDetail(x);try{await api('/api/requests/'+x.id+'/acknowledge',csrf,{throughRevision:x.revision});if(active)setNoticeRefresh(n=>n+1);}catch{if(active)setNoticeError(true);}}).catch(e=>{if(active)setError(message(e));});
   return()=>{active=false;};
- },[detailId,mode,refresh]);
+ },[detailId,mode,refresh,csrf]);
  function open(id:string){setDetailId(id);setComment('');setStatus('IN_PROGRESS');replyKey.current=null;setMode('DETAIL');}
  function goList(){setError('');setMode('LIST');}
  async function more(){
@@ -75,10 +91,13 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
   <div className="request-actions">
    {onExit&&<button className="secondary" disabled={busy} onClick={onExit}>FACTACTへ戻る</button>}
    <button className="secondary" disabled={busy} onClick={goList}>依頼一覧</button>
+   <button className="secondary" disabled={busy} onClick={()=>{setMode('NOTICES');setNoticeRefresh(n=>n+1);}}>通知{inbox?'（未読 '+inbox.unread+'件）':''}</button>
    <button disabled={busy||!c?.canCreate} onClick={()=>{setError('');setMode('CREATE');}}>対応依頼を登録</button>
   </div>
   {error&&<p role="alert">{error}</p>}
+  {noticeError&&<p role="status">通知を確認できませんでした。通知画面から再確認してください。</p>}
   {mode!=='DETAIL'&&<label>サービス<select value={selected} disabled={busy||mode==='CREATE'} onChange={e=>{setSelected(e.target.value);setType('');}}>{contexts.map(x=><option key={key(x)} value={key(x)}>{x.name}</option>)}</select></label>}
+  {mode==='NOTICES'&&<><h2>通知一覧</h2>{inbox&&<p>未読 {inbox.unread}件（最新50件を表示）</p>}{inbox?.items.length===0&&<p>通知はありません。</p>}{inbox?.items.map(n=><article key={n.id}><strong>{noticeLabels[n.kind]}</strong> {!n.read&&<span className="badge">未読</span>}<time>{format(n.createdAt)}</time><button className="secondary" disabled={busy} onClick={()=>open(n.requestId)}>依頼詳細を開く</button></article>)}</>}
   {mode==='LIST'&&<><div className="request-actions"><button aria-pressed={side==='RECEIVED'} className="secondary" disabled={busy} onClick={()=>setSide('RECEIVED')}>受信依頼</button><button aria-pressed={side==='SENT'} className="secondary" disabled={busy} onClick={()=>setSide('SENT')}>送信依頼</button><button className="secondary" disabled={busy} onClick={()=>setRefresh(n=>n+1)}>更新</button></div>
    {items.length===0&&!error&&<p>表示する依頼がありません。</p>}
    {items.map(x=><article key={x.id}><strong>{requestLabels[x.type]}</strong> <span className="badge">{requestStatusLabels[x.status]}</span><p>{x.customerName}</p><p className="request-text">{x.content}</p><time>{format(x.createdAt)}</time><button className="secondary" disabled={busy} onClick={()=>open(x.id)}>詳細を開く</button></article>)}

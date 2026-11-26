@@ -12,6 +12,13 @@ function actor(res:Response){const o=(res.locals.session as {operator:Operator})
 export function serviceRequestRoutes(store:PgServiceRequestStore){
  const router=Router();
  router.get('/request-contexts',async(_req,res)=>res.json({ok:true,data:await store.contexts(actor(res))}));
+ router.get('/request-notifications',async(req,res)=>{
+  res.json({ok:true,data:await store.notifications(actor(res),context.parse(req.query))});
+ });
+ router.post('/requests/:id/acknowledge',async(req,res)=>{
+  const a=actor(res),requestId=id.parse(req.params.id),input=z.strictObject({throughRevision:z.number().int().min(0).max(2147483647)}).parse(req.body),s=await store.resolveContext(a,requestId);
+  res.json({ok:true,data:await store.acknowledge(a,s,requestId,input.throughRevision)});
+ });
  router.get('/requests',async(req,res)=>{
   const {serviceId,contractProfileId,side,limit,beforeId}=list.parse(req.query);
   res.json({ok:true,data:await store.list(actor(res),{serviceId,contractProfileId},{side,limit,...(beforeId?{beforeId}:{})})});
