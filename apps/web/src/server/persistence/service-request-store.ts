@@ -7,10 +7,11 @@ import {withTenant} from './database.js';
 
 export interface RequestActor {tenantId:string;actorId:string}
 export interface RequestService {serviceId:string;contractProfileId:string}
-interface Channel {provider_party_id:string;partner_party_id:string;party_role:'PROVIDER'|'PARTNER';can_create:boolean;can_read:boolean;can_respond:boolean}
+interface Channel {teams_enabled:boolean;provider_party_id:string;partner_party_id:string;party_role:'PROVIDER'|'PARTNER';can_create:boolean;can_read:boolean;can_respond:boolean}
 interface Row {id:string;tenant_id:string;service_id:string;contract_profile_id:string;provider_party_id:string;partner_party_id:string;direction:RequestDirection;request_type:RequestType;content:string;customer_name:string;contact_name:string;desired_at:Date|null;parent_work_id:string|null;created_by_operator_id:string;created_at:Date}
 interface UpdateRow {id:string;command_id:string;request_id:string;revision:number;previous_status:RequestStatus;status:RequestStatus;comment:string;actor_operator_id:string;recorded_at:Date}
-export interface RequestCreate {id:string;type:RequestType;content:string;customerName?:string;contactName?:string;desiredAt?:string|null}
+export type TeamsSelection={mode:'ALL'|'NONE'|'SELECTED';recipientIds:string[]};
+export interface RequestCreate {teams?:TeamsSelection;id:string;type:RequestType;content:string;customerName?:string;contactName?:string;desiredAt?:string|null}
 export interface RequestRespond {commandId:string;expectedRevision:number;status:RequestStatus;comment:string}
 const denied=()=>new DomainError('REQUEST_NOT_AVAILABLE','依頼を参照・操作できません。',404);
 const bad=()=>new DomainError('INVALID_REQUEST','依頼の入力内容を確認してください。',400);
@@ -36,7 +37,7 @@ export class PgServiceRequestStore {
   await db.query('select factact.lock_service_request_context($1,$2,$3)',[a.tenantId,s.serviceId,s.contractProfileId]);
  }
  private async access(db:PoolClient,a:RequestActor,s:RequestService):Promise<Channel>{
-  const q=await db.query<Channel>(`select ch.provider_party_id,ch.partner_party_id,p.party_role,p.can_create,p.can_read,p.can_respond
+  const q=await db.query<Channel>(`select ch.teams_enabled,ch.provider_party_id,ch.partner_party_id,p.party_role,p.can_create,p.can_read,p.can_respond
    from factact.service_request_channels ch
    join factact.service_request_participants p using(tenant_id,service_id,contract_profile_id)
    join factact.operators o on o.tenant_id=p.tenant_id and o.id=p.actor_operator_id and o.status='ACTIVE'
@@ -137,6 +138,29 @@ export class PgServiceRequestStore {
    return {id};
   });
  }
+ async teamsRecipients(a:RequestActor,s:RequestService){
+  this.validate(a,s);
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const c=await this.access(db,a,s);
+   if(!c.can_create||!c.can_read||c.party_role!=='PROVIDER'||!c.teams_enabled)return {enabled:false,items:[]};
+   const q=await db.query<{id:string;display_name:string}>(`select id,display_name from factact.service_request_teams_recipients
+    where service_id=$1 and contract_profile_id=$2 and enabled order by display_name,id`,[s.serviceId,s.contractProfileId]);
+   return {enabled:true,items:q.rows.map(x=>({id:x.id,name:x.display_name}))};
+  },true);
+ }
+ private async teamsSelection(db:PoolClient,s:RequestService,c:Channel,selection:TeamsSelection|undefined){
+  if(!c.teams_enabled||c.party_role!=='PROVIDER'){if(selection)throw bad();return null;}
+  if(!selection)throw new DomainError('TEAMS_SELECTION_REQUIRED','Teams通知先を確認してください。',400);
+  const ids=selection.recipientIds;
+  if(!['ALL','SELECTED','NONE'].includes(selection.mode)||ids.length>20||!ids.every(uuid)||new Set(ids).size!==ids.length||
+   (selection.mode==='SELECTED'?ids.length===0:ids.length!==0))throw bad();
+  const q=await db.query<{id:string}>(`select id from factact.service_request_teams_recipients where service_id=$1 and contract_profile_id=$2 and enabled order by id`,[s.serviceId,s.contractProfileId]);
+  const active=q.rows.map(x=>x.id);
+  if(selection.mode==='SELECTED'&&!ids.every(x=>active.includes(x)))throw bad();
+  const chosen=selection.mode==='ALL'?active:selection.mode==='SELECTED'?[...ids].sort():[];
+  if(chosen.length>20)throw bad();
+  return {mode:selection.mode,ids:chosen};
+ }
  async create(a:RequestActor,s:RequestService,input:RequestCreate){
   this.validate(a,s);if(!uuid(input.id))throw bad();
   return withTenant(this.pool,a.tenantId,async db=>{
@@ -149,11 +173,19 @@ export class PgServiceRequestStore {
     const p=entry(old);
     const comparable=(x:RequestEntry)=>JSON.stringify([x.tenantId,x.serviceId,x.contractProfileId,x.senderPartyId,x.recipientPartyId,x.direction,x.type,x.content,x.customerName,x.contactName,x.desiredAt===null?null:new Date(x.desiredAt).toISOString(),x.createdBy,x.parentWorkId]);
     if(comparable(p)!==comparable(e))throw new DomainError('RETRY_CONFLICT','同じ保存番号の内容が異なります。');
+    const saved=(await db.query<{selection:string;recipient_ids:string[]}>('select selection,recipient_ids from factact.service_request_teams_intents where request_id=$1',[p.id])).rows[0];
+    if(saved){
+     if(!input.teams||saved.selection!==input.teams.mode||
+      (input.teams.mode==='SELECTED'&&JSON.stringify([...input.teams.recipientIds].sort())!==JSON.stringify([...saved.recipient_ids].sort()))||
+      (input.teams.mode!=='SELECTED'&&input.teams.recipientIds.length!==0))throw new DomainError('RETRY_CONFLICT','同じ保存番号の通知先が異なります。');
+    }else if(input.teams)throw new DomainError('RETRY_CONFLICT','同じ保存番号の通知先が異なります。');
     return {id:p.id};
    }
+   const teams=await this.teamsSelection(db,s,c,input.teams);
    await db.query(`insert into factact.service_requests(id,tenant_id,service_id,contract_profile_id,provider_party_id,partner_party_id,direction,request_type,content,customer_name,contact_name,desired_at,parent_work_id,created_by_operator_id,created_at)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,null,$13,$14)`,
     [e.id,e.tenantId,e.serviceId,e.contractProfileId,c.provider_party_id,c.partner_party_id,e.direction,e.type,e.content,e.customerName,e.contactName,e.desiredAt,e.createdBy,e.createdAt]);
+   if(teams)await db.query('insert into factact.service_request_teams_intents(id,tenant_id,request_id,selection,recipient_ids,created_at) values($1,$2,$3,$4,$5,$6)',[randomUUID(),a.tenantId,e.id,teams.mode,teams.ids,e.createdAt]);
    await this.notify(db,a,s,e.id,0,'CREATED',forward?'PARTNER':'PROVIDER',e.createdAt);
    return {id:e.id};
   });

@@ -48,6 +48,20 @@ describe('service request command adapter',()=>{
   await db.admin.query('update factact.service_request_participants set enabled=false where actor_operator_id=$1',[partner]);
   await expect(store.notifications(b,s)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
  });
+ it('records confirmed Teams roster selection atomically, independent of portal grants',async()=>{
+  const member=randomUUID(),objectId=randomUUID();
+  await db.admin.query('update factact.service_request_channels set teams_enabled=true');
+  await db.admin.query("insert into factact.service_request_teams_recipients(id,tenant_id,service_id,contract_profile_id,object_id,display_name,enabled) values($1,$2,$3,$4,$5,'Synthetic member',true)",[member,ids.tenant,ids.service,ids.contract,objectId]);
+  expect(await store.teamsRecipients(a,s)).toEqual({enabled:true,items:[{id:member,name:'Synthetic member'}]});
+  const input={id:randomUUID(),type:'INQUIRY' as const,content:'確認'};
+  await expect(store.create(a,s,input)).rejects.toMatchObject({code:'TEAMS_SELECTION_REQUIRED'});
+  await expect(store.create(a,s,{...input,teams:{mode:'SELECTED',recipientIds:[objectId]}})).rejects.toMatchObject({code:'INVALID_REQUEST'});
+  const confirmed={...input,teams:{mode:'ALL' as const,recipientIds:[]}};
+  await store.create(a,s,confirmed);await store.create(a,s,confirmed);
+  expect((await db.admin.query('select selection,recipient_ids from factact.service_request_teams_intents')).rows).toEqual([{selection:'ALL',recipient_ids:[member]}]);
+  await expect(store.create(a,s,{...input,teams:{mode:'NONE',recipientIds:[]}})).rejects.toMatchObject({code:'RETRY_CONFLICT'});
+  expect(await store.teamsRecipients({tenantId:ids.tenant,actorId:partner},s)).toEqual({enabled:false,items:[]});
+ });
  it('lists only the selected direction and authorized context before pagination',async()=>{
   const b={tenantId:ids.tenant,actorId:partner};
   const first={id:randomUUID(),type:'INQUIRY' as const,content:'one'};
