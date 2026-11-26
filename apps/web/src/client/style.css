@@ -251,3 +251,5 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .request-text {white-space:pre-wrap;overflow-wrap:anywhere;}
 .request-launch {padding:4px 28px;background:white;}
 @media(max-width:600px){.request-portal{padding:12px;}.request-portal article,.request-portal .card{padding:14px;}.request-portal button{min-height:44px;}.request-portal h1{font-size:23px;}.request-launch{padding:4px 12px;}}
+
+.teams-roster {margin:16px 0!important;padding:12px!important;border:1px solid #d5e1e3!important;border-radius:6px;}.teams-roster legend{font-weight:600;}.teams-roster-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}.teams-roster-grid label{margin:0;display:flex;align-items:center;min-height:44px;overflow-wrap:anywhere;}.teams-roster-grid input{width:20px;height:20px;flex:none;}@media(max-width:600px){.teams-roster-grid{grid-template-columns:1fr;}}

@@ -153,11 +153,12 @@ export class PgServiceRequestStore {
   if(!selection)throw new DomainError('TEAMS_SELECTION_REQUIRED','Teams通知先を確認してください。',400);
   const ids=selection.recipientIds;
   if(!['ALL','SELECTED','NONE'].includes(selection.mode)||ids.length>20||!ids.every(uuid)||new Set(ids).size!==ids.length||
-   (selection.mode==='SELECTED'?ids.length===0:ids.length!==0))throw bad();
+   (selection.mode==='NONE'?ids.length!==0:ids.length===0))throw bad();
   const q=await db.query<{id:string}>(`select id from factact.service_request_teams_recipients where service_id=$1 and contract_profile_id=$2 and enabled order by id`,[s.serviceId,s.contractProfileId]);
   const active=q.rows.map(x=>x.id);
-  if(selection.mode==='SELECTED'&&!ids.every(x=>active.includes(x)))throw bad();
-  const chosen=selection.mode==='ALL'?active:selection.mode==='SELECTED'?[...ids].sort():[];
+  if(!ids.every(x=>active.includes(x)))throw bad();
+  if(selection.mode==='ALL'&&(ids.length!==active.length||!active.every(x=>ids.includes(x))))throw new DomainError('TEAMS_ROSTER_CHANGED','通知先が変更されました。再取得してください。',409);
+  const chosen=[...ids].sort();
   if(chosen.length>20)throw bad();
   return {mode:selection.mode,ids:chosen};
  }
@@ -176,8 +177,7 @@ export class PgServiceRequestStore {
     const saved=(await db.query<{selection:string;recipient_ids:string[]}>('select selection,recipient_ids from factact.service_request_teams_intents where request_id=$1',[p.id])).rows[0];
     if(saved){
      if(!input.teams||saved.selection!==input.teams.mode||
-      (input.teams.mode==='SELECTED'&&JSON.stringify([...input.teams.recipientIds].sort())!==JSON.stringify([...saved.recipient_ids].sort()))||
-      (input.teams.mode!=='SELECTED'&&input.teams.recipientIds.length!==0))throw new DomainError('RETRY_CONFLICT','同じ保存番号の通知先が異なります。');
+      JSON.stringify([...input.teams.recipientIds].sort())!==JSON.stringify([...saved.recipient_ids].sort()))throw new DomainError('RETRY_CONFLICT','同じ保存番号の通知先が異なります。');
     }else if(input.teams)throw new DomainError('RETRY_CONFLICT','同じ保存番号の通知先が異なります。');
     return {id:p.id};
    }
