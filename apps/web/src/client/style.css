@@ -242,3 +242,12 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .scoped-beneficiary textarea { min-height:78px; }
 .scoped-beneficiary input[type=checkbox] { width:auto; margin-right:8px; }
 .scoped-beneficiary form button { justify-self:start; }
+
+/* Shared request portal: mobile-first, no separate partner app. */
+.request-portal {max-width:820px;margin:0 auto;padding:16px 20px;min-width:0;}
+.request-portal fieldset {border:0;padding:0;margin:0;min-width:0;}
+.request-actions {display:flex;flex-wrap:wrap;gap:6px;}
+.request-actions button[aria-pressed=true] {background:#dceff0;font-weight:700;}
+.request-text {white-space:pre-wrap;overflow-wrap:anywhere;}
+.request-launch {padding:4px 28px;background:white;}
+@media(max-width:600px){.request-portal{padding:12px;}.request-portal article,.request-portal .card{padding:14px;}.request-portal button{min-height:44px;}.request-portal h1{font-size:23px;}.request-launch{padding:4px 12px;}}

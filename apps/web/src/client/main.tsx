@@ -7,6 +7,7 @@ import { JoinUI } from './join-ui.js';
 import { ScopedSupportUI } from './scoped-support-ui.js';
 import { OperatorPolicyAdminUI } from './operator-policy-admin-ui.js';
 import {ProcedurePageAdmin} from './procedure-page-admin.js';
+import {RequestEntryPoint} from './service-request-ui.js';
 import { api } from './api.js';
 
 type BrowserSession = { operator: Operator; csrfToken: string };
@@ -78,6 +79,7 @@ function App() {
       <div className="account"><p>{session.operator.displayName} / {session.operator.tenantName}</p>
       <SessionContextPicker key={`${session.operator.tenantId}:${session.operator.id}`} session={session} onSwitch={switchContext}/>
       <button className="secondary" onClick={() => void logout()}>ログアウト</button></div>
+      <RequestEntryPoint key={`requests:${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} initialId={/^\/requests\/([0-9a-f-]{36})$/i.exec(window.location.pathname)?.[1]??null}>
       <OperatorPolicyAdminUI key={`policy:${session.operator.tenantId}:${session.operator.id}`}
         csrf={session.csrfToken}/>
       {session.operator.readAuthorityMode==='INTERNAL_V1' && session.operator.roles.includes('ADMIN')&&
@@ -88,6 +90,7 @@ function App() {
         : session.operator.readAuthorityMode==='SCOPED'
           ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken}/>
           : <p role="alert">このアカウントで利用できる画面を確認できませんでした。管理者にお問い合わせください。</p>}
+      </RequestEntryPoint>
     </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href="/auth/login">Googleでログイン</a></div>}
   </main>;
 }
