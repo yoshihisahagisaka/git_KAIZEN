@@ -39,6 +39,9 @@ function SessionContextPicker({session,onSwitch}:{session:BrowserSession;onSwitc
 }
 
 function App() {
+  const portalPath=/^\/portal\/[a-z0-9-]{1,48}$/.test(window.location.pathname);
+  const [brand,setBrand]=useState('FACTACT');
+  useEffect(()=>{if(!portalPath)return;let active=true;fetch('/request-brand').then(r=>{if(!r.ok)throw Error();return r.json();}).then(b=>{if(active&&typeof b.name==='string'){setBrand(b.name);document.title=b.name;}}).catch(()=>{});return()=>{active=false;};},[portalPath]);
   const [session, setSession] = useState<BrowserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,12 +77,12 @@ function App() {
     } finally {setLoading(false);}
   }
   return <main>
-    <header><strong>FACTACT</strong><span>From Fact to Action.</span></header>
+    <header><strong>{brand}</strong><span>From Fact to Action.</span></header>
     {loading ? <p role="status">確認しています…</p> : error ? <p role="alert">{error}</p> : session ? <>
       <div className="account"><p>{session.operator.displayName} / {session.operator.tenantName}</p>
       <SessionContextPicker key={`${session.operator.tenantId}:${session.operator.id}`} session={session} onSwitch={switchContext}/>
       <button className="secondary" onClick={() => void logout()}>ログアウト</button></div>
-      <RequestEntryPoint key={`requests:${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} portalOnly={session.operator.requestPortalOnly===true} initialId={/^\/requests\/([0-9a-f-]{36})$/i.exec(window.location.pathname)?.[1]??null}>
+      <RequestEntryPoint key={`requests:${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} portalOnly={portalPath||session.operator.requestPortalOnly===true} initialId={/^\/requests\/([0-9a-f-]{36})$/i.exec(window.location.pathname)?.[1]??null}>
       <OperatorPolicyAdminUI key={`policy:${session.operator.tenantId}:${session.operator.id}`}
         csrf={session.csrfToken}/>
       {session.operator.readAuthorityMode==='INTERNAL_V1' && session.operator.roles.includes('ADMIN')&&
@@ -91,7 +94,8 @@ function App() {
           ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken}/>
           : <p role="alert">このアカウントで利用できる画面を確認できませんでした。管理者にお問い合わせください。</p>}
       </RequestEntryPoint>
-    </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href={/^\/requests\/[0-9a-f-]{36}$/i.test(window.location.pathname)?"/auth/login?returnTo="+encodeURIComponent(window.location.pathname):"/auth/login"}>Googleでログイン</a></div>}
+    </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href={portalPath||/^\/requests\/[0-9a-f-]{36}$/i.test(window.location.pathname)?"/auth/login?returnTo="+encodeURIComponent(window.location.pathname):"/auth/login"}>Googleでログイン</a></div>}
   </main>;
 }
+if('serviceWorker' in navigator&&window.isSecureContext){void navigator.serviceWorker.register('/request-sw.js').catch(()=>{});}
 createRoot(document.getElementById('root')!).render(<App/>);
