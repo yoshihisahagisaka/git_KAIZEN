@@ -8,6 +8,7 @@ export interface Operator {
   roles: OperatorRole[];
   // DB-derived read boundary. Optional only for legacy application/test callers;
   // browser access must fail closed when no explicit mode is supplied.
+  requestPortalOnly?: boolean;
   readAuthorityMode?: 'SCOPED' | 'INTERNAL_V1';
 }
 
