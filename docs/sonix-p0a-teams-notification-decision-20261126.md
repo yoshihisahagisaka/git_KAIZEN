@@ -41,3 +41,7 @@ Both directions use the same required selection, with no preselected type: CALL_
 
 ## Onsite request type — user-confirmed 2026-11-26
 Add ONSITE_REQUEST（オンサイト対応依頼） as a sixth selectable request category for atLIB-to-SONIX requests only. The five previously confirmed categories remain available in both directions. Onsite requests are used when remote support is insufficient and the SONIX representative is asked to perform onsite support. Filter permitted categories by configured request direction on the server and in the common form; no separate onsite workflow, SONIX-specific Core schema, implicit escalation, dispatch, ownership transfer or parent Work completion. The same request status, response history, Teams notification and authority rules apply. This supersedes the preceding five-category-only restriction. Implementation and acceptance pending.
+
+
+## Teams recipient selection UI — user-approved 2026-11-26
+Use checkboxes only (no Ctrl multi-select or ALL/SELECTED/NONE radio controls). Initially check all enabled service roster entries; provide Select all / Clear all and selected count. Desktop two columns, mobile one column. Explicit submission confirms selection. Map all checked to ALL, partial to SELECTED with internal roster IDs, zero to NONE (channel post without mentions, not suppression). For empty roster use NONE. Preserve server-side validation, current enabled roster checks and immutable notification intent; do not expose Entra Object IDs. No real send or deployment. Implementation pending.
