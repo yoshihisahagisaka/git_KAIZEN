@@ -3,7 +3,7 @@ import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {SupportCommands} from '../../../../packages/application/src/support-commands.js';
 import {DomainError,found} from '../../../../packages/domain/src/join.js';
-import type {ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
+import type {ScopedOwnerCandidates,ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
@@ -15,6 +15,7 @@ export interface ScopedSupportReader {
  scopedPendingReceipts?(tenantId:string,actorId:string,serviceId:string,limit:number,cursor:{createdAt:string;eventId:string}|null):Promise<ScopedPendingReceiptPage>;
  scopedIntakeReceipt?(tenantId:string,actorId:string,serviceId:string,
   eventId:string):Promise<ScopedIntakeReceipt|null>;
+ scopedOwnerCandidates?(tenantId:string,actorId:string,workId:string,limit:number,cursor:string|null):Promise<ScopedOwnerCandidates|null>;
  supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>;
  supportWorkPage(tenantId:string,actorId:string,limit:number,cursor:ScopedSupportWorkCursor|null,serviceId?:string):Promise<ScopedSupportWorkPage>;
  supportWorkHistory(tenantId:string,actorId:string,workId:string,limit:number,
@@ -148,6 +149,14 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const history=found(await reader.supportWorkHistory(actor.tenantId,actor.id,workId,query.limit,cursor));
   res.json({ok:true,data:history});
  });
+ if(reader.scopedOwnerCandidates){
+  const schema=z.strictObject({limit:z.coerce.number().int().min(1).max(20).default(20),cursor:z.uuid().optional()});
+  router.get('/scoped/support-work/:id/owner-candidates',async(req,res)=>{
+   const workId=z.uuid().parse(req.params.id),q=schema.parse(req.query);
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:found(await reader.scopedOwnerCandidates!(actor.tenantId,actor.id,workId,q.limit,q.cursor??null))});
+  });
+ }
  router.get('/scoped/support-work/:id',async(req,res)=>{
   const workId=z.uuid().parse(req.params.id);
   const actor=(res.locals.session as {operator:Operator}).operator;

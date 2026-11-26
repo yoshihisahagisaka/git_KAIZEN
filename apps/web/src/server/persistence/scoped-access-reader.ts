@@ -23,6 +23,9 @@ interface StoredSupportWorkSummary {
  beneficiary_kind:'CONFIRMED'|'CLEARED'|null;confirmed_recipient_id:string|null;
 }
 
+export interface ScopedOwnerCandidates {
+ currentOwnerId:string;currentOwnerName:string;items:{id:string;name:string}[];nextCursor:string|null;
+}
 export interface ScopedSupportWorkSummary {
  workId:string;serviceId:string;contractProfileId:string;serviceRecipientId:string;
  title:string;status:'OPEN'|'IN_PROGRESS'|'COMPLETED';nextAction:string;
@@ -261,6 +264,44 @@ export class PgScopedAccessReader {
   * scoped SUPPORT application commands. Beneficiary, effective Grant and Actor
   * are resolved from the DB in the mutation/Audit transaction. Unauthorized
   * Work is never passed to the callback. */
+ async scopedOwnerCandidates(tenantId:string,actorId:string,workId:string,limit:number,cursor:string|null):Promise<ScopedOwnerCandidates|null>{
+  if(![tenantId,actorId,workId].every(id=>z.uuid().safeParse(id).success)||
+   !Number.isInteger(limit)||limit<1||limit>20||(cursor&&!z.uuid().safeParse(cursor).success))return null;
+  const at=this.clock.now();
+  return withTenant(this.pool,tenantId,async db=>{
+   const w=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'READ');
+   if(!w||w.status==='COMPLETED'||!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE')||
+    !await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'APPROVE'))return null;
+   const current=await db.query<{id:string;name:string}>(`
+    select o.id,o.display_name name from factact.work w
+    join factact.operators o on o.tenant_id=w.tenant_id and o.id=w.work_owner_operator_id
+    where w.tenant_id=$1 and w.id=$2`,[tenantId,workId]);
+   const owner=current.rows[0];if(!owner)return null;
+   const {rows}=await db.query<{id:string;name:string}>(`
+    select o.id,o.display_name name from factact.operators o
+    where o.tenant_id=$1 and o.status='ACTIVE' and o.id<>$2
+      and ($7::uuid is null or o.id>$7)
+      and not exists (
+       select 1 from unnest(array['READ','UPDATE']::text[]) op
+       where not exists(select 1 from factact.scoped_actor_grants g
+        where g.tenant_id=o.tenant_id and g.actor_operator_id=o.id
+        and g.service_id=$3 and g.contract_profile_id=$4 and g.object_kind='SUPPORT'
+        and g.status='ACTIVE' and g.effective_from<=$6::timestamptz
+        and (g.effective_until is null or g.effective_until>$6::timestamptz)
+        and op=any(g.operations)
+        and (g.scope_kind='SERVICE' or
+         (g.service_recipient_id=$5 and (g.scope_kind='SERVICE_RECIPIENT' or (g.scope_kind='WORK' and g.work_id=$8)))))
+      )
+    order by o.id limit $9`,[tenantId,owner.id,w.service_id,w.contract_profile_id,w.confirmed_recipient_id,at,cursor,workId,limit+1]);
+   const items:{id:string;name:string}[]=[];
+   for(const row of rows.slice(0,limit)){
+    if(await this.authorizedSupportWork(db,tenantId,row.id,workId,at,'READ')&&
+     await this.authorizedSupportWork(db,tenantId,row.id,workId,at,'UPDATE'))items.push(row);
+   }
+   return {currentOwnerId:owner.id,currentOwnerName:owner.name,items,nextCursor:rows.length>limit?rows[limit-1]!.id:null};
+  },true);
+ }
+
  async runSupportOwnerTransfer<T>(tenantId:string,actorId:string,workId:string,newOwnerId:string,
   mutation:(context:ScopedSupportWorkUpdateContext & {transferOwner(previousOwnerId:string,revision:number,at:string):Promise<void>})=>Promise<T>):Promise<T|null>{
   if(![tenantId,actorId,workId,newOwnerId].every(id=>z.uuid().safeParse(id).success))return null;

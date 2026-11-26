@@ -4,7 +4,7 @@ import {ScopedReceptionWorkspace} from './scoped-support-intake.js';
 import {api,ApiError} from './api.js';
 import {ScopedRegistryReviewUI} from './scoped-registry-review-ui.js';
 import type {
-  ScopedRegistryPeoplePage,
+  ScopedOwnerCandidates,ScopedRegistryPeoplePage,
   ScopedSupportHistoryEntry,ScopedSupportWorkHistory,ScopedSupportWorkPage,
   ScopedSupportWorkSummary,
 } from '../server/persistence/scoped-access-reader.js';
@@ -13,7 +13,7 @@ const statusLabels:Record<ScopedSupportWorkSummary['status'],string>={
   OPEN:'受付済み',IN_PROGRESS:'対応中',COMPLETED:'完了',
 };
 const eventLabels:Record<string,string>={
-  RESPONSE:'対応を記録',RESPONSE_CORRECTION:'対応内容を訂正',
+  OWNER_TRANSFERRED:'担当者を引継ぎ',RESPONSE:'対応を記録',RESPONSE_CORRECTION:'対応内容を訂正',
   CONTINUATION_RECORDED:'継続対応を記録',WAITING_SET:'回答・対応待ち',
   RESUMED:'対応を再開',NEXT_ACTION_CLEARED:'次の対応を確認',REOPENED:'対応中に戻す',
 };
@@ -206,7 +206,34 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
   const [writeBusy,setWriteBusy]=useState(false);
   const [writeError,setWriteError]=useState('');
   const [writeNotice,setWriteNotice]=useState('');
-  const [lifecycleMode,setLifecycleMode]=useState<'CLOSE'|'REOPEN'|null>(null);
+  const [lifecycleMode,setLifecycleMode]=useState<'CLOSE'|'REOPEN'|'TRANSFER'|null>(null);
+  const [owners,setOwners]=useState<ScopedOwnerCandidates|null>(null);
+  const [newOwner,setNewOwner]=useState('');
+  const [ownerLoading,setOwnerLoading]=useState(false);
+  async function loadOwners(workId:string,cursor?:string){
+    setOwnerLoading(true);setWriteError('');
+    try{
+      const data=await api<ScopedOwnerCandidates>('/api/scoped/support-work/'+workId+'/owner-candidates?limit=20'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+      if(selectedRequestId.current!==workId)return;
+      setOwners(old=>cursor&&old&&old.currentOwnerId===data.currentOwnerId?{...data,items:[...old.items,...data.items.filter(x=>!old.items.some(y=>y.id===x.id))]}:data);
+    }catch{if(selectedRequestId.current===workId){setOwners(null);setWriteError('引継ぎ候補を取得できませんでした。');}}
+    finally{if(selectedRequestId.current===workId)setOwnerLoading(false);}
+  }
+  async function submitTransfer(event:React.FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    if(!detail?.canClose||!selectedId||!owners||!newOwner||!lifecycleReason.trim()||writeInFlight.current||ownerLoading)return;
+    const workId=selectedId,payload={expectedLifecycleRevision:detail.lifecycleRevision,expectedOwnerId:owners.currentOwnerId,newOwnerId:newOwner,reason:lifecycleReason.trim()};
+    const key=JSON.stringify(payload);
+    if(lifecycleRetry.current?.key!==key)lifecycleRetry.current={key,id:crypto.randomUUID()};
+    writeInFlight.current=true;setWriteBusy(true);setWriteError('');setWriteNotice('');
+    try{
+     await api('/api/scoped/support-work/'+workId+'/owner-transfer',csrf,{...payload,requestId:lifecycleRetry.current.id});
+     if(selectedRequestId.current!==workId)return;
+     setLifecycleMode(null);setOwners(null);setNewOwner('');setLifecycleReason('');lifecycleRetry.current=null;
+     setWriteNotice('担当者を引き継ぎました。');refreshWork();
+    }catch{if(selectedRequestId.current===workId)setWriteError('引継ぎできませんでした。権限と現在の担当者を確認してください。');}
+    finally{writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
+  }
   const [lifecycleReason,setLifecycleReason]=useState('');
   const [closeOutcome,setCloseOutcome]=useState('RESOLVED');
   const [responsibilityEnded,setResponsibilityEnded]=useState(false);
@@ -222,7 +249,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     setCorrectionTarget(null);setCorrectionText('');setCorrectionReason('');
     responseRequestId.current=null;correctionRequestId.current=null;
     setWriteError('');setWriteNotice('');
-    setLifecycleMode(null);setLifecycleReason('');setResponsibilityEnded(false);setReopenAt('');lifecycleRetry.current=null;
+    setLifecycleMode(null);setLifecycleReason('');setResponsibilityEnded(false);setReopenAt('');lifecycleRetry.current=null;setOwners(null);setNewOwner('');setOwnerLoading(false);
   }
   const changeService=useCallback((id:string)=>{
     setServiceId(id);setItems([]);setNextCursor(null);setListServiceId(null);
@@ -427,6 +454,26 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
                     </div>
                     <button type="submit" disabled={writeBusy||detailBusy||!responseText.trim()||!followUpLocal}>対応を記録</button>
                   </form>
+                </section>}
+                {detail.canClose&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
+                 onClick={()=>{setLifecycleMode('TRANSFER');setOwners(null);setNewOwner('');setLifecycleReason('');void loadOwners(detail.workId);}}>担当者を引き継ぐ</button>}
+                {detail.canClose&&lifecycleMode==='TRANSFER'&&<section className="scoped-action" aria-label="担当者の引継ぎ">
+                 <h3>担当者の引継ぎ</h3>
+                 <p>元の問い合わせ・対応状態は維持し、担当者を変更します。</p>
+                 {ownerLoading&&<p>引継ぎ候補を確認しています…</p>}
+                 {owners&&<form onSubmit={event=>void submitTransfer(event)}>
+                  <p>現在の担当者：{owners.currentOwnerName}</p>
+                  <label htmlFor="scoped-new-owner">引継ぎ先</label>
+                  <select id="scoped-new-owner" value={newOwner} disabled={writeBusy||ownerLoading} onChange={e=>setNewOwner(e.target.value)}>
+                   <option value="">担当者を選択してください</option>
+                   {owners.items.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                  {owners.nextCursor&&<button type="button" className="secondary" disabled={writeBusy||ownerLoading} onClick={()=>void loadOwners(detail.workId,owners.nextCursor!)}>さらに候補を表示</button>}
+                  <label htmlFor="scoped-transfer-reason">引継ぎ理由</label>
+                  <textarea id="scoped-transfer-reason" value={lifecycleReason} maxLength={1000} required disabled={writeBusy} onChange={e=>setLifecycleReason(e.target.value)}/>
+                  <button type="submit" disabled={writeBusy||detailBusy||ownerLoading||!newOwner||!lifecycleReason.trim()}>引継ぎを記録</button>
+                 </form>}
+                 <button type="button" className="secondary" disabled={writeBusy||ownerLoading} onClick={()=>{setLifecycleMode(null);setOwners(null);lifecycleRetry.current=null;}}>キャンセル</button>
                 </section>}
                 {detail.canClose&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
                  onClick={()=>{setLifecycleMode('CLOSE');setLifecycleReason('');setResponsibilityEnded(false);setCloseOutcome('RESOLVED');}}>対応を完了</button>}
