@@ -1,0 +1,57 @@
+import {randomUUID} from 'node:crypto';
+import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
+import request from 'supertest';
+import pino from 'pino';
+import {ids,testDatabase} from '../fixtures/database.js';
+import {tokenHash} from '../../apps/web/src/server/auth/pkce.js';
+import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
+import {PgServiceRequestStore} from '../../apps/web/src/server/persistence/service-request-store.js';
+import {createApp} from '../../apps/web/src/server/app.js';
+const issuer='https://accounts.google.com';
+const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc',databaseSsl:false,issuer:issuer as 'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'};
+let db:Awaited<ReturnType<typeof testDatabase>>,identity:PgIdentityStore,app:ReturnType<typeof createApp>;
+const context={serviceId:ids.service,contractProfileId:ids.contract};
+const cookie=(token:string)=>'factact_session='+token;
+const get=(path:string,token='provider')=>request(app).get(path).set('Cookie',cookie(token));
+const post=(path:string,token='provider')=>request(app).post(path).set('Cookie',cookie(token)).set('Origin',config.origin).set('x-csrf-token','csrf-'+token);
+async function session(actor:string,token:string){
+ await db.admin.query("insert into factact_private.operator_identities(issuer,subject,tenant_id,operator_id,is_login_default,status) values($1,$2,$3,$4,true,'ACTIVE')",[issuer,token,ids.tenant,actor]);
+ await identity.createVerifiedSession(tokenHash(token),{tenantId:ids.tenant,operatorId:actor},'csrf-'+token,{issuer,subject:token});
+}
+beforeAll(async()=>{
+ db=await testDatabase();identity=new PgIdentityStore(db.runtime,db.oidc);
+ app=createApp(config,identity,{authorizationUrl:()=>'',verifyCallback:async()=>({issuer,subject:'unused'})},pino({level:'silent'}),
+ undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,new PgServiceRequestStore(db.runtime));
+},120_000);
+beforeEach(async()=>{
+ await db.reset();const partner=randomUUID(),org=randomUUID();
+ await db.admin.query("insert into factact.organizations(id,tenant_id,name,status) values($1,$2,'Synthetic partner','ACTIVE')",[org,ids.tenant]);
+ await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'partner@example.invalid','Partner','ACTIVE')",[partner,ids.tenant]);
+ await db.admin.query("insert into factact.service_request_channels(tenant_id,service_id,contract_profile_id,provider_party_id,partner_party_id,enabled) values($1,$2,$3,$4,$5,true)",[ids.tenant,ids.service,ids.contract,ids.organization,org]);
+ await db.admin.query("insert into factact.service_request_participants(tenant_id,service_id,contract_profile_id,actor_operator_id,party_role,can_create,can_read,can_respond,enabled) values($1,$2,$3,$4,'PROVIDER',true,true,true,true),($1,$2,$3,$5,'PARTNER',true,true,true,true)",[ids.tenant,ids.service,ids.contract,ids.operator,partner]);
+ await session(ids.operator,'provider');await session(partner,'partner');
+},60_000);
+afterAll(async()=>{await db?.close();},60_000);
+describe('service request HTTP boundary',()=>{
+ it('requires session and CSRF; rejects forged actor/direction; supports bidirectional detail and response',async()=>{
+  const body={...context,id:randomUUID(),type:'ONSITE_REQUEST',content:'現地対応'};
+  await request(app).get('/api/request-contexts').expect(401);
+  await post('/api/requests').set('x-csrf-token','wrong').send(body).expect(403);
+  await post('/api/requests').send({...body,direction:'PARTNER_TO_PROVIDER'}).expect(400);
+  await post('/api/requests').send({...body,actorId:ids.operator}).expect(400);
+  await post('/api/requests','partner').send(body).expect(400);
+  await post('/api/requests').send(body).expect(201);
+  const d=(await get('/api/requests/'+body.id,'partner').expect(200)).body.data;
+  expect(d).toMatchObject({side:'RECEIVED',canRespond:true,status:'PENDING'});
+  expect(d).not.toHaveProperty('parentWorkId');
+  expect(d).not.toHaveProperty('tenantId');
+  const response={commandId:randomUUID(),expectedRevision:0,status:'COMPLETED',comment:'対応完了'};
+  await post('/api/requests/'+body.id+'/responses').send(response).expect(404);
+  await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(200);
+  expect((await get('/api/requests/'+body.id).expect(200)).body.data).toMatchObject({status:'COMPLETED',revision:1});
+  expect((await get('/api/requests').query({...context,side:'SENT'}).expect(200)).body.data.items).toHaveLength(1);
+  await db.admin.query("update factact.service_request_participants set enabled=false where party_role='PARTNER'");
+  await get('/api/requests/'+body.id,'partner').expect(404);
+  await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(404);
+ });
+});

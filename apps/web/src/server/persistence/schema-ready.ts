@@ -7,11 +7,12 @@ export async function assertSchemaReady(pool: Pool): Promise<void> {
     'factact.device_work_field_observations',
     'factact.support_decisions', 'factact.knowledge_candidates', 'factact.support_work_records',
     'factact.scoped_actor_grants','factact_private.scoped_grant_approvers',
-    'factact_private.scoped_grant_management_requests'];
+    'factact_private.scoped_grant_management_requests', 'factact.service_request_channels', 'factact.service_request_participants', 'factact.service_requests', 'factact.service_request_updates'];
   const { rows } = await pool.query<{ name: string }>(
     'select name from unnest($1::text[]) as name where to_regclass(name) is null', [required]);
   if (rows.length) throw new Error('Database migrations are incomplete. Run npm run db:migrate for the local database before starting FACTACT.');
   const functions=[
+    'factact.lock_service_request_context(uuid,uuid,uuid)',
     'factact_private.issue_scoped_actor_grant(text,uuid,uuid,uuid,uuid,text,uuid,uuid,text,text[],timestamp with time zone,timestamp with time zone,text)',
     'factact_private.revoke_scoped_actor_grant(text,uuid,uuid,text)',
   ];

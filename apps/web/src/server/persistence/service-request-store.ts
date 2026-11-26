@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
 import {DomainError} from '../../../../../packages/domain/src/join.js';
-import {createRequest,appendRequestUpdate,projectRequest,type RequestEntry,type RequestUpdate,type RequestType,type RequestDirection,type RequestStatus} from '../../../../../packages/domain/src/service-request.js';
+import {createRequest,appendRequestUpdate,projectRequest,requestTypes,type RequestEntry,type RequestUpdate,type RequestType,type RequestDirection,type RequestStatus} from '../../../../../packages/domain/src/service-request.js';
 import {withTenant} from './database.js';
 
 export interface RequestActor {tenantId:string;actorId:string}
@@ -56,6 +56,53 @@ export class PgServiceRequestStore {
  }
  private async history(db:PoolClient,id:string){
   return (await db.query<UpdateRow>('select * from factact.service_request_updates where request_id=$1 order by revision',[id])).rows.map(update);
+ }
+ async contexts(a:RequestActor){
+  if(![a.tenantId,a.actorId].every(uuid))throw bad();
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const rows=await db.query<{service_id:string;contract_profile_id:string;name:string}>(`select ch.service_id,ch.contract_profile_id,sv.name
+     from factact.service_request_channels ch join factact.service_request_participants p using(tenant_id,service_id,contract_profile_id)
+     join factact.services sv on sv.tenant_id=ch.tenant_id and sv.id=ch.service_id
+     where p.actor_operator_id=$1 and p.enabled and p.can_read and ch.enabled order by sv.name,ch.service_id,ch.contract_profile_id`,[a.actorId]);
+   const items=[];
+   for(const row of rows.rows){
+    const s={serviceId:row.service_id,contractProfileId:row.contract_profile_id};
+    try{
+     const c=await this.access(db,a,s);if(!c.can_read)continue;
+     items.push({...s,name:row.name,canCreate:c.can_create,types:requestTypes(c.party_role==='PROVIDER'?'PROVIDER_TO_PARTNER':'PARTNER_TO_PROVIDER')});
+    }catch(e){if(!(e instanceof DomainError&&e.code==='REQUEST_NOT_AVAILABLE'))throw e;}
+   }
+   return items;
+  },true);
+ }
+ async list(a:RequestActor,s:RequestService,q:{side:'SENT'|'RECEIVED';limit:number;beforeId?:string}){
+  this.validate(a,s);
+  if(!['SENT','RECEIVED'].includes(q.side)||!Number.isInteger(q.limit)||q.limit<1||q.limit>50||(q.beforeId&&!uuid(q.beforeId)))throw bad();
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const c=await this.access(db,a,s);if(!c.can_read)throw denied();
+   const direction:RequestDirection=((c.party_role==='PROVIDER')===(q.side==='SENT'))?'PROVIDER_TO_PARTNER':'PARTNER_TO_PROVIDER';
+   const params=[s.serviceId,s.contractProfileId,c.provider_party_id,c.partner_party_id,direction,q.beforeId??null,q.limit+1];
+   const result=await db.query<Row&{status:RequestStatus;revision:number}>(`select r.*,coalesce(u.status,'PENDING') as status,coalesce(u.revision,0) as revision
+    from factact.service_requests r left join lateral(
+      select status,revision from factact.service_request_updates where request_id=r.id order by revision desc limit 1
+    ) u on true
+    where r.service_id=$1 and r.contract_profile_id=$2 and r.provider_party_id=$3 and r.partner_party_id=$4 and r.direction=$5
+     and ($6::uuid is null or (r.created_at,r.id)<(select b.created_at,b.id from factact.service_requests b
+       where b.id=$6 and b.service_id=$1 and b.contract_profile_id=$2 and b.provider_party_id=$3 and b.partner_party_id=$4 and b.direction=$5))
+    order by r.created_at desc,r.id desc limit $7`,params);
+   const selected=result.rows.slice(0,q.limit);
+   return {items:selected.map(r=>({id:r.id,type:r.request_type,customerName:r.customer_name,content:r.content,createdAt:r.created_at.toISOString(),status:r.status,revision:r.revision})),
+    nextCursor:result.rows.length>q.limit?selected.at(-1)?.id??null:null};
+  },true);
+ }
+ async resolveContext(a:RequestActor,id:string):Promise<RequestService>{
+  if(![a.tenantId,a.actorId,id].every(uuid))throw bad();
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const r=(await db.query<Row>('select * from factact.service_requests where id=$1',[id])).rows[0];
+   if(!r)throw denied();
+   const s={serviceId:r.service_id,contractProfileId:r.contract_profile_id},c=await this.access(db,a,s);
+   if(!c.can_read||!matches(c,r))throw denied();return s;
+  },true);
  }
  async create(a:RequestActor,s:RequestService,input:RequestCreate){
   this.validate(a,s);if(!uuid(input.id))throw bad();
