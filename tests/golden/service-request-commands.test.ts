@@ -1,0 +1,44 @@
+import {randomUUID} from 'node:crypto';
+import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
+import {ids,testDatabase} from '../fixtures/database.js';
+import {PgServiceRequestStore} from '../../apps/web/src/server/persistence/service-request-store.js';
+let db:Awaited<ReturnType<typeof testDatabase>>,store:PgServiceRequestStore,partner:string;
+const a={tenantId:ids.tenant,actorId:ids.operator},s={serviceId:ids.service,contractProfileId:ids.contract};
+beforeAll(async()=>{db=await testDatabase();store=new PgServiceRequestStore(db.runtime);},120_000);
+beforeEach(async()=>{
+ await db.reset();partner=randomUUID();const org=randomUUID();
+ await db.admin.query("insert into factact.organizations(id,tenant_id,name,status) values($1,$2,'Synthetic partner','ACTIVE')",[org,ids.tenant]);
+ await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'synthetic-partner@example.invalid','Partner','ACTIVE')",[partner,ids.tenant]);
+ await db.admin.query("insert into factact.service_request_channels(tenant_id,service_id,contract_profile_id,provider_party_id,partner_party_id,enabled) values($1,$2,$3,$4,$5,true)",[ids.tenant,ids.service,ids.contract,ids.organization,org]);
+ await db.admin.query("insert into factact.service_request_participants(tenant_id,service_id,contract_profile_id,actor_operator_id,party_role,can_create,can_read,can_respond,enabled) values($1,$2,$3,$4,'PROVIDER',true,true,true,true),($1,$2,$3,$5,'PARTNER',true,true,true,true)",[ids.tenant,ids.service,ids.contract,ids.operator,partner]);
+},60_000);
+afterAll(async()=>{await db?.close();},60_000);
+describe('service request command adapter',()=>{
+ it('registers, replays and responds in both directions with no Work mutation',async()=>{
+  const b={tenantId:ids.tenant,actorId:partner};
+  const input={id:randomUUID(),type:'ONSITE_REQUEST' as const,content:'現地確認'};
+  expect(await store.create(a,s,input)).toEqual({id:input.id});
+  expect(await store.create(a,s,input)).toEqual({id:input.id});
+  expect(await store.detail(a,s,input.id)).toMatchObject({side:'SENT',canRespond:false,status:'PENDING'});
+  expect(await store.detail(b,s,input.id)).toMatchObject({side:'RECEIVED',canRespond:true});
+  const reply={commandId:randomUUID(),expectedRevision:0,status:'COMPLETED' as const,comment:'完了'};
+  await expect(store.respond(a,s,input.id,reply)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+  expect(await store.respond(b,s,input.id,reply)).toMatchObject({revision:1,status:'COMPLETED'});
+  expect(await store.respond(b,s,input.id,reply)).toMatchObject({revision:1});
+  expect(await store.detail(a,s,input.id)).toMatchObject({status:'COMPLETED',revision:1});
+  await expect(store.create(b,s,{...input,id:randomUUID()})).rejects.toMatchObject({code:'INVALID_REQUEST_TYPE'});
+  const reverse={id:randomUUID(),type:'CALL_REQUEST' as const,content:'発信'};
+  await store.create(b,s,reverse);
+  expect(await store.detail(a,s,reverse.id)).toMatchObject({side:'RECEIVED',canRespond:true});
+ });
+ it('denies unregistered actor, foreign tenant and revoked participant including retry',async()=>{
+  const b={tenantId:ids.tenant,actorId:partner},input={id:randomUUID(),type:'INQUIRY' as const,content:'確認'};
+  await store.create(a,s,input);
+  await expect(store.detail({...a,actorId:randomUUID()},s,input.id)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+  await expect(store.detail({...a,tenantId:randomUUID()},s,input.id)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+  await db.admin.query('update factact.service_request_participants set enabled=false where actor_operator_id=$1',[partner]);
+  await expect(store.detail(b,s,input.id)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+  await db.admin.query('update factact.service_request_participants set enabled=false where actor_operator_id=$1',[ids.operator]);
+  await expect(store.create(a,s,input)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+ });
+});
