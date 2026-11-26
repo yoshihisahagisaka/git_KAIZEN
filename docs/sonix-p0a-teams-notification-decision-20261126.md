@@ -35,3 +35,6 @@ This section supersedes conflicting initial scope above; retain earlier text as 
 - Reuse the same request/response/status semantics in both directions, with explicit sender, recipient, service and authority. Existing inquiry intake remains distinct; receiving a request must not implicitly authorize or complete a Work.
 - Portal navigation: 対応依頼を登録 / 依頼一覧（送信・受信）. Keep the form minimal and avoid separate SONIX-only schemas or a workflow engine. Exact fields and existing asset fit remain implementation checks.
 - This clarification supersedes references above to an outbound-call-only form or navigation. No production action.
+
+## Request type selection — user-confirmed 2026-11-26
+Both directions use the same required selection, with no preselected type: CALL_REQUEST（発信依頼）, SUPPORT_REQUEST（対応依頼）, INVESTIGATION_REQUEST（調査依頼）, INQUIRY（問合せ）, OTHER（その他）. Stable codes are implementation labels; preserve the five Japanese display labels exactly. Free-text request content supplements the category. Category does not imply escalation, priority, permission, owner transfer, or automatic completion. No category-specific workflow or SONIX-only schema. This supersedes earlier illustrative category lists. Implementation and acceptance remain pending.
