@@ -31,6 +31,21 @@ describe('service request command adapter',()=>{
   await store.create(b,s,reverse);
   expect(await store.detail(a,s,reverse.id)).toMatchObject({side:'RECEIVED',canRespond:true});
  });
+ it('lists only the selected direction and authorized context before pagination',async()=>{
+  const b={tenantId:ids.tenant,actorId:partner};
+  const first={id:randomUUID(),type:'INQUIRY' as const,content:'one'};
+  const second={id:randomUUID(),type:'SUPPORT_REQUEST' as const,content:'two'};
+  await store.create(a,s,first);await store.create(a,s,second);
+  await store.create(b,s,{id:randomUUID(),type:'CALL_REQUEST',content:'reverse'});
+  expect(await store.contexts(a)).toEqual([expect.objectContaining({...s,canCreate:true,types:expect.arrayContaining(['ONSITE_REQUEST'])})]);
+  const page=await store.list(a,s,{side:'SENT',limit:1});
+  expect(page.items).toHaveLength(1);expect(page.nextCursor).not.toBeNull();
+  const next=await store.list(a,s,{side:'SENT',limit:1,beforeId:page.nextCursor!});
+  expect(next.items).toHaveLength(1);expect(next.items[0]!.id).not.toBe(page.items[0]!.id);
+  expect((await store.list(b,s,{side:'RECEIVED',limit:50})).items).toHaveLength(2);
+  expect(await store.resolveContext(b,first.id)).toEqual(s);
+  await expect(store.resolveContext({...a,actorId:randomUUID()},first.id)).rejects.toMatchObject({code:'REQUEST_NOT_AVAILABLE'});
+ });
  it('denies unregistered actor, foreign tenant and revoked participant including retry',async()=>{
   const b={tenantId:ids.tenant,actorId:partner},input={id:randomUUID(),type:'INQUIRY' as const,content:'確認'};
   await store.create(a,s,input);

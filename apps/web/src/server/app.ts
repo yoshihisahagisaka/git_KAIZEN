@@ -1,4 +1,6 @@
 import { supportRoutes, type SupportServices } from './support-routes.js';
+import {serviceRequestRoutes} from './service-request-routes.js';
+import type {PgServiceRequestStore} from './persistence/service-request-store.js';
 import {procedurePageRoutes} from './procedure-page-routes.js';
 import type {PgProcedurePageStore} from './persistence/procedure-page-store.js';
 import express, { type ErrorRequestHandler } from 'express';
@@ -27,7 +29,7 @@ import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
 import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 import {deviceWorkObservationRoutes,type AuthenticatedDeviceWorkObservationStore} from './device-work-observation-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore, serviceRequestStore?: PgServiceRequestStore) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -51,10 +53,12 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (registryReview && registryEditCommands) app.use('/api',registryReviewRoutes(registryReview,registryEditCommands));
   if (operatorPolicyAdmin) app.use('/api',operatorPolicyAdminRoutes(operatorPolicyAdmin));
   if (deviceWorkObservationStore) app.use('/api',deviceWorkObservationRoutes(deviceWorkObservationStore));
+  if (serviceRequestStore) app.use('/api',serviceRequestRoutes(serviceRequestStore));
   if (procedurePageStore) app.use('/api',procedurePageRoutes(procedurePageStore));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
   app.use(express.static(resolve('dist/client')));
+  app.get('/requests/:id', (_req,res) => res.sendFile(resolve('dist/client/index.html')));
   app.get('/', (_req, res) => res.sendFile(resolve('dist/client/index.html')));
   const errors: ErrorRequestHandler = (error: unknown, req, res, _next) => {
     if (error instanceof DomainError) { res.status(error.status).json({ok:false,error:{code:error.code,message:error.message},correlationId:req.id}); return; }
