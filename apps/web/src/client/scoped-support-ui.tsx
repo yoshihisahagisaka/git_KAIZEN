@@ -13,7 +13,7 @@ const statusLabels:Record<ScopedSupportWorkSummary['status'],string>={
   OPEN:'受付済み',IN_PROGRESS:'対応中',COMPLETED:'完了',
 };
 const eventLabels:Record<string,string>={
-  OWNER_TRANSFERRED:'担当者を引継ぎ',RESPONSE:'対応を記録',RESPONSE_CORRECTION:'対応内容を訂正',
+  ESCALATION_REQUESTED:'専門対応の依頼',ESCALATION_RESULT_RECORDED:'依頼への回答を記録',OWNER_TRANSFERRED:'担当者を引継ぎ',RESPONSE:'対応を記録',RESPONSE_CORRECTION:'対応内容を訂正',
   CONTINUATION_RECORDED:'継続対応を記録',WAITING_SET:'回答・対応待ち',
   RESUMED:'対応を再開',NEXT_ACTION_CLEARED:'次の対応を確認',REOPENED:'対応中に戻す',
 };
@@ -206,7 +206,27 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
   const [writeBusy,setWriteBusy]=useState(false);
   const [writeError,setWriteError]=useState('');
   const [writeNotice,setWriteNotice]=useState('');
-  const [lifecycleMode,setLifecycleMode]=useState<'CLOSE'|'REOPEN'|'TRANSFER'|null>(null);
+  const [lifecycleMode,setLifecycleMode]=useState<'CLOSE'|'REOPEN'|'TRANSFER'|'ESCALATION'|null>(null);
+  const [escalationTarget,setEscalationTarget]=useState('');
+  const [escalationRequest,setEscalationRequest]=useState('');
+  const [escalationResultId,setEscalationResultId]=useState('');
+  async function submitEscalation(event:React.FormEvent<HTMLFormElement>){
+   event.preventDefault();
+   if(!detail?.canUpdate||!selectedId||writeInFlight.current||!lifecycleReason.trim())return;
+   if(!escalationResultId&&(!escalationTarget.trim()||!escalationRequest.trim()))return;
+   const payload={expectedLifecycleRevision:detail.lifecycleRevision,reason:lifecycleReason.trim(),
+    ...(escalationResultId?{kind:'RESULT',escalationEventId:escalationResultId}:{kind:'REQUEST',target:escalationTarget.trim(),requested:escalationRequest.trim()})};
+   const key=JSON.stringify(payload);
+   if(lifecycleRetry.current?.key!==key)lifecycleRetry.current={key,id:crypto.randomUUID()};
+   const workId=selectedId;writeInFlight.current=true;setWriteBusy(true);setWriteError('');setWriteNotice('');
+   try{
+    await api('/api/scoped/support-work/'+workId+'/escalations',csrf,{...payload,requestId:lifecycleRetry.current.id});
+    if(selectedRequestId.current!==workId)return;
+    setLifecycleMode(null);setLifecycleReason('');lifecycleRetry.current=null;
+    setWriteNotice('依頼・回答の記録を保存しました。');refreshWork();
+   }catch{if(selectedRequestId.current===workId)setWriteError('記録できませんでした。権限と更新状況を確認してください。');}
+   finally{writeInFlight.current=false;if(selectedRequestId.current===workId)setWriteBusy(false);}
+  }
   const [owners,setOwners]=useState<ScopedOwnerCandidates|null>(null);
   const [newOwner,setNewOwner]=useState('');
   const [ownerLoading,setOwnerLoading]=useState(false);
@@ -454,6 +474,27 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
                     </div>
                     <button type="submit" disabled={writeBusy||detailBusy||!responseText.trim()||!followUpLocal}>対応を記録</button>
                   </form>
+                </section>}
+                {detail.canUpdate&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
+                 onClick={()=>{setLifecycleMode('ESCALATION');setEscalationTarget('');setEscalationRequest('');setEscalationResultId('');setLifecycleReason('');}}>専門対応の依頼を記録</button>}
+                {detail.canUpdate&&lifecycleMode==='ESCALATION'&&<section aria-label="専門対応の依頼・回答" className="scoped-action">
+                 <h3>専門対応の依頼・回答</h3>
+                 <p>依頼・回答の事実を記録します。相手への自動送信、担当者変更、対応完了は行いません。</p>
+                 <form onSubmit={e=>void submitEscalation(e)}>
+                  <label htmlFor="scoped-escalation-source">記録の種類</label>
+                  <select id="scoped-escalation-source" value={escalationResultId} disabled={writeBusy} onChange={e=>{setEscalationResultId(e.target.value);setLifecycleReason('');}}>
+                   <option value="">新しい依頼</option>
+                   {history.entries.filter(e=>e.kind==='ESCALATION_REQUESTED').map(e=><option key={e.id} value={e.id}>{date(e.occurredAt)} {e.responseText}</option>)}
+                  </select>
+                  {!escalationResultId&&<>
+                   <label htmlFor="scoped-escalation-target">依頼先</label><input id="scoped-escalation-target" required maxLength={200} value={escalationTarget} disabled={writeBusy} onChange={e=>setEscalationTarget(e.target.value)}/>
+                   <label htmlFor="scoped-escalation-request">求める判断・専門対応</label><textarea id="scoped-escalation-request" required maxLength={1000} value={escalationRequest} disabled={writeBusy} onChange={e=>setEscalationRequest(e.target.value)}/>
+                  </>}
+                  <label htmlFor="scoped-escalation-reason">{escalationResultId?'回答内容':'依頼理由・確認した状況'}</label>
+                  <textarea id="scoped-escalation-reason" required maxLength={4000} value={lifecycleReason} disabled={writeBusy} onChange={e=>setLifecycleReason(e.target.value)}/>
+                  <button type="submit" disabled={writeBusy||detailBusy||!lifecycleReason.trim()||(!escalationResultId&&(!escalationTarget.trim()||!escalationRequest.trim()))}>依頼・回答を記録</button>
+                  <button type="button" className="secondary" disabled={writeBusy} onClick={()=>{setLifecycleMode(null);lifecycleRetry.current=null;}}>キャンセル</button>
+                 </form>
                 </section>}
                 {detail.canClose&&!lifecycleMode&&<button type="button" className="secondary" disabled={writeBusy||detailBusy}
                  onClick={()=>{setLifecycleMode('TRANSFER');setOwners(null);setNewOwner('');setLifecycleReason('');void loadOwners(detail.workId);}}>担当者を引き継ぐ</button>}

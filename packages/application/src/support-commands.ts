@@ -92,6 +92,33 @@ export class SupportCommands {
   });
   return found(result);
  }
+ /** Explicit specialist request or linked answer, not delivery, transfer or Close. */
+ async recordScopedEscalation(actor:Operator,workId:string,input:{
+  requestId:string;expectedLifecycleRevision:number;kind:'REQUEST'|'RESULT';
+  target?:string|undefined;requested?:string|undefined;reason:string;escalationEventId?:string|undefined;
+ }){
+  if(!this.scopedUpdate)throw new DomainError('SCOPED_UPDATE_UNAVAILABLE','この操作は利用できません。',503);
+  const result=await this.scopedUpdate.runSupportWorkUpdate(actor.tenantId,actor.id,workId,async({response:r})=>{
+   const w=found(await r.work(workId,true));await this.context(r,actor,found(await r.event(w.supportEventId)),'SCOPED');
+   const events=await r.lifecycleEvents(workId),kind=input.kind==='REQUEST'?'ESCALATION_REQUESTED':'ESCALATION_RESULT_RECORDED';
+   const payload={expectedLifecycleRevision:input.expectedLifecycleRevision,target:input.target?.trim()??'',
+    requested:input.requested?.trim()??'',reason:input.reason.trim(),escalationEventId:input.escalationEventId??null};
+   const old=events.find(x=>x.requestId===input.requestId);
+   if(old){this.retry(old.kind===kind&&old.recordedByOperatorId===actor.id,old.commandPayload.input as Record<string,unknown>,payload);return old;}
+   requireCondition(w.lifecycleVersion===2&&w.status!=='COMPLETED','WORK_STATE_CONFLICT','完了した対応には依頼を追加できません。');
+   requireCondition(w.lifecycleRevision===input.expectedLifecycleRevision,'STALE_REVISION','対応状態が更新されています。');
+   requireCondition(payload.reason.length>=1&&payload.reason.length<=4000,'INVALID_INPUT','依頼理由または回答内容を入力してください。',400);
+   if(input.kind==='REQUEST')requireCondition(payload.target.length>=1&&payload.target.length<=200&&payload.requested.length>=1&&payload.requested.length<=1000&&!payload.escalationEventId,'INVALID_INPUT','依頼先と求める専門対応を指定してください。',400);
+   else requireCondition(!payload.target&&!payload.requested&&events.some(e=>e.id===payload.escalationEventId&&e.kind==='ESCALATION_REQUESTED'),'INVALID_INPUT','同じ対応の依頼記録を指定してください。',400);
+   const at=this.runtime.now(),event:SupportLifecycleEvent={id:this.runtime.id(),tenantId:actor.tenantId,workId,requestId:input.requestId,
+    revision:w.lifecycleRevision+1,kind,nextAction:w.nextAction,waitingParty:'',waitingReason:'',
+    commandPayload:{input:payload,currentOwnerId:w.workOwnerOperatorId},recordedByOperatorId:actor.id,recordedAt:at};
+   await r.insertLifecycleEvent(event);w.lifecycleRevision=event.revision;w.updatedAt=at;await r.progress(w);
+   await this.audit(r,actor,w.supportEventId,'SUPPORT_'+kind,{workId,eventId:event.id,escalationEventId:payload.escalationEventId});
+   return event;
+  },'ESCALATION');
+  return found(result);
+ }
  /** A correction is an append-only attestation, never a second response Action,
   * Follow-up change, disposition change, Work transition or Close command. */
  async correctScopedSupportResponse(actor:Operator,workId:string,

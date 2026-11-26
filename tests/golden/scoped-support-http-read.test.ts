@@ -1169,3 +1169,25 @@ describe('work-local owner candidates',()=>{
   await list(workB).expect(404);
  });
 });
+
+
+describe('scoped explicit escalation record',()=>{
+ it('records requested expertise and linked result without changing owner, status, follow-up or granting access',async()=>{
+  const send=(id:string,body:object)=>request(app).post('/api/scoped/support-work/'+id+'/escalations')
+   .set('Cookie',sessionCookie).set('Origin',config.origin).set('x-csrf-token','csrf').send(body);
+  const input={requestId:randomUUID(),expectedLifecycleRevision:0,kind:'REQUEST',target:'専門技術担当',requested:'複合機設定の調査',reason:'通常手順では解決せず'};
+  await send(workA,input).expect(404);
+  await grant('WORK',recipientA,workA,{operations:['READ','UPDATE']});
+  await send(workB,input).expect(404);
+  const first=(await send(workA,input).expect(200)).body.data;
+  expect((await send(workA,input).expect(200)).body.data).toEqual(first);
+  const response={requestId:randomUUID(),expectedLifecycleRevision:1,kind:'RESULT',escalationEventId:first.id,reason:'設定確認結果を受領'};
+  await send(workA,{...response,escalationEventId:randomUUID()}).expect(400);
+  await send(workA,response).expect(200);
+  const history=(await getHistory(workA).expect(200)).body.data.entries;
+  expect(history).toEqual(expect.arrayContaining([expect.objectContaining({kind:'ESCALATION_REQUESTED'}),expect.objectContaining({kind:'ESCALATION_RESULT_RECORDED',responseText:response.reason})]));
+  expect((await db.admin.query('select work_owner_operator_id,status,follow_up_at,lifecycle_revision from factact.work where id=$1',[workA])).rows)
+   .toEqual([{work_owner_operator_id:ids.operator,status:'OPEN',follow_up_at:null,lifecycle_revision:2}]);
+  expect((await db.admin.query('select count(*)::int n from factact.support_work_close_decisions where work_id=$1',[workA])).rows).toEqual([{n:0}]);
+ });
+});
