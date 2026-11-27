@@ -1,3 +1,5 @@
+import {WebReceiptList} from './web-receipt-list.js';
+import type {PublicReceiptView} from '../server/persistence/scoped-access-reader.js';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {api} from './api.js';
 import {ScopedBeneficiaryConfirmation} from './scoped-beneficiary-confirmation.js';
@@ -167,6 +169,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
  const [open,setOpen]=useState(false);
  const [initial,setInitial]=useState<{organization?:{id:string;name:string};company?:string}|null>(null);
  const [formVersion,setFormVersion]=useState(0);
+ const [webReceipt,setWebReceipt]=useState<PublicReceiptView|null>(null);
  const [loading,setLoading]=useState(true),[error,setError]=useState('');
  const [moreBusy,setMoreBusy]=useState(false);
  const [refresh,setRefresh]=useState(0);
@@ -182,7 +185,7 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
  const single=!cursor&&services.length===1;
  const serviceId=single?services[0]!.id:chosen;
  const service=services.find(item=>item.id===serviceId);
- useEffect(()=>{onServiceChange(serviceId);},[serviceId,onServiceChange]);
+ useEffect(()=>{onServiceChange(serviceId);setWebReceipt(null);},[serviceId,onServiceChange]);
  async function more(){
   if(!cursor||moreBusy||open)return;
   setMoreBusy(true);setError('');
@@ -213,7 +216,9 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
    {contextLocked&&!single&&<p>サービスを切り替えるには現在の対応を保存して閉じてください。</p>}
   </section>
   {service&&!service.canReceive&&<p>このサービスでは対応の閲覧が可能ですが、新規受付権限はありません。</p>}
-  {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
+  {service?.canReceive&&!open&&!activeWork&&<WebReceiptList key={service.id} serviceId={service.id} disabled={contextLocked} onSelect={setWebReceipt}/>}
+  {webReceipt&&!activeWork&&!open&&<section className="card" aria-label="選択したWeb受付"><h3>選択したWeb受付</h3><p>{webReceipt.company} / {webReceipt.department} / {webReceipt.name}</p><p>{webReceipt.email} / {webReceipt.phone}</p><p>{webReceipt.description}</p><p>受付ID：{webReceipt.id}</p><button type="button" className="secondary" onClick={()=>setWebReceipt(null)}>Web受付の選択を解除</button></section>}
+  {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id+':'+(webReceipt?.id??'manual')} {...(webReceipt?{initialQuery:{company:webReceipt.company,phone:webReceipt.phone}}:{})} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
   {service?.canReceive&&<ScopedSupportIntake key={service.id+':'+formVersion} csrf={csrf} serviceId={service.id}
    open={open} onOpenChange={value=>{setOpen(value);if(!value){setInitial(null);setFormVersion(n=>n+1);}}}
    {...(initial?.organization?{initialOrganization:initial.organization}:{})} {...(initial?.company!==undefined?{initialCompany:initial.company}:{})}
