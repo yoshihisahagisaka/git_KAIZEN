@@ -1,3 +1,4 @@
+import {RelatedInquiries} from './related-inquiries.js';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ProcedurePageReference} from './procedure-page-reference.js';
 import {ScopedReceptionWorkspace} from './scoped-support-intake.js';
@@ -456,6 +457,8 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
               {detailBusy&&!detail?<p role="status">詳細を確認しています…</p>:null}
               {detail&&history&&<>
                 <h3>{detail.title}</h3><WorkSummary work={detail}/>
+                <RelatedInquiries key={detail.workId} csrf={csrf} workId={detail.workId} disabled={writeBusy||detailBusy}
+                 onOpen={id=>{if(writeInFlight.current)return;if((responseText.trim()||followUpLocal||correctionTarget||lifecycleMode)&&!window.confirm('未保存の入力を破棄しますか？'))return;selectWork(id);}}/>
                  <ProcedurePageReference workId={detail.workId}/>
                 {detail.registryOrganizationId&&<ScopedRegistryContext csrf={csrf}
                   key={`${detail.workId}:${detail.registryOrganizationId}`} work={detail}/>}

@@ -270,3 +270,37 @@ describe('own pending receipts',()=>{
   expect((await list().expect(200)).body.data.items).toEqual([]);
  });
 });
+
+describe('related inquiry references',()=>{
+ it('registers symmetrically, unlinks without changing Work, and denies revoked access',async()=>{
+  await grant();await operationGrant('UPDATE');const readGrant=await operationGrant('READ');
+  async function receive(suffix:string){
+   const payload=intake();payload.caller.organizationName+=' '+suffix;payload.caller.displayName+=' '+suffix;
+   const data=(await post(payload).expect(201)).body.data as {eventId:string;workId:string};
+   const own=(await getBeneficiary(data.eventId).expect(200)).body.data;
+   await postBeneficiary(data.eventId,{requestId:randomUUID(),serviceId:ids.service,expectedRevision:0,kind:'CONFIRMED',organizationId:own.callerOrganizationId,humanConfirmed:true,reason:'確認'}).expect(200);
+   return data;
+  }
+  const a=await receive('A'),b=await receive('B');
+  const url=(id:string)=>'/api/scoped/support-work/'+id+'/related-inquiries';
+  const get=(id:string)=>request(app).get(url(id)).set('Cookie',cookie);
+  const change=(id:string,body:object,csrf='csrf')=>request(app).post(url(id)).set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send(body);
+  const snapshot=async()=>(await db.admin.query('select id,status,lifecycle_revision from factact.work where id=any($1::uuid[]) order by id',[[a.workId,b.workId]])).rows;
+  const before=await snapshot();
+  const link={eventId:b.eventId,commandId:randomUUID(),kind:'LINKED'};
+  await change(a.workId,link,'wrong').expect(403);
+  await change(a.workId,{...link,eventId:a.eventId}).expect(404);
+  await change(a.workId,{...link,eventId:randomUUID()}).expect(404);
+  await change(a.workId,link).expect(200);
+  await change(a.workId,link).expect(200);
+  expect((await get(a.workId).expect(200)).body.data.items).toEqual([expect.objectContaining({eventId:b.eventId,workId:b.workId})]);
+  expect((await get(b.workId).expect(200)).body.data.items).toEqual([expect.objectContaining({eventId:a.eventId,workId:a.workId})]);
+  await change(b.workId,{eventId:a.eventId,commandId:randomUUID(),kind:'UNLINKED'}).expect(200);
+  await change(a.workId,link).expect(200);
+  expect((await get(a.workId).expect(200)).body.data.items).toEqual([]);
+  expect(await snapshot()).toEqual(before);
+  expect((await db.admin.query('select kind from factact.support_inquiry_links order by revision')).rows).toEqual([{kind:'LINKED'},{kind:'UNLINKED'}]);
+  await db.admin.query(`update factact.scoped_actor_grants set status='REVOKED',revoked_at=now(),revoked_by_operator_id=$2,revocation_reason='停止' where id=$1`,[readGrant,ids.operator]);
+  await get(a.workId).expect(404);await change(a.workId,link).expect(404);
+ });
+});
