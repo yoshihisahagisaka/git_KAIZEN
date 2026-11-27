@@ -1092,7 +1092,6 @@ export class PgScopedAccessReader {
    }
    const latest=await db.query<{revision:number;kind:string}>('select revision,kind from factact.support_inquiry_links where left_event_id=$1 and right_event_id=$2 order by revision desc limit 1',[left,right]);
    const old=latest.rows[0];
-   if(old?.kind===kind||(!old&&kind==='UNLINKED'))return {revision:old?.revision??0};
    const revision=(old?.revision??0)+1;
    await db.query('insert into factact.support_inquiry_links(id,tenant_id,left_event_id,right_event_id,revision,kind,command_id,actor_operator_id,recorded_at) values($1,$2,$3,$4,$5,$6,$7,$8,now())',[randomUUID(),tenantId,left,right,revision,kind,commandId,actorId]);
    return {revision};
