@@ -14,7 +14,7 @@ interface RegistryPreflightRow {
   executor_function_owner_count:number;executor_member_count:number;
   executor_admin_only:boolean;runtime_executor_member:boolean;
   executor_business_table_owner_count:number;executor_schema_create:boolean;
-  force_rls_count:number;tenant_table_count:number;request_table_count:number;notification_table_count:number;teams_table_count:number;teams_attempt_table_count:number;contact_point_table_count:number;inquiry_link_table_count:number;public_receipt_table_count:number;executor_rls_policy_count:number;
+  force_rls_count:number;tenant_table_count:number;request_table_count:number;notification_table_count:number;teams_table_count:number;teams_attempt_table_count:number;contact_point_table_count:number;inquiry_link_table_count:number;public_receipt_table_count:number;public_receipt_link_table_count:number;executor_rls_policy_count:number;
   executor_name_update:boolean;executor_org_update:boolean;executor_grant_write:boolean;
   runtime_name_update:boolean;runtime_source_insert:boolean;
   runtime_private_helper:boolean;runtime_rpc_count:number;
@@ -100,6 +100,7 @@ select current_database() as database_name,current_user as actor_name,
  (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='factact' and c.relkind='r' and c.relname='contact_points') as contact_point_table_count,
  (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='factact' and c.relkind='r' and c.relname='support_inquiry_links') as inquiry_link_table_count,
  (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='factact' and c.relkind='r' and c.relname='public_support_receipts') as public_receipt_table_count,
+ (select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='factact' and c.relkind='r' and c.relname='public_support_receipt_links') as public_receipt_link_table_count,
  (select count(*)::integer from pg_policies p join target_tables t
   on t.name=p.tablename where p.schemaname='factact'
    and p.policyname='registry_executor_tenant') as executor_rls_policy_count,
@@ -153,7 +154,8 @@ export async function readRegistryPreflight(db:RegistryPreflightQuery):Promise<R
      (r.tenant_table_count===45&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===0)||
      (r.tenant_table_count===46&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===1&&r.inquiry_link_table_count===0)||
      (r.tenant_table_count===47&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===1&&r.inquiry_link_table_count===1&&r.public_receipt_table_count===0)||
-     (r.tenant_table_count===48&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===1&&r.inquiry_link_table_count===1&&r.public_receipt_table_count===1));
+     (r.tenant_table_count===48&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===1&&r.inquiry_link_table_count===1&&r.public_receipt_table_count===1&&r.public_receipt_link_table_count===0)||
+     (r.tenant_table_count===49&&r.request_table_count===4&&r.notification_table_count===1&&r.teams_table_count===2&&r.teams_attempt_table_count===1&&r.contact_point_table_count===1&&r.inquiry_link_table_count===1&&r.public_receipt_table_count===1&&r.public_receipt_link_table_count===1));
   const common=r.server_version>=160000 && forcedTenantRls
     && !r.runtime_name_update && !r.runtime_source_insert
     && !r.runtime_private_helper && r.runtime_rpc_count===expectedRpcCount;

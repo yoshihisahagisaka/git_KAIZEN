@@ -8,6 +8,7 @@ import {DomainError,found} from '../../../../packages/domain/src/join.js';
 import type {ScopedOwnerCandidates,ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ linkPublicReceipt?(tenantId:string,actorId:string,serviceId:string,receiptId:string,workId:string):Promise<{linked:true}>;
  publicReceiptPage?(tenantId:string,actorId:string,serviceId:string,cursor:{receivedAt:string;id:string}|null):Promise<{items:PublicReceiptView[];nextCursor:{receivedAt:string;id:string}|null}>;
  relatedInquiries?(tenantId:string,actorId:string,workId:string):Promise<{eventId:string;items:{eventId:string;workId:string;title:string;status:string}[];canEdit:boolean}|null>;
  changeRelatedInquiry?(tenantId:string,actorId:string,workId:string,targetEventId:string,commandId:string,kind:'LINKED'|'UNLINKED'):Promise<{revision:number}>;
@@ -131,6 +132,13 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const page=await reader.supportWorkPage(actor.tenantId,actor.id,5,null,serviceId,organizationId);
   res.json({ok:true,data:{items:page.items}});
  });
+ if(reader.linkPublicReceipt){
+  router.post('/scoped/support-intake/services/:serviceId/web-receipts/:receiptId/link',async(req,res)=>{
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const q=z.strictObject({workId:z.uuid()}).parse(req.body);
+   res.json({ok:true,data:await reader.linkPublicReceipt!(actor.tenantId,actor.id,z.uuid().parse(req.params.serviceId),z.uuid().parse(req.params.receiptId),q.workId)});
+  });
+ }
  if(reader.publicReceiptPage){
   router.get('/scoped/support-intake/services/:serviceId/web-receipts',async(req,res)=>{
    const serviceId=z.uuid().parse(req.params.serviceId),q=z.strictObject({cursor:z.string().max(400).optional()}).parse(req.query);

@@ -943,6 +943,45 @@ export class PgScopedAccessReader {
   * Service. REGISTERED is not synonymous with membership/verified eligibility.
   * SUPPORT CREATE cannot unlock Registry browsing: REGISTRY READ is independent.
   */
+ async linkPublicReceipt(tenantId:string,actorId:string,serviceId:string,receiptId:string,workId:string){
+  const denied=()=>new DomainError('NOT_FOUND','Web受付を関連登録できません。',404);
+  if(![tenantId,actorId,serviceId,receiptId,workId].every(id=>z.uuid().safeParse(id).success))throw denied();
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))throw denied();
+  return withTenant(this.pool,tenantId,async db=>{
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',[tenantId,actorId]);
+   const context=await db.query<{id:string}>(`
+    select c.id from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$3::timestamptz
+      and (c.effective_to is null or c.effective_to>$3::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
+   if(context.rows.length!==1)throw denied();
+   const contractProfileId=context.rows[0]!.id;
+   for(const [objectKind,operation] of [
+    ['SUPPORT','CREATE'],['SUPPORT','READ'],
+   ] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId,scope:{kind:'SERVICE'},
+      objectKind,operation,
+    },at))throw denied();
+   }
+   const work=await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE',true);
+   if(!work||work.service_id!==serviceId||!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'READ'))throw denied();
+   const receipt=await db.query('select id from factact.public_support_receipts where id=$1 and service_id=$2',[receiptId,serviceId]);
+   if(receipt.rowCount!==1)throw denied();
+   await db.query('insert into factact.public_support_receipt_links(tenant_id,receipt_id,event_id,actor_operator_id,recorded_at) values($1,$2,$3,$4,now()) on conflict(tenant_id,receipt_id) do nothing',[tenantId,receiptId,work.support_event_id,actorId]);
+   const linked=await db.query<{event_id:string}>('select event_id from factact.public_support_receipt_links where receipt_id=$1',[receiptId]);
+   if(linked.rows[0]?.event_id!==work.support_event_id)throw new DomainError('CONFLICT','このWeb受付は既に別の問い合わせに関連登録されています。',409);
+   return {linked:true as const};
+  });
+ }
+
  async publicReceiptPage(tenantId:string,actorId:string,serviceId:string,cursor:{receivedAt:string;id:string}|null):Promise<{items:PublicReceiptView[];nextCursor:{receivedAt:string;id:string}|null}>{
   const empty={items:[],nextCursor:null};
   if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success))return empty;
@@ -972,7 +1011,8 @@ export class PgScopedAccessReader {
    }
    const {rows}=await db.query<{id:string;received_at:Date;company_name:string;department:string;contact_name:string;email:string;phone:string;category:string;description:string}>(`
     select id,received_at,company_name,department,contact_name,email,phone,category,description
-    from factact.public_support_receipts where service_id=$1
+    from factact.public_support_receipts receipt where service_id=$1
+      and not exists(select 1 from factact.public_support_receipt_links l where l.tenant_id=receipt.tenant_id and l.receipt_id=receipt.id)
       and ($2::timestamptz is null or (received_at,id)<($2::timestamptz,$3::uuid))
     order by received_at desc,id desc limit 21`,[serviceId,cursor?.receivedAt??null,cursor?.id??null]);
    const items=rows.slice(0,20).map(x=>({id:x.id,receivedAt:x.received_at.toISOString(),company:x.company_name,department:x.department,name:x.contact_name,email:x.email,phone:x.phone,category:x.category,description:x.description}));
