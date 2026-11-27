@@ -1,3 +1,4 @@
+import {PublicInquiry} from './public-inquiry.js';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Operator } from '../../../../packages/domain/src/operator.js';
@@ -97,5 +98,6 @@ function App() {
     </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href={portalPath||/^\/requests\/[0-9a-f-]{36}$/i.test(window.location.pathname)?"/auth/login?returnTo="+encodeURIComponent(window.location.pathname):"/auth/login"}>Googleでログイン</a></div>}
   </main>;
 }
-if('serviceWorker' in navigator&&window.isSecureContext){void navigator.serviceWorker.register('/request-sw.js').catch(()=>{});}
-createRoot(document.getElementById('root')!).render(<App/>);
+const publicSlug=/^\/inquiry\/([a-z0-9-]{1,48})$/.exec(window.location.pathname)?.[1];
+if(!publicSlug&&'serviceWorker' in navigator&&window.isSecureContext){void navigator.serviceWorker.register('/request-sw.js').catch(()=>{});}
+createRoot(document.getElementById('root')!).render(publicSlug?<PublicInquiry slug={publicSlug}/>:<App/>);
