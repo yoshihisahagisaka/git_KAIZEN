@@ -11,18 +11,18 @@ type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 /** Existing Caller lookup is separate from membership/beneficiary decisions.
  * Only authorized service recipients and Registry-visible Person IDs arrive
  * through the existing scoped endpoints. Server rechecks in same write txn. */
-export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrganization}:{
- csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;initialOrganization?:Org;
+export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrganization,initialContact}:{
+ csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;initialOrganization?:Org;initialContact?:{name:string;email:string;description:string};
 }){
  const [orgQuery,setOrgQuery]=useState(''),[search,setSearch]=useState('');
  const [orgs,setOrgs]=useState<Org[]>([]),[orgCursor,setOrgCursor]=useState<string|null>(null);
  const [orgId,setOrgId]=useState('');
  const [people,setPeople]=useState<Person[]>([]),[peopleCursor,setPeopleCursor]=useState<string|null>(null);
  const [personId,setPersonId]=useState('');
- const [newName,setNewName]=useState(''),[newEmail,setNewEmail]=useState('');
+ const [newName,setNewName]=useState(initialContact?.name??''),[newEmail,setNewEmail]=useState(initialContact?.email??'');
  const [distinct,setDistinct]=useState(false);
  const [peopleLoading,setPeopleLoading]=useState(false),[peopleFailed,setPeopleFailed]=useState(false);
- const [symptom,setSymptom]=useState(''),[reason,setReason]=useState('');
+ const [symptom,setSymptom]=useState(initialContact?.description??''),[reason,setReason]=useState('');
  const [decision,setDecision]=useState<Decision>('REQUIRED');
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const [loading,setLoading]=useState(false);
@@ -41,7 +41,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrgan
   return ()=>{alive=false;};
  },[serviceId,search,initialOrganization]);
  useEffect(()=>{
-  setNewName('');setNewEmail('');setDistinct(false);setPeopleFailed(false);
+  setNewName(initialContact?.name??'');setNewEmail(initialContact?.email??'');setDistinct(false);setPeopleFailed(false);
   if(!orgId){setPeople([]);setPeopleCursor(null);setPersonId('');setPeopleLoading(false);return;}
   let alive=true;setPeopleLoading(true);setPeople([]);setPeopleCursor(null);setPersonId('');setError('');
   api<PeoplePage>(`/api/scoped/registry/organizations/${orgId}/people?${new URLSearchParams({
