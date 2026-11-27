@@ -1,6 +1,7 @@
 import {normalizePhone,rankMemberCandidates,type MemberCandidate} from '../../../../../packages/domain/src/contact-match.js';
 import type {Pool,PoolClient} from 'pg';
 import {z} from 'zod';
+import {DomainError} from '../../../../../packages/domain/src/join.js';
 import {withTenant} from './database.js';
 import {PgSupportRepository} from './support-repository.js';
 import type {SupportWork} from '../../../../../packages/domain/src/support.js';
@@ -1037,6 +1038,65 @@ export class PgScopedAccessReader {
    return {items,nextCursor:rows.length>limit&&last?
     {name:last.name,id:last.id}:null};
   },true);
+ }
+
+ /** Related inquiry references are independent of Work lifecycle. Both sides must
+  * have current READ; mutation additionally requires UPDATE on both sides. */
+ async relatedInquiries(tenantId:string,actorId:string,workId:string){
+  const at=this.clock.now();
+  return withTenant(this.pool,tenantId,async db=>{
+   const source=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   if(!source)return null;
+   const {rows}=await db.query<{event_id:string;work_id:string}>(`
+    select x.event_id,w.id as work_id from (
+     select distinct on (left_event_id,right_event_id) left_event_id,right_event_id,kind
+     from factact.support_inquiry_links where left_event_id=$1 or right_event_id=$1
+     order by left_event_id,right_event_id,revision desc
+    ) l cross join lateral (select case when l.left_event_id=$1 then l.right_event_id else l.left_event_id end as event_id) x
+    join factact.work w on w.support_event_id=x.event_id and w.lane='SUPPORT'
+    where l.kind='LINKED' order by x.event_id`,[source.support_event_id]);
+   const items=[];
+   for(const row of rows){
+    const other=await this.authorizedSupportWork(db,tenantId,actorId,row.work_id,at);
+    if(!other||other.service_id!==source.service_id)continue;
+    items.push({eventId:row.event_id,workId:row.work_id,title:other.title,status:other.status});
+   }
+   const canEdit=!!await this.authorizedSupportWork(db,tenantId,actorId,workId,at,'UPDATE');
+   return {eventId:source.support_event_id,items,canEdit};
+  },true);
+ }
+ async changeRelatedInquiry(tenantId:string,actorId:string,workId:string,targetEventId:string,commandId:string,kind:'LINKED'|'UNLINKED'){
+  const denied=()=>new DomainError('NOT_FOUND','関連問い合わせを操作できません。',404);
+  if(![tenantId,actorId,workId,targetEventId,commandId].every(x=>z.uuid().safeParse(x).success))throw denied();
+  return withTenant(this.pool,tenantId,async db=>{
+   await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',[tenantId,actorId]);
+   const at=this.clock.now();
+   const source=await this.authorizedSupportWork(db,tenantId,actorId,workId,at);
+   if(!source||source.support_event_id===targetEventId)throw denied();
+   const {rows}=await db.query<{id:string}>("select id from factact.work where support_event_id=$1 and lane='SUPPORT'",[targetEventId]);
+   if(rows.length!==1)throw denied();
+   const targetId=rows[0]!.id;
+   const checked=[];
+   for(const id of [workId,targetId].sort()){
+    const w=await this.authorizedSupportWork(db,tenantId,actorId,id,at,'UPDATE',true);
+    if(!w||!await this.authorizedSupportWork(db,tenantId,actorId,id,at,'READ'))throw denied();
+    checked.push(w);
+   }
+   if(checked.some(w=>w.service_id!==source.service_id))throw denied();
+   const [left,right]=[source.support_event_id,targetEventId].sort();
+   const prior=await db.query<{left_event_id:string;right_event_id:string;kind:string;actor_operator_id:string;revision:number}>('select left_event_id,right_event_id,kind,actor_operator_id,revision from factact.support_inquiry_links where command_id=$1',[commandId]);
+   if(prior.rows[0]){
+    const p=prior.rows[0];
+    if(p.left_event_id!==left||p.right_event_id!==right||p.kind!==kind||p.actor_operator_id!==actorId)throw new DomainError('CONFLICT','操作IDが重複しています。',409);
+    return {revision:p.revision};
+   }
+   const latest=await db.query<{revision:number;kind:string}>('select revision,kind from factact.support_inquiry_links where left_event_id=$1 and right_event_id=$2 order by revision desc limit 1',[left,right]);
+   const old=latest.rows[0];
+   if(old?.kind===kind||(!old&&kind==='UNLINKED'))return {revision:old?.revision??0};
+   const revision=(old?.revision??0)+1;
+   await db.query('insert into factact.support_inquiry_links(id,tenant_id,left_event_id,right_event_id,revision,kind,command_id,actor_operator_id,recorded_at) values($1,$2,$3,$4,$5,$6,$7,$8,now())',[randomUUID(),tenantId,left,right,revision,kind,commandId,actorId]);
+   return {revision};
+  });
  }
 
  async supportWorkSummary(tenantId:string,actorId:string,workId:string):Promise<ScopedSupportWorkSummary|null>{

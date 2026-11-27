@@ -7,6 +7,8 @@ import {DomainError,found} from '../../../../packages/domain/src/join.js';
 import type {ScopedOwnerCandidates,ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ relatedInquiries?(tenantId:string,actorId:string,workId:string):Promise<{eventId:string;items:{eventId:string;workId:string;title:string;status:string}[];canEdit:boolean}|null>;
+ changeRelatedInquiry?(tenantId:string,actorId:string,workId:string,targetEventId:string,commandId:string,kind:'LINKED'|'UNLINKED'):Promise<{revision:number}>;
  scopedMemberCandidates?(tenantId:string,actorId:string,serviceId:string,company:string,phone:string):Promise<{items:MemberCandidate[];tooMany:boolean}>;
  scopedIntakeServices?(tenantId:string,actorId:string,limit:number,
   cursor:ScopedIntakeServiceCursor|null):Promise<ScopedIntakeServicePage>;
@@ -174,6 +176,17 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    const workId=z.uuid().parse(req.params.id),q=schema.parse(req.query);
    const actor=(res.locals.session as {operator:Operator}).operator;
    res.json({ok:true,data:found(await reader.scopedOwnerCandidates!(actor.tenantId,actor.id,workId,q.limit,q.cursor??null))});
+  });
+ }
+ if(reader.relatedInquiries&&reader.changeRelatedInquiry){
+  router.get('/scoped/support-work/:id/related-inquiries',async(req,res)=>{
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   res.json({ok:true,data:found(await reader.relatedInquiries!(actor.tenantId,actor.id,z.uuid().parse(req.params.id)))});
+  });
+  router.post('/scoped/support-work/:id/related-inquiries',async(req,res)=>{
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const q=z.strictObject({eventId:z.uuid(),commandId:z.uuid(),kind:z.enum(['LINKED','UNLINKED'])}).parse(req.body);
+   res.json({ok:true,data:await reader.changeRelatedInquiry!(actor.tenantId,actor.id,z.uuid().parse(req.params.id),q.eventId,q.commandId,q.kind)});
   });
  }
  router.get('/scoped/support-work/:id',async(req,res)=>{
