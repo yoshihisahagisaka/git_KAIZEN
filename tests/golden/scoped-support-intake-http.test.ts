@@ -304,3 +304,24 @@ describe('related inquiry references',()=>{
   await get(a.workId).expect(404);await change(a.workId,link).expect(404);
  });
 });
+
+ describe('public receipt link',()=>{
+ it('keeps unmatched original receipt, links only with authority and removes it from pending queue',async()=>{
+  await grant();await operationGrant('UPDATE');await operationGrant('READ');
+  const receiptId=randomUUID();
+  await db.admin.query(`insert into factact.public_support_receipts(id,tenant_id,service_id,submission_id,company_name,department,contact_name,email,phone,category,description,privacy_notice_version) values($1,$2,$3,$4,'未知企業','','申告者','test@example.invalid','0312345678','PC','原文','v1')`,[receiptId,ids.tenant,ids.service,randomUUID()]);
+  const base='/api/scoped/support-intake/services/'+ids.service+'/web-receipts';
+  const list=()=>request(app).get(base).set('Cookie',cookie);
+  const link=(workId:string,csrf='csrf')=>request(app).post(base+'/'+receiptId+'/link').set('Cookie',cookie).set('Origin',config.origin).set('x-csrf-token',csrf).send({workId});
+  expect((await list().expect(200)).body.data.items).toEqual([expect.objectContaining({id:receiptId,description:'原文'})]);
+  const data=(await post(intake()).expect(201)).body.data;
+  await link(data.workId).expect(404);
+  const own=(await getBeneficiary(data.eventId).expect(200)).body.data;
+  await postBeneficiary(data.eventId,{requestId:randomUUID(),serviceId:ids.service,expectedRevision:0,kind:'CONFIRMED',organizationId:own.callerOrganizationId,humanConfirmed:true,reason:'確認'}).expect(200);
+  await link(data.workId,'wrong').expect(403);
+  await link(data.workId).expect(200);await link(data.workId).expect(200);
+  expect((await list().expect(200)).body.data.items).toEqual([]);
+  expect((await db.admin.query('select description from factact.public_support_receipts where id=$1',[receiptId])).rows).toEqual([{description:'原文'}]);
+  expect((await db.admin.query('select event_id from factact.public_support_receipt_links where receipt_id=$1',[receiptId])).rows).toEqual([{event_id:data.eventId}]);
+ });
+});
