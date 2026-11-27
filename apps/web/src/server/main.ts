@@ -1,3 +1,5 @@
+import {loadPublicIntake} from './public-intake-routes.js';
+import {PgPublicSupportReceiptStore} from './persistence/public-support-receipt.js';
 import { PgSupportUnitOfWork } from './persistence/support-repository.js';
 import { SupportCommands } from '../../../../packages/application/src/support-commands.js';
 import { SupportQueries } from '../../../../packages/application/src/support-queries.js';
@@ -43,13 +45,14 @@ async function main() {
     const scopedReader = new PgScopedAccessReader(pool);
     const supportCommands = new SupportCommands(supportUow,
       {id:randomUUID,now:()=>new Date().toISOString()},scopedReader);
+    const publicDeployment=loadPublicIntake(process.env,config.origin);
     const app = createApp(config, new PgIdentityStore(pool, oidcSessionPool), provider, logger,
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
       {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader,
       new RegistryEditCommands(new PgRegistryEditStore(pool)),new PgRegistryReviewReader(pool),
       new PgOperatorPolicyAdmin(pool),new PgDeviceWorkObservationSessionStore(pool),
-      new PgProcedurePageStore(pool),new PgServiceRequestStore(pool),new PgRequestTeamsDispatch(pool,loadTeamsDeployment(process.env,config.origin)));
+      new PgProcedurePageStore(pool),new PgServiceRequestStore(pool),new PgRequestTeamsDispatch(pool,loadTeamsDeployment(process.env,config.origin)),publicDeployment?{store:new PgPublicSupportReceiptStore(pool),deployment:publicDeployment}:undefined);
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });

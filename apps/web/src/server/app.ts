@@ -1,3 +1,5 @@
+import {publicIntakeRoutes,type PublicIntakeDeployment} from './public-intake-routes.js';
+import type {PgPublicSupportReceiptStore} from './persistence/public-support-receipt.js';
 import {requestBrand,requestPwaRoutes} from './request-pwa.js';
 import { supportRoutes, type SupportServices } from './support-routes.js';
 import type {PgRequestTeamsDispatch} from './persistence/request-teams-dispatch.js';
@@ -31,7 +33,7 @@ import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
 import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 import {deviceWorkObservationRoutes,type AuthenticatedDeviceWorkObservationStore} from './device-work-observation-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore, serviceRequestStore?: PgServiceRequestStore, teamsDispatcher?: PgRequestTeamsDispatch) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore, serviceRequestStore?: PgServiceRequestStore, teamsDispatcher?: PgRequestTeamsDispatch, publicIntake?:{store:PgPublicSupportReceiptStore;deployment:PublicIntakeDeployment}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -45,6 +47,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use(express.json({ limit: '16kb' }));
   const brand=requestBrand(process.env);
   app.use(requestPwaRoutes(brand));
+  if(publicIntake)app.use(publicIntakeRoutes(publicIntake.store,publicIntake.deployment));
   app.use(commandBoundary(config, store));
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.use(createAuthRouter(config, store, provider));
