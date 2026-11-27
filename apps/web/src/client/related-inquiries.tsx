@@ -44,6 +44,6 @@ export function RelatedInquiries({csrf,workId,disabled,onOpen}:{csrf:string;work
     <button type="submit" disabled={disabled||busy||!target.trim()||target.trim()===page.eventId}>関連登録</button>
    </form>}
   </>}
-  <button type="button" className="secondary" disabled={disabled||busy} onClick={()=>setVersion(n=>n+1)}>関連一覧を更新</button>
+  <button type="button" className="secondary" disabled={disabled||busy} onClick={()=>setVersion(n=>n+1)}>関連問い合わせを再取得</button>
  </section>;
 }
