@@ -1,3 +1,4 @@
+import type {PublicReceiptView} from './persistence/scoped-access-reader.js';
 import type {MemberCandidate} from '../../../../packages/domain/src/contact-match.js';
 import {Router} from 'express';
 import {z} from 'zod';
@@ -7,6 +8,7 @@ import {DomainError,found} from '../../../../packages/domain/src/join.js';
 import type {ScopedOwnerCandidates,ScopedPendingReceiptPage,ScopedIntakeReceipt,ScopedIntakeOrganizationCursor,ScopedIntakeOrganizationPage,ScopedIntakeServiceCursor,ScopedIntakeServicePage,ScopedSupportServiceContextPage,ScopedSupportHistoryCursor,ScopedSupportWorkHistory,ScopedSupportWorkCursor,ScopedSupportWorkPage,ScopedSupportWorkSummary} from './persistence/scoped-access-reader.js';
 
 export interface ScopedSupportReader {
+ publicReceiptPage?(tenantId:string,actorId:string,serviceId:string,cursor:{receivedAt:string;id:string}|null):Promise<{items:PublicReceiptView[];nextCursor:{receivedAt:string;id:string}|null}>;
  relatedInquiries?(tenantId:string,actorId:string,workId:string):Promise<{eventId:string;items:{eventId:string;workId:string;title:string;status:string}[];canEdit:boolean}|null>;
  changeRelatedInquiry?(tenantId:string,actorId:string,workId:string,targetEventId:string,commandId:string,kind:'LINKED'|'UNLINKED'):Promise<{revision:number}>;
  scopedMemberCandidates?(tenantId:string,actorId:string,serviceId:string,company:string,phone:string):Promise<{items:MemberCandidate[];tooMany:boolean}>;
@@ -129,6 +131,16 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   const page=await reader.supportWorkPage(actor.tenantId,actor.id,5,null,serviceId,organizationId);
   res.json({ok:true,data:{items:page.items}});
  });
+ if(reader.publicReceiptPage){
+  router.get('/scoped/support-intake/services/:serviceId/web-receipts',async(req,res)=>{
+   const serviceId=z.uuid().parse(req.params.serviceId),q=z.strictObject({cursor:z.string().max(400).optional()}).parse(req.query);
+   let cursor:null|{receivedAt:string;id:string}=null;
+   if(q.cursor){try{cursor=z.strictObject({receivedAt:z.string().datetime({offset:true}),id:z.uuid()}).parse(JSON.parse(Buffer.from(q.cursor,'base64url').toString('utf8')));}catch{throw new DomainError('INVALID_INPUT','ページ指定が正しくありません。',400);}}
+   const actor=(res.locals.session as {operator:Operator}).operator;
+   const data=await reader.publicReceiptPage!(actor.tenantId,actor.id,serviceId,cursor);
+   res.json({ok:true,data:{items:data.items,nextCursor:data.nextCursor?Buffer.from(JSON.stringify(data.nextCursor)).toString('base64url'):null}});
+  });
+ }
  // Own newly received Caller context, not an all-Tenant SUPPORT read.
  if(reader.scopedPendingReceipts){
   const schema=z.strictObject({serviceId:z.uuid(),limit:z.coerce.number().int().min(1).max(20).default(20),cursor:z.string().max(400).optional()});

@@ -10,6 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {isExplicitlyAuthorized,type ExplicitAccessGrant,type ExplicitAccessScope,type ResolvedAccessTarget} from '../../../../../packages/domain/src/scoped-access.js';
 export type {ScopedSupportWorkUpdateContext} from '../../../../../packages/application/src/support-ports.js';
 
+export interface PublicReceiptView {id:string;receivedAt:string;company:string;department:string;name:string;email:string;phone:string;category:string;description:string}
 interface StoredGrant {
  actor_operator_id:string;tenant_id:string;service_id:string;contract_profile_id:string;
  scope_kind:ExplicitAccessScope['kind'];service_recipient_id:string|null;work_id:string|null;
@@ -942,6 +943,44 @@ export class PgScopedAccessReader {
   * Service. REGISTERED is not synonymous with membership/verified eligibility.
   * SUPPORT CREATE cannot unlock Registry browsing: REGISTRY READ is independent.
   */
+ async publicReceiptPage(tenantId:string,actorId:string,serviceId:string,cursor:{receivedAt:string;id:string}|null):Promise<{items:PublicReceiptView[];nextCursor:{receivedAt:string;id:string}|null}>{
+  const empty={items:[],nextCursor:null};
+  if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success))return empty;
+  const at=this.clock.now();
+  if(!Number.isFinite(Date.parse(at)))return empty;
+  return withTenant(this.pool,tenantId,async db=>{
+   const context=await db.query<{id:string}>(`
+    select c.id from factact.services s
+    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
+    join factact.operators a on a.tenant_id=s.tenant_id
+      and a.id=$1 and a.status='ACTIVE' and a.read_authority_mode='SCOPED'
+    join factact.contract_profiles c on c.tenant_id=s.tenant_id
+      and c.service_id=s.id and c.status='ACTIVE'
+      and c.effective_from<=$3::timestamptz
+      and (c.effective_to is null or c.effective_to>$3::timestamptz)
+      and c.configuration_json->'support'->>'enabled'='true'
+    where s.id=$2 and s.status='ACTIVE'`,[actorId,serviceId,at]);
+   if(context.rows.length!==1)return empty;
+   const contractProfileId=context.rows[0]!.id;
+   for(const [objectKind,operation] of [
+    ['SUPPORT','CREATE'],['SUPPORT','READ'],
+   ] as const){
+    if(!await this.authorizedInTransaction(db,actorId,{
+      tenantId,serviceId,contractProfileId,scope:{kind:'SERVICE'},
+      objectKind,operation,
+    },at))return empty;
+   }
+   const {rows}=await db.query<{id:string;received_at:Date;company_name:string;department:string;contact_name:string;email:string;phone:string;category:string;description:string}>(`
+    select id,received_at,company_name,department,contact_name,email,phone,category,description
+    from factact.public_support_receipts where service_id=$1
+      and ($2::timestamptz is null or (received_at,id)<($2::timestamptz,$3::uuid))
+    order by received_at desc,id desc limit 21`,[serviceId,cursor?.receivedAt??null,cursor?.id??null]);
+   const items=rows.slice(0,20).map(x=>({id:x.id,receivedAt:x.received_at.toISOString(),company:x.company_name,department:x.department,name:x.contact_name,email:x.email,phone:x.phone,category:x.category,description:x.description}));
+   const last=items.at(-1);
+   return {items,nextCursor:rows.length>20&&last?{receivedAt:last.receivedAt,id:last.id}:null};
+  },true);
+ }
+
  async scopedMemberCandidates(tenantId:string,actorId:string,serviceId:string,company:string,phone:string):Promise<{items:MemberCandidate[];tooMany:boolean}>{
   const empty={items:[],tooMany:false};
   if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success)||company.length>200||phone.length>80||(!company.trim()&&!normalizePhone(phone)))return empty;

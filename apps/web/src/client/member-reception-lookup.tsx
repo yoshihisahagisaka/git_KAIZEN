@@ -6,12 +6,13 @@ type Result={items:MemberCandidate[];tooMany:boolean};
 type Org={id:string;name:string};
 const label={EXACT:'企業名一致',PARTIAL:'企業名部分一致',SIMILAR:'企業名類似',NONE:''};
 const status={OPEN:'受付済み',IN_PROGRESS:'対応中',COMPLETED:'対応完了'};
-export function MemberReceptionLookup({csrf,serviceId,hidden,returnRevision,disabled,onSelectWork,onNew}:{
+export function MemberReceptionLookup({csrf,serviceId,hidden,returnRevision,disabled,onSelectWork,onNew,initialQuery}:{
  csrf:string;serviceId:string;hidden:boolean;returnRevision:number;disabled:boolean;
+ initialQuery?:{company:string;phone:string};
  onSelectWork:(id:string)=>boolean;onNew:(org:Org|null,company:string)=>void;
 }){
- const [company,setCompany]=useState(''),[phone,setPhone]=useState('');
- const [query,setQuery]=useState<{company:string;phone:string}|null>(null);
+ const [company,setCompany]=useState(initialQuery?.company??''),[phone,setPhone]=useState(initialQuery?.phone??'');
+ const [query,setQuery]=useState<{company:string;phone:string}|null>(initialQuery??null);
  const [result,setResult]=useState<Result|null>(null);
  const [selected,setSelected]=useState<Org|null>(null);
  const [history,setHistory]=useState<ScopedSupportWorkSummary[]|null>(null);
