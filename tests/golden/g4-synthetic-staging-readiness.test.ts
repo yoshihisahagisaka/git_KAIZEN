@@ -19,7 +19,7 @@ describe('G4 synthetic seed under FORCE RLS',()=>{
       count(*) filter(where relrowsecurity and relforcerowsecurity)::integer as protected
       from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='factact' and c.relkind='r'`)).rows)
-      .toEqual([{total:47,protected:47}]);
+      .toEqual([{total:48,protected:48}]);
     expect((await db.admin.query(`select
       (select count(*)::integer from factact.tenants) as tenants,
       (select count(*)::integer from factact.people) as people,
