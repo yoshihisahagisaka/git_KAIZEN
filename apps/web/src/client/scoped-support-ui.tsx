@@ -2,6 +2,7 @@ import {RelatedInquiries} from './related-inquiries.js';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ProcedurePageReference} from './procedure-page-reference.js';
 import {ScopedReceptionWorkspace} from './scoped-support-intake.js';
+import type {CtiReceptionHint} from '../../../../packages/domain/src/cti-reception.js';
 import {api,ApiError} from './api.js';
 import {ScopedRegistryReviewUI} from './scoped-registry-review-ui.js';
 import type {
@@ -185,7 +186,10 @@ function HistoryEntry({entry,onCorrect}:{entry:ScopedSupportHistoryEntry;onCorre
 
 /** Reads and writes exclusively through the scoped SUPPORT endpoints, with
  * server-derived grants on each request; never calls broad internal APIs. */
-export function ScopedSupportUI({csrf}:{csrf:string}) {
+export function ScopedSupportUI({csrf,initialCti=null}:{
+ csrf:string;
+ initialCti?:CtiReceptionHint|null;
+}) {
   const [items,setItems]=useState<ScopedSupportWorkSummary[]>([]);
   const [serviceId,setServiceId]=useState('');
   const [listServiceId,setListServiceId]=useState<string|null>(null);
@@ -428,7 +432,7 @@ export function ScopedSupportUI({csrf}:{csrf:string}) {
     <div className="page-content scoped-support-content">
       <div className="scoped-support-heading"><div><h1>問い合わせ・対応状況</h1><p>許可された案件の確認と対応記録ができます。</p></div>
         <button className="secondary" disabled={busy||writeBusy} onClick={()=>{if(!responseText.trim()&&!lifecycleMode||window.confirm('未保存の入力を破棄しますか？')){selectWork(null);setRevision(r=>r+1);}}}>一覧を更新</button></div>
-      <ScopedReceptionWorkspace csrf={csrf} onBeneficiaryConfirmed={refreshWork}
+      <ScopedReceptionWorkspace csrf={csrf} initialCti={initialCti} onBeneficiaryConfirmed={refreshWork}
        onServiceChange={changeService} contextLocked={contextLocked}
        activeWork={receptionWork} returnRevision={receptionReturn} onSelectWork={id=>{
         if(writeBusy||writeInFlight.current)return false;

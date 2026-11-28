@@ -1,4 +1,5 @@
 import {PublicInquiry} from './public-inquiry.js';
+import {parseCtiReception,type CtiReceptionHint} from '../../../../packages/domain/src/cti-reception.js';
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Operator } from '../../../../packages/domain/src/operator.js';
@@ -39,7 +40,8 @@ function SessionContextPicker({session,onSwitch}:{session:BrowserSession;onSwitc
   </div>;
 }
 
-function App() {
+function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
+  const [cti,setCti]=useState(initialCti);
   const portalPath=/^\/portal\/[a-z0-9-]{1,48}$/.test(window.location.pathname);
   const [brand,setBrand]=useState('FACTACT');
   useEffect(()=>{if(!portalPath)return;let active=true;fetch('/request-brand').then(r=>{if(!r.ok)throw Error();return r.json();}).then(b=>{if(active&&typeof b.name==='string'){setBrand(b.name);document.title=b.name;}}).catch(()=>{});return()=>{active=false;};},[portalPath]);
@@ -59,6 +61,7 @@ function App() {
     try {
       const response = await fetch('/auth/logout', { method: 'POST', headers: { 'x-csrf-token': session.csrfToken } });
       if (!response.ok) throw new Error();
+      setCti(null);
       setSession(null);
     } catch { setError('ログアウトできませんでした。もう一度お試しください。'); }
   }
@@ -67,6 +70,7 @@ function App() {
     const csrfToken=session.csrfToken;
     // Unmount all tenant-bound UI before rotating the cookie: old Work must
     // never survive a context switch, including a failed/denied one.
+    setCti(null);
     setSession(null);
     setLoading(true);
     try {
@@ -92,7 +96,8 @@ function App() {
       {session.operator.readAuthorityMode==='INTERNAL_V1'
         ? <JoinUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken} operator={session.operator}/>
         : session.operator.readAuthorityMode==='SCOPED'
-          ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken}/>
+          ? <ScopedSupportUI key={`${session.operator.tenantId}:${session.operator.id}`} csrf={session.csrfToken}
+            initialCti={cti}/>
           : <p role="alert">このアカウントで利用できる画面を確認できませんでした。管理者にお問い合わせください。</p>}
       </RequestEntryPoint>
     </> : <div className="login"><h1>FACTACTへようこそ</h1><p>登録済みのGoogleアカウントでログインしてください。</p><a className="button" href={portalPath||/^\/requests\/[0-9a-f-]{36}$/i.test(window.location.pathname)?"/auth/login?returnTo="+encodeURIComponent(window.location.pathname):"/auth/login"}>Googleでログイン</a></div>}
@@ -100,4 +105,18 @@ function App() {
 }
 const publicSlug=/^\/inquiry\/([a-z0-9-]{1,48})$/.exec(window.location.pathname)?.[1];
 if(!publicSlug&&'serviceWorker' in navigator&&window.isSecureContext){void navigator.serviceWorker.register('/request-sw.js').catch(()=>{});}
-createRoot(document.getElementById('root')!).render(publicSlug?<PublicInquiry slug={publicSlug}/>:<App/>);
+const ctiPath=window.location.pathname==='/support/cti';
+const initialCti=ctiPath
+ ?parseCtiReception(window.location.search)
+ :null;
+
+if(ctiPath){
+ // Remove raw caller data before rendering or issuing API calls.
+ window.history.replaceState(null,'','/support/cti');
+}
+
+createRoot(document.getElementById('root')!).render(
+ publicSlug
+  ?<PublicInquiry slug={publicSlug}/>
+  :<App initialCti={initialCti}/>
+);

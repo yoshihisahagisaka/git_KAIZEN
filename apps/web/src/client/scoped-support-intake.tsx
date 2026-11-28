@@ -1,3 +1,4 @@
+import type {CtiReceptionHint} from '../../../../packages/domain/src/cti-reception.js';
 import {WebReceiptList} from './web-receipt-list.js';
 import type {PublicReceiptView} from '../server/persistence/scoped-access-reader.js';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
@@ -172,7 +173,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
 /** Reception context is chosen before opening the form. CREATE candidates
  * are not the Work READ directory; existing authorized Work remains available
  * independently. Server-side command authorization is unchanged. */
-export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceChange,contextLocked=false,activeWork=null,returnRevision=0,onSelectWork}:{csrf:string;onBeneficiaryConfirmed?:()=>void;onServiceChange:(serviceId:string)=>void;contextLocked?:boolean;activeWork?:string|null;returnRevision?:number;onSelectWork?:(id:string)=>boolean}){
+export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceChange,contextLocked=false,activeWork=null,returnRevision=0,onSelectWork,initialCti=null}:{csrf:string;onBeneficiaryConfirmed?:()=>void;onServiceChange:(serviceId:string)=>void;contextLocked?:boolean;activeWork?:string|null;returnRevision?:number;onSelectWork?:(id:string)=>boolean;initialCti?:CtiReceptionHint|null}){
  const [services,setServices]=useState<Service[]>([]);
  const [cursor,setCursor]=useState<string|null>(null);
  const [chosen,setChosen]=useState('');
@@ -180,6 +181,8 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
  const [initial,setInitial]=useState<{organization?:{id:string;name:string};company?:string}|null>(null);
  const [formVersion,setFormVersion]=useState(0);
  const [webReceipt,setWebReceipt]=useState<PublicReceiptView|null>(null);
+ const [cti,setCti]=useState(initialCti);
+ const [ctiVersion,setCtiVersion]=useState(0);
  const [linkBusy,setLinkBusy]=useState(false),[linkError,setLinkError]=useState(''),[linkNotice,setLinkNotice]=useState('');
  const linkPending=useRef(false);
  const [queueVersion,setQueueVersion]=useState(0);
@@ -237,18 +240,45 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
    {contextLocked&&!single&&<p>サービスを切り替えるには現在の対応を保存して閉じてください。</p>}
   </section>
   {service&&!service.canReceive&&<p>このサービスでは対応の閲覧が可能ですが、新規受付権限はありません。</p>}
-  {service?.canReceive&&!open&&!activeWork&&<WebReceiptList key={service.id+':'+queueVersion} serviceId={service.id} disabled={contextLocked} onSelect={setWebReceipt}/>}
+  {service?.canReceive&&!open&&!activeWork&&<WebReceiptList key={service.id+':'+queueVersion} serviceId={service.id} disabled={contextLocked} onSelect={item=>{
+   setCti(null);
+   setWebReceipt(item);
+  }}/>}
+  {cti&&service?.canReceive&&!open&&!activeWork&&
+   <section className="card" aria-label="電話着信">
+    <h3>電話着信</h3>
+    <p>{cti.kind==='NUMBER'
+      ?'着信番号：'+cti.phone
+      :'番号不明・非通知の受付'}</p>
+    <p>電話番号は顧客検索の手掛かりです。所属先と問い合わせ者を確認してください。</p>
+    <button type="button" className="secondary"
+     disabled={contextLocked}
+     onClick={()=>{
+      setCti(null);
+      setCtiVersion(n=>n+1);
+     }}>着信情報を解除</button>
+   </section>}
   {linkNotice&&<p role="status">{linkNotice}</p>}
   {linkError&&<p role="alert">{linkError}</p>}
   {webReceipt&&!open&&<section className="card" aria-label="選択したWeb受付"><h3>選択したWeb受付</h3><p>{webReceipt.company} / {webReceipt.department} / {webReceipt.name}</p><p>{webReceipt.email} / {webReceipt.phone}</p><p>{webReceipt.description}</p><p>受付ID：{webReceipt.id}</p>{activeWork?<button type="button" disabled={linkBusy} onClick={()=>void linkSelected()}>選択中の対応へ関連登録</button>:<button type="button" className="secondary" disabled={linkBusy} onClick={()=>setWebReceipt(null)}>Web受付の選択を解除</button>}</section>}
-  {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id+':'+(webReceipt?.id??'manual')} {...(webReceipt?{initialQuery:{company:webReceipt.company,phone:webReceipt.phone}}:{})} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
+  {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id+':'+(webReceipt?.id??'manual')+':'+ctiVersion}
+   {...(webReceipt
+    ?{initialQuery:{company:webReceipt.company,phone:webReceipt.phone}}
+    :cti?.kind==='NUMBER'
+     ?{initialQuery:{company:'',phone:cti.phone}}
+     :{})} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
   {service?.canReceive&&<ScopedSupportIntake key={service.id+':'+formVersion} csrf={csrf} serviceId={service.id}
    {...(webReceipt?{initialWebReceipt:webReceipt}:{})}
    onWebReceiptRegistered={()=>{
     setWebReceipt(null);setQueueVersion(n=>n+1);
     setLinkNotice('Web受付を登録しました。');
    }}
-   open={open} onOpenChange={value=>{setOpen(value);if(!value){setInitial(null);setFormVersion(n=>n+1);}}}
+   open={open} onOpenChange={value=>{setOpen(value);if(!value){
+    setInitial(null);
+    setCti(null);
+    setCtiVersion(n=>n+1);
+    setFormVersion(n=>n+1);
+   }}}
    {...(initial?.organization?{initialOrganization:initial.organization}:{})} {...(initial?.company!==undefined?{initialCompany:initial.company}:{})}
    {...(onBeneficiaryConfirmed?{onBeneficiaryConfirmed}:{})}/>}
  </>;
