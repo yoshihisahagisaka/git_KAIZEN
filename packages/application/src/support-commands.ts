@@ -403,7 +403,7 @@ export class SupportCommands {
   * Service Recipient/Registry scope must first be verified in the same DB
   * transaction. Existing Caller identity is not a beneficiary/eligibility fact. */
  async recordScopedExistingCallerIntake(actor:Operator,input:{
-  requestId:string;serviceId:string;symptom:string;
+  requestId:string;serviceId:string;symptom:string;webReceiptId?:string|undefined;
   caller:{kind:'EXISTING';personId:string};
   decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
@@ -416,7 +416,7 @@ export class SupportCommands {
   return found(value);
  }
  async recordScopedNewCallerInOrganization(actor:Operator,input:{
-  requestId:string;serviceId:string;symptom:string;
+  requestId:string;serviceId:string;symptom:string;webReceiptId?:string|undefined;
   caller:{kind:'NEW';organizationId:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:boolean};
   decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
@@ -429,7 +429,7 @@ export class SupportCommands {
   return found(value);
  }
  async recordScopedNewCallerIntake(actor:Operator,input:{
-  requestId:string;serviceId:string;symptom:string;
+  requestId:string;serviceId:string;symptom:string;webReceiptId?:string|undefined;
   caller:{kind:'NEW';organizationName:string;displayName:string;email?:string|undefined;distinctPersonConfirmed:false};
   decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }):Promise<{eventId:string;workId:string|null}>{
@@ -446,13 +446,30 @@ export class SupportCommands {
  /** Receive-only is not NOT_APPLICABLE: leave Requirement Evaluation absent.
   * An intake retry cannot promote a previously deferred Event to Work. */
  private async finishScopedIntake(r:SupportRepository,a:Operator,input:{
-  requestId:string;serviceId:string;symptom:string;caller:import('../../domain/src/support.js').SupportCallerInput;
+  requestId:string;serviceId:string;symptom:string;webReceiptId?:string|undefined;caller:import('../../domain/src/support.js').SupportCallerInput;
   decision:'REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';reason:string;
  }){
   requireCondition(input.decision!=='DEFERRED'||input.reason.trim()==='','INVALID_TRIAGE','受付のみでは対応の判断を記録しません。',400);
   await r.lockRequest(input.requestId);
   const previous=await r.byRequest(input.requestId);
   const event=await this.createEventInRepo(r,a,input,'SCOPED');
+
+  if(input.webReceiptId){
+   if(!r.linkPublicReceiptForNewIntake){
+    throw new DomainError(
+     'SCOPED_INTAKE_UNAVAILABLE',
+     'Web受付の登録機能を利用できません。',
+     503
+    );
+   }
+
+   await r.linkPublicReceiptForNewIntake(
+    input.webReceiptId,
+    input.serviceId,
+    event.id,
+    a.id
+   );
+  }
   if(input.decision==='DEFERRED')return {eventId:event.id,workId:(await r.workForEvent(event.id))?.id??null};
   if(previous)requireCondition(!!await r.evaluation(event.id),'RETRY_CONFLICT','受付済みの問い合わせは対応開始操作から進めてください。');
   const result=await this.evaluateInRepo(r,a,event.id,input.decision,input.reason,'SCOPED');

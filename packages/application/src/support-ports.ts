@@ -2,6 +2,12 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,SupportBeneficiaryDecision } from '../../domain/src/support.js';
 export interface SupportRepository {
+ linkPublicReceiptForNewIntake?(
+  receiptId:string,
+  serviceId:string,
+  eventId:string,
+  actorId:string
+ ):Promise<void>;
  beneficiaryDecisions(eventId:string):Promise<SupportBeneficiaryDecision[]>;
  insertBeneficiaryDecision(decision:SupportBeneficiaryDecision):Promise<void>;
  organizations():Promise<{id:string;name:string;status:string}[]>;

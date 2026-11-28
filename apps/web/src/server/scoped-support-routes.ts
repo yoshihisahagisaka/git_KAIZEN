@@ -225,7 +225,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
    distinctPersonConfirmed:z.literal(false),
   });
   const intakeInput=z.strictObject({
-   requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
+   requestId:z.uuid(),serviceId:z.uuid(),webReceiptId:z.uuid().optional(),symptom:z.string().trim().min(1).max(4000),
    caller:newCaller,decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),
    reason:z.string().trim().max(4000),
   });
@@ -237,7 +237,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   });
   if(writer.recordScopedNewCallerInOrganization){
    const inputSchema=z.strictObject({
-    requestId:z.uuid(),serviceId:z.uuid(),symptom:z.string().trim().min(1).max(4000),
+    requestId:z.uuid(),serviceId:z.uuid(),webReceiptId:z.uuid().optional(),symptom:z.string().trim().min(1).max(4000),
     caller:z.strictObject({kind:z.literal('NEW'),organizationId:z.uuid(),
      displayName:z.string().trim().min(1).max(200),email:z.email().optional(),distinctPersonConfirmed:z.boolean()}),
     decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),reason:z.string().trim().max(4000),
@@ -251,7 +251,7 @@ export function scopedSupportRoutes(reader:ScopedSupportReader,
   }
   if(writer.recordScopedExistingCallerIntake){
    const existingInput=z.strictObject({
-    requestId:z.uuid(),serviceId:z.uuid(),
+    requestId:z.uuid(),serviceId:z.uuid(),webReceiptId:z.uuid().optional(),
     symptom:z.string().trim().min(1).max(4000),
     caller:z.strictObject({kind:z.literal('EXISTING'),personId:z.uuid()}),
     decision:z.enum(['REQUIRED','NOT_APPLICABLE','DEFERRED']),

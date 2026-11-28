@@ -66,6 +66,8 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
   if(pending.current||busy||!serviceId)return;
   const payload={
    serviceId,symptom:symptom.trim(),
+   ...(initialWebReceipt
+    ?{webReceiptId:initialWebReceipt.id}:{ }),
    caller:{kind:'NEW',organizationName:organizationName.trim(),
     displayName:displayName.trim(),...(email.trim()?{email:email.trim()}:{}),
     distinctPersonConfirmed:false},
@@ -139,7 +141,9 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
      !displayName.trim()||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||!!receipt}>{decision==='REQUIRED'?'受付して対応を開始':decision==='DEFERRED'?'受付のみ':'対応不要として受付'}</button>
    </form>}
    {mode==='EXISTING'&&!receipt&&
-    <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId} {...(initialWebReceipt?{initialContact:{name:initialWebReceipt.name,email:initialWebReceipt.email,description:initialWebReceipt.description}}:{})} {...(initialOrganization?{initialOrganization}:{})}
+    <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
+     {...(initialWebReceipt
+      ?{webReceiptId:initialWebReceipt.id}:{})} {...(initialWebReceipt?{initialContact:{name:initialWebReceipt.name,email:initialWebReceipt.email,description:initialWebReceipt.description}}:{})} {...(initialOrganization?{initialOrganization}:{})}
      onReceived={data=>{setReceipt(data);setError('');setHeldRevision(n=>n+1);}}/>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
