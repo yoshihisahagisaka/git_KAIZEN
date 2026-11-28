@@ -69,14 +69,26 @@ export class PgIdentityStore implements IdentityStore {
     });
   }
   async switchSessionContext(oldHash: string, newHash: string, targetTenantId: string, csrfToken: string): Promise<RotatedSessionContext | null> {
+    const previous=await this.readSession(oldHash);
     const { rows } = await this.pool.query('select * from factact_private.switch_session_context($1,$2,$3,$4)',
       [oldHash, newHash, targetTenantId, csrfToken]);
     if (!rows[0]) return null;
+    if(previous)await this.revokePushSubscriptions(previous,oldHash);
     const row = refSchema.extend({ expires_at: z.date() }).parse(rows[0]);
     return { tenantId: row.tenant_id, operatorId: row.operator_id, expiresAt: row.expires_at };
   }
   async revokeSession(hash: string): Promise<void> {
+    const session=await this.readSession(hash);
     await this.pool.query('select factact_private.revoke_session($1)', [hash]);
+    if(session)await this.revokePushSubscriptions(session,hash);
+  }
+  private async revokePushSubscriptions(ref:OperatorRef,hash:string):Promise<void>{
+    await withTenant(this.pool,ref.tenantId,async db=>{
+      await db.query(
+        'update factact.request_push_subscriptions set revoked_at=clock_timestamp() where tenant_id=$1 and actor_operator_id=$2 and session_token_hash=$3 and revoked_at is null',
+        [ref.tenantId,ref.operatorId,hash]
+      );
+    });
   }
   async loadActiveOperator(ref: OperatorRef): Promise<Operator | null> {
     return withTenant(this.pool, ref.tenantId, async client => {
