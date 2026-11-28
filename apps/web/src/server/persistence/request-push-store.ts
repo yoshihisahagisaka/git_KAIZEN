@@ -101,6 +101,16 @@ export class PgRequestPushStore{
   });
  }
 
+ /** Only the current session's active subscription is visible. */
+ async status(a:RequestActor,hash:string,endpoint:string){
+  return withTenant(this.pool,a.tenantId,async db=>{
+   const q=await db.query<{id:string}>(
+    'select id from factact.request_push_subscriptions where tenant_id=$1 and actor_operator_id=$2 and session_token_hash=$3 and endpoint=$4 and revoked_at is null',
+    [a.tenantId,a.actorId,hash,endpoint]);
+   return {id:q.rows[0]?.id??null};
+  },true);
+ }
+
  async revoke(
   a:RequestActor,
   hash:string,

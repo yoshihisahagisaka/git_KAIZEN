@@ -2,7 +2,7 @@ import {Router,type Response} from 'express';
 import {z} from 'zod';
 import type {Operator} from '../../../../packages/domain/src/operator.js';
 import type {PgRequestPushStore} from './persistence/request-push-store.js';
-import {pushSubscriptionInput,pushPublicKey} from './request-push-validation.js';
+import {pushSubscriptionInput,pushPublicKey,validPushEndpoint} from './request-push-validation.js';
 
 function actor(res:Response){
  const o=(res.locals.session as {operator:Operator}).operator;
@@ -50,6 +50,11 @@ export function requestPushRoutes(
   );
 
   res.status(201).json({ok:true,data});
+ });
+
+ router.post('/request-push/status',async(req,res)=>{
+  const {endpoint}=z.strictObject({endpoint:z.string().max(2048).refine(validPushEndpoint)}).parse(req.body);
+  res.json({ok:true,data:await store.status(actor(res),res.locals.sessionTokenHash,endpoint)});
  });
 
  router.post('/request-push/revoke',async(req,res)=>{
