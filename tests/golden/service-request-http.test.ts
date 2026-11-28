@@ -198,3 +198,60 @@ describe('durable push delivery',()=>{
   await delivery.run(ids.tenant);expect(send).not.toHaveBeenCalled();
  });
 });
+
+describe('global endpoint ownership and live delivery boundary',()=>{
+ const endpoint='https://fcm.googleapis.com/fcm/send/synthetic-owner';
+ function subscription(){
+  const key=createECDH('prime256v1');key.generateKeys();
+  return {endpoint,keys:{p256dh:key.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,5).toString('base64url')}};
+ }
+ async function enroll(input=subscription()){
+  return (await post('/api/request-push/subscriptions','partner').send(input).expect(201)).body.data.id as string;
+ }
+ async function notice(){
+  const id=randomUUID();
+  await post('/api/requests').send({...context,id,type:'INQUIRY',content:'Synthetic ownership'}).expect(201);
+  return id;
+ }
+ it('refuses an active endpoint across actors and tenants; re-enrolls only after revoke',async()=>{
+  const input=subscription(),first=await enroll(input);
+  await post('/api/request-push/subscriptions').send(input).expect(409);
+  const tenantB=randomUUID(),operatorB=randomUUID();
+  await db.admin.query("insert into factact.tenants(id,name,status) values($1,'Synthetic B','ACTIVE')",[tenantB]);
+  await db.admin.query("insert into factact.operators(id,tenant_id,email,display_name,status) values($1,$2,'b@example.invalid','B','ACTIVE')",[operatorB,tenantB]);
+  await expect(db.admin.query(
+   'insert into factact.request_push_subscriptions(id,tenant_id,actor_operator_id,session_token_hash,endpoint,p256dh,auth_secret) values($1,$2,$3,$4,$5,$6,$7)',
+   [randomUUID(),tenantB,operatorB,tokenHash('synthetic-B'),endpoint,input.keys.p256dh,input.keys.auth]
+  )).rejects.toMatchObject({code:'23505'});
+  await post('/api/request-push/revoke','partner').send({id:first}).expect(200);
+  const second=await enroll(input);
+  expect(second).not.toBe(first);
+  expect((await db.admin.query('select count(*)::int n from factact.request_push_subscriptions where endpoint=$1 and revoked_at is null',[endpoint])).rows).toEqual([{n:1}]);
+ });
+ it('retires expired sessions without sending',async()=>{
+  const sub=await enroll();await notice();
+  await db.admin.query("update factact_private.sessions set expires_at=now()-interval '1 second' where token_hash=$1",[tokenHash('partner')]);
+  const send=vi.fn<PushSender>(async()=>({state:'ACCEPTED'}));
+  await new PgRequestPushDelivery(db.runtime,send,true).run(ids.tenant);
+  expect(send).not.toHaveBeenCalled();
+  expect((await db.admin.query('select revoked_at from factact.request_push_subscriptions where id=$1',[sub])).rows[0].revoked_at).not.toBeNull();
+ });
+ it('rechecks a subscription revoked during the durable claim',async()=>{
+  await enroll();await notice();
+  await db.admin.query(`create function factact.test_revoke_push_on_claim() returns trigger language plpgsql as $$
+   begin
+    update factact.request_push_subscriptions set revoked_at=greatest(clock_timestamp(),created_at) where id=new.subscription_id;
+    return new;
+   end $$`);
+  await db.admin.query('create trigger test_revoke_push_on_claim before insert on factact.request_push_deliveries for each row execute function factact.test_revoke_push_on_claim()');
+  try{
+   const send=vi.fn<PushSender>(async()=>({state:'ACCEPTED'}));
+   await new PgRequestPushDelivery(db.runtime,send,true).run(ids.tenant);
+   expect(send).not.toHaveBeenCalled();
+   expect((await db.admin.query('select state from factact.request_push_deliveries')).rows).toEqual([{state:'SKIPPED'}]);
+  }finally{
+   await db.admin.query('drop trigger test_revoke_push_on_claim on factact.request_push_deliveries');
+   await db.admin.query('drop function factact.test_revoke_push_on_claim()');
+  }
+ });
+});

@@ -14,7 +14,7 @@
     "dev": "tsx watch --env-file=.env apps/web/src/server/main.ts",
     "dev:ui": "vite --config apps/web/vite.config.ts",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build --config apps/web/vite.config.ts && esbuild apps/web/src/server/main.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outdir=dist/server",
+    "build": "npm run typecheck && vite build --config apps/web/vite.config.ts && esbuild apps/web/src/server/main.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outdir=dist/server && esbuild scripts/request-push-delivery.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outdir=dist/worker",
     "start": "node dist/server/main.js",
     "test": "vitest run --config vitest.config.ts",
     "test:db": "vitest run --config vitest.db.config.ts",
@@ -29,7 +29,7 @@
     "db:preflight-registry-executor": "tsx scripts/registry-migration-preflight.ts",
     "db:reset": "supabase db reset --local",
     "db:bind-operator": "tsx --env-file=.env scripts/bind-operator.ts",
-    "push:deliver": "tsx scripts/request-push-delivery.ts"
+    "push:deliver": "node dist/worker/request-push-delivery.js"
   },
   "dependencies": {
     "cookie-parser": "1.4.7",

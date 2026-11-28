@@ -11,6 +11,11 @@ export async function assertSchemaReady(pool: Pool): Promise<void> {
   const { rows } = await pool.query<{ name: string }>(
     'select name from unnest($1::text[]) as name where to_regclass(name) is null', [required]);
   if (rows.length) throw new Error('Database migrations are incomplete. Run npm run db:migrate for the local database before starting FACTACT.');
+  const pushIndex=await pool.query(`select 1 from pg_index i
+    where i.indexrelid=to_regclass('factact.request_push_active_endpoint_unique')
+    and i.indrelid=to_regclass('factact.request_push_subscriptions')
+    and i.indisunique and i.indisvalid and i.indisready`);
+  if(pushIndex.rowCount!==1)throw new Error('Database migrations are incomplete. Active push endpoint ownership gate is missing.');
   const portalColumn=await pool.query(`select 1 from pg_attribute
     where attrelid='factact.operators'::regclass and attname='request_portal_only'
       and atttypid='boolean'::regtype and attnotnull and not attisdropped`);
