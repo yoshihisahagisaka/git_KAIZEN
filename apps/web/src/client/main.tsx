@@ -11,6 +11,7 @@ import { OperatorPolicyAdminUI } from './operator-policy-admin-ui.js';
 import {ProcedurePageAdmin} from './procedure-page-admin.js';
 import {RequestEntryPoint} from './service-request-ui.js';
 import { api } from './api.js';
+import {clearRequestBadge} from './request-badge.js';
 
 type BrowserSession = { operator: Operator; csrfToken: string };
 
@@ -50,7 +51,10 @@ function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
   const [error, setError] = useState('');
   useEffect(() => {
     fetch('/api/session').then(async response => {
-      if (response.status === 401) return;
+      if (response.status === 401){
+       await clearRequestBadge();
+       return;
+      }
       if (!response.ok) throw new Error();
       const body = await response.json();
       setSession(body.data);
@@ -61,6 +65,7 @@ function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
     try {
       const response = await fetch('/auth/logout', { method: 'POST', headers: { 'x-csrf-token': session.csrfToken } });
       if (!response.ok) throw new Error();
+      await clearRequestBadge();
       setCti(null);
       setSession(null);
     } catch { setError('ログアウトできませんでした。もう一度お試しください。'); }
@@ -70,6 +75,7 @@ function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
     const csrfToken=session.csrfToken;
     // Unmount all tenant-bound UI before rotating the cookie: old Work must
     // never survive a context switch, including a failed/denied one.
+    void clearRequestBadge();
     setCti(null);
     setSession(null);
     setLoading(true);
