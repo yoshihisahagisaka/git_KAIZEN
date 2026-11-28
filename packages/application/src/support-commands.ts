@@ -412,7 +412,7 @@ export class SupportCommands {
   const value=await this.scopedUpdate.runSupportExistingCallerIntake(
    actor.tenantId,actor.id,input.serviceId,input.caller.personId,async r=>{
     return this.finishScopedIntake(r,actor,input);
-   });
+   },input.webReceiptId);
   return found(value);
  }
  async recordScopedNewCallerInOrganization(actor:Operator,input:{
@@ -425,7 +425,7 @@ export class SupportCommands {
   const value=await this.scopedUpdate.runSupportNewCallerInOrganization(
    actor.tenantId,actor.id,input.serviceId,input.caller.organizationId,async r=>{
     return this.finishScopedIntake(r,actor,input);
-   });
+   },input.webReceiptId);
   return found(value);
  }
  async recordScopedNewCallerIntake(actor:Operator,input:{
@@ -439,7 +439,7 @@ export class SupportCommands {
    throw new DomainError('SCOPED_INTAKE_UNAVAILABLE','この受付機能は利用できません。',503);
   const value=await this.scopedUpdate.runSupportIntake(actor.tenantId,actor.id,input.serviceId,async r=>{
    return this.finishScopedIntake(r,actor,input);
-  });
+  },input.webReceiptId);
   return found(value);
  }
 
@@ -453,6 +453,18 @@ export class SupportCommands {
   await r.lockRequest(input.requestId);
   const previous=await r.byRequest(input.requestId);
   const event=await this.createEventInRepo(r,a,input,'SCOPED');
+
+  if(previous&&r.publicReceiptIdsForEvent){
+   const linked=await r.publicReceiptIdsForEvent(event.id);
+   requireCondition(
+    input.webReceiptId
+     ?linked.includes(input.webReceiptId)
+     :linked.length===0,
+    'RETRY_CONFLICT',
+    '再送時にWeb受付の関連付けを変更することはできません。',
+    409
+   );
+  }
 
   if(input.webReceiptId){
    if(!r.linkPublicReceiptForNewIntake){

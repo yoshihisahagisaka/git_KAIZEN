@@ -2,6 +2,7 @@
 import type { Action } from '../../domain/src/join.js';
 import type { SupportEvent,SupportWork,SupportEvaluation,RecipientObservation,DiagnosticEvidence,SupportDecision,KnowledgeCandidate,SupportAudit,SupportTargetObservation,SupportLifecycleEvent,SupportFollowUp,SupportCloseDecision,SupportBeneficiaryDecision } from '../../domain/src/support.js';
 export interface SupportRepository {
+ publicReceiptIdsForEvent?(eventId:string):Promise<string[]>;
  linkPublicReceiptForNewIntake?(
   receiptId:string,
   serviceId:string,
@@ -82,15 +83,15 @@ export interface ScopedSupportUpdateBoundary {
   * The caller never provides any Tenant/Actor/Contract authorization input.
   * No callback runs until live Grant and Contract checks succeed. */
  runSupportIntake?<T>(tenantId:string,actorId:string,serviceId:string,
-  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+  mutation:(repository:SupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>;
  /** Registered Caller identity is *not* service eligibility. Resolve an
   * already registered Person under a current, explicitly authorized
   * Organization ServiceRecipient before invoking the common Event path. */
  runSupportNewCallerInOrganization?<T>(tenantId:string,actorId:string,serviceId:string,organizationId:string,
-  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+  mutation:(repository:SupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>;
  runSupportExistingCallerIntake?<T>(tenantId:string,actorId:string,
   serviceId:string,personId:string,
-  mutation:(repository:SupportRepository)=>Promise<T>):Promise<T|null>;
+  mutation:(repository:SupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>;
  /** Own received Event only. This read/write gate checks live SUPPORT UPDATE,
   * the caller's source affiliation or a separately authorized Registry
   * recipient, and revalidates before COMMIT. Never auto-confirms by Caller. */

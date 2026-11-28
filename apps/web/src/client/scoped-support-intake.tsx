@@ -13,7 +13,7 @@ type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 interface PendingReceipt {eventId:string;createdAt:string;callerName:string;organizationName:string;symptom:string;canStart:boolean}
 interface PendingPage {items:PendingReceipt[];nextCursor:string|null}
 
-function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed,initialOrganization,initialCompany,initialWebReceipt}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void;initialOrganization?:{id:string;name:string};initialCompany?:string;initialWebReceipt?:PublicReceiptView}){
+function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConfirmed,initialOrganization,initialCompany,initialWebReceipt,onWebReceiptRegistered}:{csrf:string;serviceId:string;open:boolean;onOpenChange:(open:boolean)=>void;onBeneficiaryConfirmed?:()=>void;initialOrganization?:{id:string;name:string};initialCompany?:string;initialWebReceipt?:PublicReceiptView;onWebReceiptRegistered?:()=>void}){
  const [mode,setMode]=useState<'NEW'|'EXISTING'>(initialOrganization?'EXISTING':'NEW');
  const [organizationName,setOrganizationName]=useState(initialCompany??initialWebReceipt?.company??''),[displayName,setDisplayName]=useState(initialWebReceipt?.name??'');
  const [email,setEmail]=useState(initialWebReceipt?.email??''),[symptom,setSymptom]=useState(initialWebReceipt?.description??'');
@@ -82,6 +82,7 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
    const data=await api<Receipt>('/api/scoped/support-intake/new-caller',csrf,
     {...payload,requestId:retry.current.requestId});
    setReceipt(data);retry.current=null;setHeldRevision(n=>n+1);
+   if(initialWebReceipt)onWebReceiptRegistered?.();
   }catch{setError('受付できませんでした。権限や内容を確認してください。通信が不安定な場合は同じ内容で再送してください。');}
   finally{pending.current=false;setBusy(false);}
  }
@@ -144,7 +145,10 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
     <ScopedExistingCallerForm csrf={csrf} serviceId={serviceId}
      {...(initialWebReceipt
       ?{webReceiptId:initialWebReceipt.id}:{})} {...(initialWebReceipt?{initialContact:{name:initialWebReceipt.name,email:initialWebReceipt.email,description:initialWebReceipt.description}}:{})} {...(initialOrganization?{initialOrganization}:{})}
-     onReceived={data=>{setReceipt(data);setError('');setHeldRevision(n=>n+1);}}/>}
+     onReceived={data=>{
+      setReceipt(data);setError('');setHeldRevision(n=>n+1);
+      if(initialWebReceipt)onWebReceiptRegistered?.();
+     }}/>}
    {receipt&&<>
     <div role="status" className="scoped-write-notice">
      <p>受付記録を作成しました。問い合わせID: {receipt.eventId}</p>
@@ -157,6 +161,8 @@ function ScopedSupportIntake({csrf,serviceId,open,onOpenChange,onBeneficiaryConf
     <button type="button" className="secondary" onClick={()=>{
      setReceipt(null);setResumedSymptom('');setOrganizationName('');setDisplayName('');
      setEmail('');setSymptom('');setDecision('REQUIRED');setReason('');
+     retry.current=null;
+     onOpenChange(false);
     }}>次の問い合わせ</button>
    </>}
   </div>}
@@ -237,7 +243,12 @@ export function ScopedReceptionWorkspace({csrf,onBeneficiaryConfirmed,onServiceC
   {webReceipt&&!open&&<section className="card" aria-label="選択したWeb受付"><h3>選択したWeb受付</h3><p>{webReceipt.company} / {webReceipt.department} / {webReceipt.name}</p><p>{webReceipt.email} / {webReceipt.phone}</p><p>{webReceipt.description}</p><p>受付ID：{webReceipt.id}</p>{activeWork?<button type="button" disabled={linkBusy} onClick={()=>void linkSelected()}>選択中の対応へ関連登録</button>:<button type="button" className="secondary" disabled={linkBusy} onClick={()=>setWebReceipt(null)}>Web受付の選択を解除</button>}</section>}
   {service?.canReceive&&onSelectWork&&<MemberReceptionLookup key={service.id+':'+(webReceipt?.id??'manual')} {...(webReceipt?{initialQuery:{company:webReceipt.company,phone:webReceipt.phone}}:{})} csrf={csrf} serviceId={service.id} hidden={open||!!activeWork} returnRevision={returnRevision} disabled={contextLocked} onSelectWork={onSelectWork} onNew={(organization,company)=>{setInitial(organization?{organization}:{company});setFormVersion(n=>n+1);setOpen(true);}}/>}
   {service?.canReceive&&<ScopedSupportIntake key={service.id+':'+formVersion} csrf={csrf} serviceId={service.id}
-   {...(webReceipt?{initialWebReceipt:webReceipt}:{})} open={open} onOpenChange={value=>{setOpen(value);if(!value){setInitial(null);setFormVersion(n=>n+1);}}}
+   {...(webReceipt?{initialWebReceipt:webReceipt}:{})}
+   onWebReceiptRegistered={()=>{
+    setWebReceipt(null);setQueueVersion(n=>n+1);
+    setLinkNotice('Web受付を登録しました。');
+   }}
+   open={open} onOpenChange={value=>{setOpen(value);if(!value){setInitial(null);setFormVersion(n=>n+1);}}}
    {...(initial?.organization?{initialOrganization:initial.organization}:{})} {...(initial?.company!==undefined?{initialCompany:initial.company}:{})}
    {...(onBeneficiaryConfirmed?{onBeneficiaryConfirmed}:{})}/>}
  </>;
