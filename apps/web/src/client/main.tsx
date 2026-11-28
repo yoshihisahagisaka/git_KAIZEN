@@ -12,6 +12,7 @@ import {ProcedurePageAdmin} from './procedure-page-admin.js';
 import {RequestEntryPoint} from './service-request-ui.js';
 import { api } from './api.js';
 import {clearRequestBadge} from './request-badge.js';
+import {forgetLocalPush} from './request-push-device.js';
 
 type BrowserSession = { operator: Operator; csrfToken: string };
 
@@ -66,6 +67,7 @@ function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
       const response = await fetch('/auth/logout', { method: 'POST', headers: { 'x-csrf-token': session.csrfToken } });
       if (!response.ok) throw new Error();
       await clearRequestBadge();
+      await forgetLocalPush();
       setCti(null);
       setSession(null);
     } catch { setError('ログアウトできませんでした。もう一度お試しください。'); }
@@ -81,6 +83,7 @@ function App({initialCti}:{initialCti:CtiReceptionHint|null}) {
     setLoading(true);
     try {
       const next=await api<BrowserSession>('/api/session/context',csrfToken,{tenantId});
+      await forgetLocalPush();
       window.location.hash='';
       setSession(next);
     } catch {

@@ -1,5 +1,6 @@
 import {useEffect,useState,useRef} from 'react';
 import {api} from './api.js';
+import {RequestPushSettings} from './request-push-settings.js';
 import {
  clearRequestBadge,
  refreshRequestBadge
@@ -189,5 +190,5 @@ export function RequestEntryPoint({csrf,initialId,children,portalOnly=false}:{cs
 
  if((initialId||portalOnly)&&contexts===null)return <p role="status">依頼を確認しています…</p>;
  if((initialId||portalOnly)&&contexts?.length===0)return <p role="alert">{error||'依頼を参照できません。'}</p>;
- return <>{contexts&&contexts.length>0&&open?<ServiceRequestUI csrf={csrf} contexts={contexts} initialId={initialId} {...(!portalOnly?{onExit:()=>{if(initialId)window.location.assign('/');else setOpen(false);}}:{})}/>:<>{contexts&&contexts.length>0&&<div className="request-launch"><button onClick={()=>setOpen(true)}>対応依頼</button></div>}{children}</>}</>;
+ return <>{contexts&&contexts.length>0&&<RequestPushSettings csrf={csrf}/>}{contexts&&contexts.length>0&&open?<ServiceRequestUI csrf={csrf} contexts={contexts} initialId={initialId} {...(!portalOnly?{onExit:()=>{if(initialId)window.location.assign('/');else setOpen(false);}}:{})}/>:<>{contexts&&contexts.length>0&&<div className="request-launch"><button onClick={()=>setOpen(true)}>対応依頼</button></div>}{children}</>}</>;
 }

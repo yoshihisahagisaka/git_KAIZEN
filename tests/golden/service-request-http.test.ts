@@ -1,5 +1,5 @@
-import {randomUUID} from 'node:crypto';
-import {afterAll,beforeAll,beforeEach,describe,expect,it} from 'vitest';
+import {randomUUID,createECDH} from 'node:crypto';
+import {afterAll,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import request from 'supertest';
 import pino from 'pino';
 import {ids,testDatabase} from '../fixtures/database.js';
@@ -21,8 +21,12 @@ async function session(actor:string,token:string){
 }
 beforeAll(async()=>{
  db=await testDatabase();identity=new PgIdentityStore(db.runtime,db.oidc);
+ const ecdh=createECDH('prime256v1');ecdh.generateKeys();
+ vi.stubEnv('FACTACT_WEB_PUSH_ENABLED','true');
+ vi.stubEnv('FACTACT_WEB_PUSH_PUBLIC_KEY',ecdh.getPublicKey().toString('base64url'));
  app=createApp(config,identity,{authorizationUrl:()=>'',verifyCallback:async()=>({issuer,subject:'unused'})},pino({level:'silent'}),
- undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,new PgServiceRequestStore(db.runtime));
+ undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,new PgServiceRequestStore(db.runtime),undefined,undefined,new PgRequestPushStore(db.runtime,identity,new PgServiceRequestStore(db.runtime)));
+ vi.unstubAllEnvs();
 },120_000);
 beforeEach(async()=>{
  await db.reset();const partner=randomUUID(),org=randomUUID();
@@ -129,5 +133,25 @@ describe('session-bound push subscription storage',()=>{
   await expect(
    push.register(a,hash,input)
   ).rejects.toThrow();
+ });
+});
+
+describe('push subscription HTTP boundary',()=>{
+ it('requires session and CSRF; resolves and revokes only own subscription',async()=>{
+  const ecdh=createECDH('prime256v1');ecdh.generateKeys();
+  const input={endpoint:'https://fcm.googleapis.com/fcm/send/synthetic-http',keys:{p256dh:ecdh.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,3).toString('base64url')}};
+  const path='/api/request-push/';
+  await request(app).get(path+'config').expect(401);
+  expect((await get(path+'config','partner').expect(200)).body.data.enabled).toBe(true);
+  await post(path+'subscriptions','partner').set('x-csrf-token','wrong').send(input).expect(403);
+  await post(path+'subscriptions','partner').send({...input,actorId:ids.operator}).expect(400);
+  const first=(await post(path+'subscriptions','partner').send(input).expect(201)).body.data;
+  await post(path+'status','partner').set('x-csrf-token','wrong').send({endpoint:input.endpoint}).expect(403);
+  expect((await post(path+'status','partner').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual(first);
+  expect((await post(path+'status').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual({id:null});
+  await post(path+'revoke').send(first).expect(200);
+  expect((await post(path+'status','partner').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual(first);
+  await post(path+'revoke','partner').send(first).expect(200);
+  expect((await post(path+'status','partner').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual({id:null});
  });
 });
