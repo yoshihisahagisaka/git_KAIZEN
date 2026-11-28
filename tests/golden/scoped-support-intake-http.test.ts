@@ -331,7 +331,6 @@ describe('atomic web receipt intake',()=>{
  it('creates the Event and receipt association atomically',
  async()=>{
   await grant();
-  await operationGrant('READ');
 
   const receiptId=randomUUID();
 
@@ -352,11 +351,47 @@ describe('atomic web receipt intake',()=>{
    symptom:'Web原文'
   };
 
+  // CREATE alone cannot associate an original Web receipt.
+  await post(payload).expect(404);
+
+  expect((await db.admin.query(
+   'select event_id from factact.public_support_receipt_links where receipt_id=$1',
+   [receiptId]
+  )).rows).toEqual([]);
+
+  await operationGrant('READ');
+
   const first=(await post(payload).expect(201)).body.data;
 
   const retry=(await post(payload).expect(201)).body.data;
 
   expect(retry).toEqual(first);
+
+  const {webReceiptId:_receipt,...withoutReceipt}=payload;
+  await post(withoutReceipt).expect(409);
+
+  const anotherReceipt=randomUUID();
+
+  await db.admin.query(
+   `insert into factact.public_support_receipts
+    (id,tenant_id,service_id,submission_id,
+     company_name,department,contact_name,email,
+     phone,category,description,privacy_notice_version)
+    values($1,$2,$3,$4,
+     '別企業','','別担当者','other@example.invalid',
+     '0399999999','PC','別受付','v1')`,
+   [anotherReceipt,ids.tenant,ids.service,randomUUID()]
+  );
+
+  await post({
+   ...payload,
+   webReceiptId:anotherReceipt
+  }).expect(409);
+
+  expect((await db.admin.query(
+   'select event_id from factact.public_support_receipt_links where receipt_id=$1',
+   [anotherReceipt]
+  )).rows).toEqual([]);
 
   const links=await db.admin.query(
    `select event_id

@@ -10,6 +10,17 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
 export class PgSupportRepository implements SupportRepository {
+ async publicReceiptIdsForEvent(eventId:string):Promise<string[]>{
+  const result=await this.db.query<{receipt_id:string}>(
+   `select receipt_id
+    from factact.public_support_receipt_links
+    where tenant_id=$1 and event_id=$2
+    order by receipt_id`,
+   [this.tenant,eventId]
+  );
+  return result.rows.map(row=>row.receipt_id);
+ }
+
  async linkPublicReceiptForNewIntake(
   receiptId:string,
   serviceId:string,

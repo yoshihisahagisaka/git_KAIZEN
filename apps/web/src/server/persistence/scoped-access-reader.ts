@@ -478,7 +478,7 @@ export class PgScopedAccessReader {
   * Event, Observation, Human Evaluation, optional Work and Audit. Rejected
   * actors never receive a Repository nor observe customer rows. */
  async runSupportIntake<T>(tenantId:string,actorId:string,serviceId:string,
-  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  mutation:(repository:PgSupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>{
   if(![tenantId,actorId,serviceId].every(id=>z.uuid().safeParse(id).success))return null;
   const at=this.clock.now();
   if(!Number.isFinite(Date.parse(at)))return null;
@@ -487,7 +487,17 @@ export class PgScopedAccessReader {
    await db.query('select factact.lock_scoped_actor_authority($1::uuid,$2::uuid)',
     [tenantId,actorId]);
    if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,at))return null;
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))return null;
+
    const result=await mutation(new PgSupportRepository(db,tenantId));
+
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))throw Error('SCOPED_WEB_RECEIPT_AUTHORITY_CHANGED');
    if(!await this.scopedCanCreateService(db,tenantId,actorId,serviceId,this.clock.now()))
     throw Error('SCOPED_INTAKE_AUTHORITY_CHANGED');
    return result;
@@ -495,7 +505,7 @@ export class PgScopedAccessReader {
  }
 
  private async scopedCanCreateService(db:PoolClient,tenantId:string,actorId:string,
-  serviceId:string,at:string):Promise<boolean>{
+  serviceId:string,at:string,operation:'CREATE'|'READ'='CREATE'):Promise<boolean>{
   const {rows}=await db.query<{contract_id:string}>(`
    select c.id as contract_id from factact.services s
    join factact.tenants t on t.id=s.tenant_id and t.status='ACTIVE'
@@ -510,7 +520,7 @@ export class PgScopedAccessReader {
   if(rows.length!==1)return false;
   return this.authorizedInTransaction(db,actorId,{
    tenantId,serviceId,contractProfileId:rows[0]!.contract_id,
-   scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation:'CREATE',
+   scope:{kind:'SERVICE'},objectKind:'SUPPORT',operation,
   },at);
  }
 
@@ -520,7 +530,7 @@ export class PgScopedAccessReader {
   * of entitlement or a verified Fact; beneficiary remains a Human decision. */
  async runSupportExistingCallerIntake<T>(tenantId:string,actorId:string,
   serviceId:string,personId:string,
-  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  mutation:(repository:PgSupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>{
   if(![tenantId,actorId,serviceId,personId].every(id=>z.uuid().safeParse(id).success))
    return null;
   const at=this.clock.now();
@@ -551,7 +561,17 @@ export class PgScopedAccessReader {
     objectKind:'REGISTRY',operation:'READ',
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))return null;
+
    const result=await mutation(new PgSupportRepository(db,tenantId));
+
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))throw Error('SCOPED_WEB_RECEIPT_AUTHORITY_CHANGED');
    // Restricted factact_runtime can SELECT but must not acquire blanket
    // UPDATE privileges just to lock Registry rows. Re-read the exact Person
    // -> Organization -> Recipient relation before commit (READ COMMITTED).
@@ -576,7 +596,7 @@ export class PgScopedAccessReader {
  /** Existing Organization selection and same-company name check require independent REGISTRY READ. */
  async runSupportNewCallerInOrganization<T>(tenantId:string,actorId:string,
   serviceId:string,organizationId:string,
-  mutation:(repository:PgSupportRepository)=>Promise<T>):Promise<T|null>{
+  mutation:(repository:PgSupportRepository)=>Promise<T>,webReceiptId?:string):Promise<T|null>{
   if(![tenantId,actorId,serviceId,organizationId].every(id=>z.uuid().safeParse(id).success))
    return null;
   const at=this.clock.now();
@@ -605,7 +625,17 @@ export class PgScopedAccessReader {
     objectKind:'REGISTRY',operation:'READ',
    };
    if(!await this.authorizedInTransaction(db,actorId,target,at))return null;
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))return null;
+
    const result=await mutation(new PgSupportRepository(db,tenantId));
+
+   if(webReceiptId&&
+      !await this.scopedCanCreateService(
+       db,tenantId,actorId,serviceId,this.clock.now(),'READ'
+      ))throw Error('SCOPED_WEB_RECEIPT_AUTHORITY_CHANGED');
    // Recheck the exact authorized Organization Recipient before commit.
    const relation=await db.query(`
     select 1 from factact.organizations org
