@@ -1,3 +1,5 @@
+import {PgRequestPushDelivery} from '../../apps/web/src/server/persistence/request-push-delivery.js';
+import type {PushSender} from '../../apps/web/src/server/request-push-transport.js';
 import {randomUUID,createECDH} from 'node:crypto';
 import {afterAll,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import request from 'supertest';
@@ -153,5 +155,46 @@ describe('push subscription HTTP boundary',()=>{
   expect((await post(path+'status','partner').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual(first);
   await post(path+'revoke','partner').send(first).expect(200);
   expect((await post(path+'status','partner').send({endpoint:input.endpoint}).expect(200)).body.data).toEqual({id:null});
+ });
+});
+
+
+describe('durable push delivery',()=>{
+ async function enroll(){
+  const key=createECDH('prime256v1');key.generateKeys();
+  const input={endpoint:'https://fcm.googleapis.com/fcm/send/synthetic-delivery',keys:{p256dh:key.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,8).toString('base64url')}};
+  return (await post('/api/request-push/subscriptions','partner').send(input).expect(201)).body.data.id as string;
+ }
+ async function notice(){
+  const id=randomUUID();
+  await post('/api/requests').send({...context,id,type:'INQUIRY',content:'Synthetic delivery'}).expect(201);
+  return id;
+ }
+ it('claims once across concurrent workers, keeps notification unread, and skips expired endpoint',async()=>{
+  const sub=await enroll(),id=await notice();
+  const send=vi.fn<PushSender>(async()=>({state:'ACCEPTED',httpStatus:201}));
+  const disabled=new PgRequestPushDelivery(db.runtime,send);
+  expect(await disabled.run(ids.tenant)).toEqual({processed:0});
+  const delivery=new PgRequestPushDelivery(db.runtime,send,true);
+  await Promise.all([delivery.run(ids.tenant),delivery.run(ids.tenant)]);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0]![1]).toBe(id);
+  expect((await db.admin.query('select state from factact.request_push_deliveries')).rows).toEqual([{state:'ACCEPTED'}]);
+  expect((await get('/api/request-notifications','partner').query(context).expect(200)).body.data.unread).toBe(1);
+  send.mockResolvedValue({state:'GONE',httpStatus:410});await notice();await delivery.run(ids.tenant);
+  expect((await db.admin.query('select revoked_at from factact.request_push_subscriptions where id=$1',[sub])).rows[0].revoked_at).not.toBeNull();
+  await notice();await delivery.run(ids.tenant);expect(send).toHaveBeenCalledTimes(2);
+ });
+ it('does not send acknowledged notices or to a revoked party/session',async()=>{
+  await enroll();const id=await notice();
+  const send=vi.fn<PushSender>(async()=>({state:'ACCEPTED'}));
+  const delivery=new PgRequestPushDelivery(db.runtime,send,true);
+  await post('/api/requests/'+id+'/acknowledge','partner').send({throughRevision:0}).expect(200);
+  await delivery.run(ids.tenant);expect(send).not.toHaveBeenCalled();
+  await notice();await db.admin.query("update factact.service_request_participants set enabled=false where party_role='PARTNER'");
+  await delivery.run(ids.tenant);expect(send).not.toHaveBeenCalled();
+  await db.admin.query("update factact.service_request_participants set enabled=true where party_role='PARTNER'");
+  await post('/auth/logout','partner').send({}).expect(200);
+  await delivery.run(ids.tenant);expect(send).not.toHaveBeenCalled();
  });
 });
