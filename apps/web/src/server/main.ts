@@ -26,6 +26,7 @@ import {PgDeviceWorkObservationSessionStore} from './persistence/device-work-obs
 import {PgRequestTeamsDispatch} from './persistence/request-teams-dispatch.js';
 import {loadTeamsDeployment} from './request-teams-config.js';
 import {PgServiceRequestStore} from './persistence/service-request-store.js';
+import {PgRequestPushStore} from './persistence/request-push-store.js';
 import {PgProcedurePageStore} from './persistence/procedure-page-store.js';
 
 const logger = pino({ redact: ['password', 'token', 'clientSecret', 'databaseUrl', 'oidcSessionDatabaseUrl', 'req.headers', 'res.headers'] });
@@ -46,13 +47,16 @@ async function main() {
     const supportCommands = new SupportCommands(supportUow,
       {id:randomUUID,now:()=>new Date().toISOString()},scopedReader);
     const publicDeployment=loadPublicIntake(process.env,config.origin);
-    const app = createApp(config, new PgIdentityStore(pool, oidcSessionPool), provider, logger,
+    const identity=new PgIdentityStore(pool,oidcSessionPool);
+    const requests=new PgServiceRequestStore(pool);
+    const pushSubscriptions=new PgRequestPushStore(pool,identity,requests);
+    const app = createApp(config, identity, provider, logger,
       {commands:new JoinCommands(uow,{id:randomUUID,now:()=>new Date().toISOString()}),queries:new JoinQueries(uow)},
       {commands:supportCommands,queries:new SupportQueries(supportUow,{now:()=>new Date().toISOString()})},
       {queries:new ExploreQueries(exploreUow)},scopedReader,new PgScopedGrantManager(pool),scopedReader,
       new RegistryEditCommands(new PgRegistryEditStore(pool)),new PgRegistryReviewReader(pool),
       new PgOperatorPolicyAdmin(pool),new PgDeviceWorkObservationSessionStore(pool),
-      new PgProcedurePageStore(pool),new PgServiceRequestStore(pool),new PgRequestTeamsDispatch(pool,loadTeamsDeployment(process.env,config.origin)),publicDeployment?{store:new PgPublicSupportReceiptStore(pool),deployment:publicDeployment}:undefined);
+      new PgProcedurePageStore(pool),requests,new PgRequestTeamsDispatch(pool,loadTeamsDeployment(process.env,config.origin)),publicDeployment?{store:new PgPublicSupportReceiptStore(pool),deployment:publicDeployment}:undefined,pushSubscriptions);
     const server = app.listen(config.port, () => logger.info({ port: config.port }, 'FACTACT listening'));
     const shutdown = () => {
       server.close(() => { void Promise.all([pool.end(), oidcSessionPool.end()]); });

@@ -7,6 +7,7 @@ import {tokenHash} from '../../apps/web/src/server/auth/pkce.js';
 import {PgIdentityStore} from '../../apps/web/src/server/persistence/identity-store.js';
 import {PgServiceRequestStore} from '../../apps/web/src/server/persistence/service-request-store.js';
 import {createApp} from '../../apps/web/src/server/app.js';
+import {PgRequestPushStore} from '../../apps/web/src/server/persistence/request-push-store.js';
 const issuer='https://accounts.google.com';
 const config={nodeEnv:'test' as const,port:8080,origin:'http://localhost:5173',databaseUrl:'postgresql://test',oidcSessionDatabaseUrl:'postgresql://test-oidc',databaseSsl:false,issuer:issuer as 'https://accounts.google.com',clientId:'test',clientSecret:'test',redirectUri:'http://localhost:5173/auth/callback'};
 let db:Awaited<ReturnType<typeof testDatabase>>,identity:PgIdentityStore,app:ReturnType<typeof createApp>;
@@ -78,5 +79,55 @@ describe('service request HTTP boundary',()=>{
   await get('/api/request-notifications','partner').query(context).expect(404);
   await post('/api/requests/'+body.id+'/acknowledge','partner').send({throughRevision:1}).expect(404);
   await post('/api/requests/'+body.id+'/responses','partner').send(response).expect(404);
+ });
+});
+
+
+describe('session-bound push subscription storage',()=>{
+ it('registers idempotently, isolates actors and revokes on logout',async()=>{
+  const push=new PgRequestPushStore(
+   db.runtime,identity,new PgServiceRequestStore(db.runtime)
+  );
+
+  const a={tenantId:ids.tenant,actorId:ids.operator};
+  const hash=tokenHash('provider');
+
+  const input={
+   endpoint:'https://fcm.googleapis.com/fcm/send/synthetic',
+   keys:{
+    p256dh:Buffer.concat([Buffer.from([4]),Buffer.alloc(64,1)]).toString('base64url'),
+    auth:Buffer.alloc(16,2).toString('base64url')
+   }
+  };
+
+  const first=await push.register(a,hash,input);
+
+  expect(await push.register(a,hash,input)).toEqual(first);
+
+  await expect(
+   push.register(a,tokenHash('partner'),input)
+  ).rejects.toThrow();
+
+  await expect(
+   push.register(a,hash,{
+    ...input,keys:{...input.keys,auth:Buffer.alloc(16,3).toString('base64url')}
+   })
+  ).rejects.toThrow();
+
+  await post('/auth/logout').send({}).expect(200);
+
+  expect(await identity.readSession(hash)).toBeNull();
+
+  const rows=(await db.admin.query(
+   'select id,revoked_at from factact.request_push_subscriptions where id=$1',
+   [first.id]
+  )).rows;
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0].revoked_at).not.toBeNull();
+
+  await expect(
+   push.register(a,hash,input)
+  ).rejects.toThrow();
  });
 });

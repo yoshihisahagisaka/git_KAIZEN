@@ -29,9 +29,9 @@ export function commandBoundary(config: Config, store: IdentityStore): RequestHa
     if(session.operator.requestPortalOnly){
       const path=req.path;
       const readable=req.method==='GET'||req.method==='HEAD';
-      const allowed=(readable&&['/api/session','/api/session/contexts','/api/request-contexts','/api/request-teams-recipients','/api/request-notifications','/api/requests'].includes(path))
+      const allowed=(readable&&['/api/session','/api/session/contexts','/api/request-contexts','/api/request-teams-recipients','/api/request-notifications','/api/request-push/config','/api/requests'].includes(path))
         ||(readable&&/^\/api\/requests\/[0-9a-f-]{36}$/i.test(path))
-        ||(req.method==='POST'&&['/api/requests','/api/session/context','/auth/logout'].includes(path))
+        ||(req.method==='POST'&&['/api/requests','/api/request-push/subscriptions','/api/request-push/revoke','/api/session/context','/auth/logout'].includes(path))
         ||(req.method==='POST'&&/^\/api\/requests\/[0-9a-f-]{36}\/(responses|acknowledge)$/i.test(path));
       if(!allowed){res.status(403).json({ok:false,error:{code:'PORTAL_ONLY',message:'対応依頼以外の機能は利用できません。'},correlationId:req.id});return;}
     }

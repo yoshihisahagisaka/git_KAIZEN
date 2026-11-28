@@ -4,6 +4,8 @@ import {requestBrand,requestPwaRoutes} from './request-pwa.js';
 import { supportRoutes, type SupportServices } from './support-routes.js';
 import type {PgRequestTeamsDispatch} from './persistence/request-teams-dispatch.js';
 import {serviceRequestRoutes} from './service-request-routes.js';
+import {requestPushRoutes} from './request-push-routes.js';
+import type {PgRequestPushStore} from './persistence/request-push-store.js';
 import type {PgServiceRequestStore} from './persistence/service-request-store.js';
 import {procedurePageRoutes} from './procedure-page-routes.js';
 import type {PgProcedurePageStore} from './persistence/procedure-page-store.js';
@@ -33,7 +35,7 @@ import {operatorPolicyAdminRoutes} from './operator-policy-admin-routes.js';
 import type {OperatorPolicyAdmin} from './persistence/operator-policy-admin.js';
 import {deviceWorkObservationRoutes,type AuthenticatedDeviceWorkObservationStore} from './device-work-observation-routes.js';
 
-export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore, serviceRequestStore?: PgServiceRequestStore, teamsDispatcher?: PgRequestTeamsDispatch, publicIntake?:{store:PgPublicSupportReceiptStore;deployment:PublicIntakeDeployment}) {
+export function createApp(config: Config, store: IdentityStore, provider: IdentityProvider, logger: Logger, join?: JoinServices, support?: SupportServices, explore?: ExploreServices, scopedSupport?: ScopedSupportReader, scopedGrantManager?: ScopedGrantManager, scopedRegistry?: ScopedRegistryReader, registryEditCommands?: RegistryEditCommands, registryReview?: RegistryReviewReader, operatorPolicyAdmin?: OperatorPolicyAdmin, deviceWorkObservationStore?: AuthenticatedDeviceWorkObservationStore, procedurePageStore?: PgProcedurePageStore, serviceRequestStore?: PgServiceRequestStore, teamsDispatcher?: PgRequestTeamsDispatch, publicIntake?:{store:PgPublicSupportReceiptStore;deployment:PublicIntakeDeployment},requestPushStore?:PgRequestPushStore) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.nodeEnv === 'production' ? [] : null } } }));
@@ -61,6 +63,7 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   if (operatorPolicyAdmin) app.use('/api',operatorPolicyAdminRoutes(operatorPolicyAdmin));
   if (deviceWorkObservationStore) app.use('/api',deviceWorkObservationRoutes(deviceWorkObservationStore));
   if (serviceRequestStore) app.use('/api',serviceRequestRoutes(serviceRequestStore,teamsDispatcher));
+  if (requestPushStore) app.use('/api',requestPushRoutes(requestPushStore));
   if (procedurePageStore) app.use('/api',procedurePageRoutes(procedurePageStore));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: { code: 'NOT_FOUND' } }));
   app.use('/auth', (_req, res) => res.sendStatus(404));
