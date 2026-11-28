@@ -1,5 +1,9 @@
 import {useEffect,useState,useRef} from 'react';
 import {api} from './api.js';
+import {
+ clearRequestBadge,
+ refreshRequestBadge
+} from './request-badge.js';
 import {requestLabels,requestStatusLabels,type RequestType,type RequestStatus} from '../../../../packages/domain/src/service-request.js';
 type Context={serviceId:string;contractProfileId:string;name:string;canCreate:boolean;types:RequestType[]};
 type Summary={id:string;type:RequestType;customerName:string;content:string;createdAt:string;status:RequestStatus;revision:number};
@@ -69,7 +73,10 @@ export function ServiceRequestUI({csrf,contexts,initialId,onExit}:{csrf:string;c
  useEffect(()=>{
   if(mode!=='DETAIL'||!detailId)return;
   let active=true;setDetail(null);setError('');
-  api<Detail>('/api/requests/'+detailId).then(async x=>{if(!active)return;setDetail(x);try{await api('/api/requests/'+x.id+'/acknowledge',csrf,{throughRevision:x.revision});if(active)setNoticeRefresh(n=>n+1);}catch{if(active)setNoticeError(true);}}).catch(e=>{if(active)setError(message(e));});
+  api<Detail>('/api/requests/'+detailId).then(async x=>{if(!active)return;setDetail(x);try{await api('/api/requests/'+x.id+'/acknowledge',csrf,{throughRevision:x.revision});if(active){
+ setNoticeRefresh(n=>n+1);
+ window.dispatchEvent(new Event('request-notification-changed'));
+}}catch{if(active)setNoticeError(true);}}).catch(e=>{if(active)setError(message(e));});
   return()=>{active=false;};
  },[detailId,mode,refresh,csrf]);
  function open(id:string){setDetailId(id);setComment('');setStatus('IN_PROGRESS');replyKey.current=null;setMode('DETAIL');}
@@ -146,6 +153,40 @@ export function RequestEntryPoint({csrf,initialId,children,portalOnly=false}:{cs
  const [error,setError]=useState('');
  const [open,setOpen]=useState(!!initialId||portalOnly);
  useEffect(()=>{let active=true;api<Context[]>('/api/request-contexts').then(x=>{if(active)setContexts(x);}).catch(e=>{if(active){setContexts([]);setError(message(e));}});return()=>{active=false;};},[]);
+ useEffect(()=>{
+  if(!contexts)return;
+
+  const refreshBadge=()=>{
+   void refreshRequestBadge(contexts);
+  };
+
+  refreshBadge();
+
+  const timer=window.setInterval(()=>{
+   if(document.visibilityState==='visible')
+    refreshBadge();
+  },30000);
+
+  const visible=()=>{
+   if(document.visibilityState==='visible')
+    refreshBadge();
+  };
+
+  document.addEventListener('visibilitychange',visible);
+  window.addEventListener(
+   'request-notification-changed',refreshBadge
+  );
+
+  return()=>{
+   window.clearInterval(timer);
+   document.removeEventListener('visibilitychange',visible);
+   window.removeEventListener(
+    'request-notification-changed',refreshBadge
+   );
+   void clearRequestBadge();
+  };
+ },[contexts]);
+
  if((initialId||portalOnly)&&contexts===null)return <p role="status">依頼を確認しています…</p>;
  if((initialId||portalOnly)&&contexts?.length===0)return <p role="alert">{error||'依頼を参照できません。'}</p>;
  return <>{contexts&&contexts.length>0&&open?<ServiceRequestUI csrf={csrf} contexts={contexts} initialId={initialId} {...(!portalOnly?{onExit:()=>{if(initialId)window.location.assign('/');else setOpen(false);}}:{})}/>:<>{contexts&&contexts.length>0&&<div className="request-launch"><button onClick={()=>setOpen(true)}>対応依頼</button></div>}{children}</>}</>;
