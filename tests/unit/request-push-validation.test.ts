@@ -24,7 +24,11 @@ describe('Web Push subscription validation',()=>{
    'https://fcm.googleapis.com.example.com/test',
    'https://user@fcm.googleapis.com/test',
    'https://fcm.googleapis.com:8443/test',
-   'https://example.invalid/test'
+   'https://example.invalid/test',
+   ' https://fcm.googleapis.com/test',
+   'https://FCM.GOOGLEAPIS.COM/test',
+   'https://fcm.googleapis.com:443/test',
+   'https://fcm.googleapis.com/'+ 'a'.repeat(2048)
   ]){
    expect(validPushEndpoint(endpoint)).toBe(false);
   }

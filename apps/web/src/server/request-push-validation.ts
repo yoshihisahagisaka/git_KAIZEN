@@ -11,7 +11,7 @@ export function validPushEndpoint(value:string):boolean{
  try{
   const u=new URL(value);
 
-  if(u.protocol!=='https:'||
+  if(value!==u.href||Buffer.byteLength(value,'utf8')>2048||u.protocol!=='https:'||
      u.username||u.password||u.port||u.hash)
    return false;
 

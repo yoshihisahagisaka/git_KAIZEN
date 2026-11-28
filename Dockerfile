@@ -9,6 +9,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY apps ./apps
 COPY packages ./packages
+COPY scripts/request-push-delivery.ts ./scripts/request-push-delivery.ts
 RUN npm run build
 
 FROM node:24-bookworm-slim AS runtime

@@ -54,6 +54,12 @@ export class PgRequestPushStore{
     [a.tenantId,a.actorId]
    );
 
+   // Recheck the session inside the registration transaction as well.
+   const live=await db.query(
+    'select 1 from factact_private.read_session($1) where tenant_id=$2 and operator_id=$3',
+    [hash,a.tenantId,a.actorId]);
+   if(live.rowCount!==1)throw denied();
+
    const prior=await db.query<{
     id:string;
     actor_operator_id:string;
@@ -65,7 +71,7 @@ export class PgRequestPushStore{
      from factact.request_push_subscriptions
      where tenant_id=$1
        and session_token_hash=$2
-       and endpoint=$3
+       and endpoint=$3 and revoked_at is null
      for update`,
     [a.tenantId,hash,input.endpoint]
    );
@@ -88,15 +94,20 @@ export class PgRequestPushStore{
 
    const id=randomUUID();
 
-   await db.query(
+   const inserted=await db.query(
     `insert into factact.request_push_subscriptions
      (id,tenant_id,actor_operator_id,
       session_token_hash,endpoint,p256dh,auth_secret)
-     values($1,$2,$3,$4,$5,$6,$7)`,
+     values($1,$2,$3,$4,$5,$6,$7) on conflict do nothing`,
     [id,a.tenantId,a.actorId,hash,
      input.endpoint,input.keys.p256dh,input.keys.auth]
    );
 
+   if(inserted.rowCount!==1)throw new DomainError(
+    'PUSH_SUBSCRIPTION_CONFLICT',
+    '端末の通知購読を再設定してください。',
+    409
+   );
    return {id};
   });
  }

@@ -55,6 +55,15 @@ export class PgRequestPushDelivery{
   if(!this.enabled)return {processed:0};
   z.uuid().parse(tenantId);
   if(!Number.isInteger(limit)||limit<1||limit>100)throw Error('Invalid batch size');
+  // Retire expired, revoked or no-longer-valid sessions within this tenant.
+  // Never transfer an endpoint from another tenant or account automatically.
+  await withTenant(this.pool,tenantId,async db=>{
+   await db.query(`update factact.request_push_subscriptions s
+    set revoked_at=greatest(clock_timestamp(),s.created_at)
+    where s.tenant_id=$1 and s.revoked_at is null
+    and not exists(select 1 from factact_private.read_session(s.session_token_hash) ses
+     where ses.tenant_id=s.tenant_id and ses.operator_id=s.actor_operator_id)`,[tenantId]);
+  });
   let processed=0;
   for(let i=0;i<limit;i++){
    const claim=await this.claim(tenantId);if(!claim)break;
