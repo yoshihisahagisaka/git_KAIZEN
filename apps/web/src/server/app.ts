@@ -67,6 +67,14 @@ export function createApp(config: Config, store: IdentityStore, provider: Identi
   app.use(express.static(resolve('dist/client')));
   app.get('/portal/:slug',(req,res)=>{if(req.params.slug!==brand.slug){res.sendStatus(404);return;}res.set('Cache-Control','no-store').sendFile(resolve('dist/client/index.html'));});
   app.get('/requests/:id', (_req,res) => res.sendFile(resolve('dist/client/index.html')));
+  app.get('/support/cti', (_req,res)=>{
+    res.set({
+     'Cache-Control':'no-store',
+     'Referrer-Policy':'no-referrer',
+     'X-Robots-Tag':'noindex, nofollow'
+    });
+    res.sendFile(resolve('dist/client/index.html'));
+  });
   app.get('/', (_req, res) => res.sendFile(resolve('dist/client/index.html')));
   const errors: ErrorRequestHandler = (error: unknown, req, res, _next) => {
     if (error instanceof DomainError) { res.status(error.status).json({ok:false,error:{code:error.code,message:error.message},correlationId:req.id}); return; }
