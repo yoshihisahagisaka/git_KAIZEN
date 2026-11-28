@@ -1,4 +1,5 @@
 ﻿import type {Pool,PoolClient} from 'pg';
+import {DomainError} from '../../../../../packages/domain/src/join.js';
 import {withTenant} from './database.js';
 import {PgJoinRepository} from './join-repository.js';
 import type {SupportRepository,SupportUnitOfWork} from '../../../../../packages/application/src/support-ports.js';
@@ -9,6 +10,69 @@ export class PgSupportUnitOfWork implements SupportUnitOfWork {
  run<T>(tenant:string,fn:(r:SupportRepository)=>Promise<T>,readOnly=false){return withTenant(this.pool,tenant,db=>fn(new PgSupportRepository(db,tenant)),readOnly);}
 }
 export class PgSupportRepository implements SupportRepository {
+ async linkPublicReceiptForNewIntake(
+  receiptId:string,
+  serviceId:string,
+  eventId:string,
+  actorId:string
+ ):Promise<void>{
+  const denied=()=>new DomainError(
+   'NOT_FOUND',
+   'Web受付を関連登録できません。',
+   404
+  );
+
+  const receipt=await this.db.query(
+   `select id
+    from factact.public_support_receipts
+    where tenant_id=$1
+      and id=$2
+      and service_id=$3`,
+   [this.tenant,receiptId,serviceId]
+  );
+
+  if(receipt.rowCount!==1)throw denied();
+
+  const event=await this.db.query(
+   `select id
+    from factact.support_events
+    where tenant_id=$1
+      and id=$2
+      and service_id=$3
+      and created_by_operator_id=$4`,
+   [this.tenant,eventId,serviceId,actorId]
+  );
+
+  if(event.rowCount!==1)throw denied();
+
+  await this.db.query(
+   `insert into factact.public_support_receipt_links
+    (tenant_id,receipt_id,event_id,
+     actor_operator_id,recorded_at)
+    values($1,$2,$3,$4,now())
+    on conflict(tenant_id,receipt_id) do nothing`,
+   [this.tenant,receiptId,eventId,actorId]
+  );
+
+  const linked=await this.db.query<{
+   event_id:string
+  }>(
+   `select event_id
+    from factact.public_support_receipt_links
+    where tenant_id=$1
+      and receipt_id=$2`,
+   [this.tenant,receiptId]
+  );
+
+  if(linked.rows[0]?.event_id!==eventId){
+   throw new DomainError(
+    'CONFLICT',
+    'このWeb受付は既に関連登録されています。',
+    409
+   );
+  }
+ }
+
  beneficiaryDecisions(eventId:string){return this.many<SupportBeneficiaryDecision>(`select d.*,o.name as organization_name
   from factact.support_event_beneficiary_decisions d
   left join factact.service_recipients r on r.tenant_id=d.tenant_id and r.id=d.service_recipient_id

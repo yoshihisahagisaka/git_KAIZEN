@@ -11,8 +11,8 @@ type Decision='REQUIRED'|'NOT_APPLICABLE'|'DEFERRED';
 /** Existing Caller lookup is separate from membership/beneficiary decisions.
  * Only authorized service recipients and Registry-visible Person IDs arrive
  * through the existing scoped endpoints. Server rechecks in same write txn. */
-export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrganization,initialContact}:{
- csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;initialOrganization?:Org;initialContact?:{name:string;email:string;description:string};
+export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrganization,initialContact,webReceiptId}:{
+ csrf:string;serviceId:string;onReceived:(receipt:Receipt)=>void;initialOrganization?:Org;webReceiptId?:string;initialContact?:{name:string;email:string;description:string};
 }){
  const [orgQuery,setOrgQuery]=useState(''),[search,setSearch]=useState('');
  const [orgs,setOrgs]=useState<Org[]>([]),[orgCursor,setOrgCursor]=useState<string|null>(null);
@@ -87,6 +87,7 @@ export function ScopedExistingCallerForm({csrf,serviceId,onReceived,initialOrgan
   if(sending.current||busy||loading||peopleLoading||peopleFailed||!serviceId||!orgId||!personId||!symptom.trim()||(decision==='NOT_APPLICABLE'&&!reason.trim())||(personId==='NEW'&&!newName.trim()))
    return;
   const payload={
+   ...(webReceiptId?{webReceiptId}:{}),
    serviceId,caller:personId==='NEW'?{kind:'NEW',organizationId:orgId,displayName:newName.trim(),
     ...(newEmail.trim()?{email:newEmail.trim()}:{}),distinctPersonConfirmed:distinct}:{kind:'EXISTING',personId},symptom:symptom.trim(),
    decision,reason:decision==='NOT_APPLICABLE'?reason.trim():decision==='REQUIRED'?'標準受付: オペレーターが確認・対応を開始することを選択':'',

@@ -325,3 +325,83 @@ describe('related inquiry references',()=>{
   expect((await db.admin.query('select event_id from factact.public_support_receipt_links where receipt_id=$1',[receiptId])).rows).toEqual([{event_id:data.eventId}]);
  });
 });
+
+
+describe('atomic web receipt intake',()=>{
+ it('creates the Event and receipt association atomically',
+ async()=>{
+  await grant();
+  await operationGrant('READ');
+
+  const receiptId=randomUUID();
+
+  await db.admin.query(
+   `insert into factact.public_support_receipts
+    (id,tenant_id,service_id,submission_id,
+     company_name,department,contact_name,email,
+     phone,category,description,privacy_notice_version)
+    values($1,$2,$3,$4,
+     '未登録企業','','申告者','test@example.invalid',
+     '0312345678','PC','Web原文','v1')`,
+   [receiptId,ids.tenant,ids.service,randomUUID()]
+  );
+
+  const payload={
+   ...intake(),
+   webReceiptId:receiptId,
+   symptom:'Web原文'
+  };
+
+  const first=(await post(payload).expect(201)).body.data;
+
+  const retry=(await post(payload).expect(201)).body.data;
+
+  expect(retry).toEqual(first);
+
+  const links=await db.admin.query(
+   `select event_id
+    from factact.public_support_receipt_links
+    where receipt_id=$1`,
+   [receiptId]
+  );
+
+  expect(links.rows).toEqual([
+   {event_id:first.eventId}
+  ]);
+
+  const countBefore=await db.admin.query(
+   'select count(*)::int n from factact.support_events'
+  );
+
+  await post({
+   ...payload,
+   requestId:randomUUID()
+  }).expect(409);
+
+  const countAfter=await db.admin.query(
+   'select count(*)::int n from factact.support_events'
+  );
+
+  expect(countAfter.rows).toEqual(countBefore.rows);
+
+  await post({
+   ...intake(),
+   webReceiptId:randomUUID()
+  }).expect(404);
+
+  const finalCount=await db.admin.query(
+   'select count(*)::int n from factact.support_events'
+  );
+
+  expect(finalCount.rows).toEqual(countBefore.rows);
+
+  const original=await db.admin.query(
+   'select description from factact.public_support_receipts where id=$1',
+   [receiptId]
+  );
+
+  expect(original.rows).toEqual([
+   {description:'Web原文'}
+  ]);
+ });
+});
